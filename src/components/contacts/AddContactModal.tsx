@@ -1,15 +1,16 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, CameraOff, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import QRCodeScanner from './QRCodeScanner';
 import QRCodeGenerator from './QRCodeGenerator';
 import CameraDeviceSelector from './CameraDeviceSelector';
+import ImageCapture from './ImageCapture';
 import Haikunator from 'haikunator';
 
 interface AddContactModalProps {
@@ -25,69 +26,14 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const [generatedKey, setGeneratedKey] = useState('');
   const [scannedKey, setScannedKey] = useState('');
   const [capturedImage, setCapturedImage] = useState<string>('');
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { addContact, generateContactKey } = useContacts();
   const { toast } = useToast();
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [hasEnvironmentCamera, setHasEnvironmentCamera] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (isOpen && !name) {
       setName(haikunator.haikunate());
     }
   }, [isOpen]);
-
-  // Check for available camera modes
-  useEffect(() => {
-    const checkCameraCapabilities = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        
-        // We can't directly check if a camera supports "environment" mode
-        // But if there are multiple cameras, we assume one is environment-facing
-        setHasEnvironmentCamera(videoDevices.length > 1);
-      } catch (error) {
-        console.error('Error checking camera capabilities:', error);
-        setHasEnvironmentCamera(false);
-      }
-    };
-
-    if (isOpen) {
-      checkCameraCapabilities();
-    }
-  }, [isOpen]);
-
-  const captureImage = () => {
-    if (!videoRef.current || !canvasRef.current) return '';
-    
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.8);
-  };
-
-  const handleCaptureOrRetake = () => {
-    if (!isCameraActive) {
-      startCamera();
-    } else if (capturedImage) {
-      setCapturedImage('');
-    } else {
-      const image = captureImage();
-      if (image) {
-        setCapturedImage(image);
-        stopCamera();
-      }
-    }
-  };
 
   const handleCreateContact = async () => {
     if (!name) {
@@ -156,72 +102,12 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     setCapturedImage('');
     setShowScanner(false);
     setShowQR(false);
-    setIsCameraActive(false);
-    stopCamera();
-  };
-
-  const startCamera = async () => {
-    try {
-      if (!videoRef.current) return;
-      
-      const constraints = {
-        video: { facingMode: "environment" },
-        audio: false 
-      };
-      
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      videoRef.current.srcObject = stream;
-      setIsCameraActive(true);
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      
-      // If environment camera fails, try with default camera
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true,
-          audio: false 
-        });
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsCameraActive(true);
-        }
-      } catch (fallbackError) {
-        console.error('Error accessing camera (fallback):', fallbackError);
-        toast({
-          title: 'Camera Error',
-          description: 'Could not access your camera. Please check permissions.',
-          variant: 'destructive',
-        });
-      }
-    }
-  };
-
-  // Helper to detect Windows OS
-  const isWindowsOS = () => {
-    return navigator.userAgent.indexOf("Win") !== -1;
-  };
-
-  const stopCamera = () => {
-    if (!videoRef.current) return;
-    
-    const stream = videoRef.current.srcObject as MediaStream;
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-    videoRef.current.srcObject = null;
-    setIsCameraActive(false);
   };
 
   React.useEffect(() => {
     if (!isOpen) {
-      stopCamera();
       resetForm();
     }
-    return () => {
-      stopCamera();
-    };
   }, [isOpen]);
 
   if (showScanner) {
@@ -288,34 +174,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           
           <div className="space-y-2">
             <Label>Contact Photo</Label>
-            <div 
-              className="relative aspect-square max-w-[200px] mx-auto overflow-hidden rounded-full border border-border bg-muted/50 cursor-pointer group"
-              onClick={handleCaptureOrRetake}
-            >
-              {capturedImage ? (
-                <img 
-                  src={capturedImage} 
-                  alt="Contact" 
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  muted 
-                  className="w-full h-full object-cover"
-                />
-              )}
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-                {capturedImage ? (
-                  <CameraOff className="w-8 h-8 text-white" />
-                ) : (
-                  <Camera className="w-8 h-8 text-white" />
-                )}
-              </div>
-            </div>
-            <canvas ref={canvasRef} className="hidden" />
+            <ImageCapture 
+              onImageCapture={setCapturedImage}
+              capturedImage={capturedImage}
+            />
           </div>
           
           <div className="flex justify-center space-x-2">
