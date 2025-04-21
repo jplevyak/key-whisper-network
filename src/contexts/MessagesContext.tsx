@@ -1,8 +1,8 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Contact, useContacts } from './ContactsContext';
 import { encryptMessage, decryptMessage } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
+import { db } from '@/utils/indexedDB';
 
 export interface Message {
   id: string;
@@ -42,33 +42,36 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
   const { getContactKey, contacts } = useContacts();
   const { toast } = useToast();
 
-  // Load messages from localStorage on init
+  // Load messages from IndexedDB on init
   useEffect(() => {
-    const loadMessages = () => {
-      const storedMessages = localStorage.getItem('messages');
-      if (storedMessages) {
-        try {
+    const loadMessages = async () => {
+      try {
+        const storedMessages = await db.get('messages', 'all');
+        if (storedMessages) {
           const decryptedData = mockDecryptFromStorage(storedMessages);
           setMessages(JSON.parse(decryptedData));
-        } catch (error) {
-          console.error('Error loading messages:', error);
-          toast({
-            title: 'Error',
-            description: 'Could not load your messages',
-            variant: 'destructive',
-          });
         }
+      } catch (error) {
+        console.error('Error loading messages:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not load your messages',
+          variant: 'destructive',
+        });
       }
     };
 
     loadMessages();
   }, [toast]);
 
-  // Save messages to localStorage whenever they change
+  // Save messages to IndexedDB whenever they change
   useEffect(() => {
     if (Object.keys(messages).length > 0) {
-      const encryptedData = mockEncryptForStorage(JSON.stringify(messages));
-      localStorage.setItem('messages', encryptedData);
+      const saveMessages = async () => {
+        const encryptedData = mockEncryptForStorage(JSON.stringify(messages));
+        await db.set('messages', 'all', encryptedData);
+      };
+      saveMessages();
     }
   }, [messages]);
 

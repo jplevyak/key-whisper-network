@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { generateAESKey, exportKey, importKey } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
+import { db } from '@/utils/indexedDB';
 
 export interface Contact {
   id: string;
@@ -44,33 +45,36 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [forwardingPath, setForwardingPath] = useState<Contact[]>([]);
   const { toast } = useToast();
 
-  // Load contacts from localStorage on init
+  // Load contacts from IndexedDB on init
   useEffect(() => {
-    const loadContacts = () => {
-      const storedContacts = localStorage.getItem('contacts');
-      if (storedContacts) {
-        try {
+    const loadContacts = async () => {
+      try {
+        const storedContacts = await db.get('contacts', 'all');
+        if (storedContacts) {
           const decryptedData = mockDecryptFromStorage(storedContacts);
           setContacts(JSON.parse(decryptedData));
-        } catch (error) {
-          console.error('Error loading contacts:', error);
-          toast({
-            title: 'Error',
-            description: 'Could not load your contacts',
-            variant: 'destructive',
-          });
         }
+      } catch (error) {
+        console.error('Error loading contacts:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not load your contacts',
+          variant: 'destructive',
+        });
       }
     };
 
     loadContacts();
   }, [toast]);
 
-  // Save contacts to localStorage whenever they change
+  // Save contacts to IndexedDB whenever they change
   useEffect(() => {
     if (contacts.length > 0) {
-      const encryptedData = mockEncryptForStorage(JSON.stringify(contacts));
-      localStorage.setItem('contacts', encryptedData);
+      const saveContacts = async () => {
+        const encryptedData = mockEncryptForStorage(JSON.stringify(contacts));
+        await db.set('contacts', 'all', encryptedData);
+      };
+      saveContacts();
     }
   }, [contacts]);
 
@@ -91,19 +95,15 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  // Add a new contact with their key
   const addContact = async (name: string, avatar: string, keyData: string): Promise<boolean> => {
     try {
-      // Import the key to verify it's valid
       const key = await importKey(keyData);
-      
-      // Store the key in the encrypted keyring (for this demo, in memory)
       const keyId = `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       setContactKeys(prev => new Map(prev).set(keyId, key));
       
-      // Save encrypted key data in localStorage (in a real app)
+      // Save encrypted key data in IndexedDB
       const encryptedKeyData = mockEncryptForStorage(keyData);
-      localStorage.setItem(`key-${keyId}`, encryptedKeyData);
+      await db.set('keys', keyId, encryptedKeyData);
       
       // Create the new contact
       const newContact: Contact = {
@@ -122,7 +122,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         title: 'Contact Added',
         description: `${name} has been added to your contacts`,
       });
-      
+
       return true;
     } catch (error) {
       console.error('Error adding contact:', error);
@@ -135,25 +135,21 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  // Get a contact's encryption key
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
     try {
       const contact = contacts.find(c => c.id === contactId);
       if (!contact) return null;
       
-      // Check if we already have the key in memory
       if (contactKeys.has(contact.keyId)) {
         return contactKeys.get(contact.keyId) || null;
       }
       
-      // Otherwise, load it from localStorage
-      const encryptedKeyData = localStorage.getItem(`key-${contact.keyId}`);
+      const encryptedKeyData = await db.get('keys', contact.keyId);
       if (!encryptedKeyData) return null;
       
       const keyData = mockDecryptFromStorage(encryptedKeyData);
       const key = await importKey(keyData);
       
-      // Cache the key in memory
       setContactKeys(prev => new Map(prev).set(contact.keyId, key));
       
       return key;
@@ -163,26 +159,25 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  // Delete a contact
-  const deleteContact = (contactId: string) => {
+  const deleteContact = async (contactId: string) => {
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) return;
     
-    // Remove the contact from the list
     setContacts(prev => prev.filter(c => c.id !== contactId));
     
-    // Remove the contact key from memory
     const newContactKeys = new Map(contactKeys);
     newContactKeys.delete(contact.keyId);
     setContactKeys(newContactKeys);
     
-    // Remove the encrypted key from localStorage
-    localStorage.removeItem(`key-${contact.keyId}`);
-    
-    toast({
-      title: 'Contact Deleted',
-      description: `${contact.name} has been removed from your contacts`,
-    });
+    try {
+      await db.delete('keys', contact.keyId);
+      toast({
+        title: 'Contact Deleted',
+        description: `${contact.name} has been removed from your contacts`,
+      });
+    } catch (error) {
+      console.error('Error deleting contact key:', error);
+    }
   };
 
   return (
