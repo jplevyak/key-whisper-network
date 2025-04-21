@@ -71,24 +71,24 @@ const ChatInterface = () => {
   return (
     <div className="h-full flex flex-col">
       {/* Chat header */}
-      <div className="p-4 border-b flex items-center justify-between bg-muted/30">
+      <div className="p-4 border-b flex items-center justify-between bg-muted/30 sticky top-0 z-10">
         <div className="flex items-center space-x-3">
           <Avatar className="h-10 w-10">
-            <AvatarImage src={activeContact.avatar} alt={activeContact.name} />
-            <AvatarFallback>{activeContact.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarImage src={activeContact?.avatar} alt={activeContact?.name} />
+            <AvatarFallback>{activeContact?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div>
-            <div className="font-medium">{activeContact.name}</div>
+            <div className="font-medium">{activeContact?.name}</div>
             <div className="text-xs text-muted-foreground">
-              {activeContact.connected ? 'Online' : 'Offline'}
+              {activeContact?.connected ? 'Online' : 'Offline'}
             </div>
           </div>
         </div>
       </div>
       
-      {/* Messages area */}
+      {/* Messages area with ScrollArea */}
       <ScrollArea className="flex-1 px-4 py-2">
-        <div className="space-y-4">
+        <div className="space-y-4 min-h-[calc(100vh-8rem)]">
           {activeMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No messages yet</p>
@@ -107,8 +107,8 @@ const ChatInterface = () => {
         </div>
       </ScrollArea>
       
-      {/* Message input */}
-      <div className="p-4 border-t bg-background">
+      {/* Message input - fixed at bottom */}
+      <div className="p-4 border-t bg-background sticky bottom-0 z-10">
         <form onSubmit={handleSendMessage} className="flex space-x-2">
           <Input
             value={newMessage}
