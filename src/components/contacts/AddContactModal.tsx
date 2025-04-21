@@ -1,13 +1,15 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useContacts } from '@/contexts/ContactsContext';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Camera, CameraOff, X } from 'lucide-react';
 import QRCodeScanner from './QRCodeScanner';
 import QRCodeGenerator from './QRCodeGenerator';
+import CameraDeviceSelector from './CameraDeviceSelector';
 import Haikunator from 'haikunator';
 
 interface AddContactModalProps {
