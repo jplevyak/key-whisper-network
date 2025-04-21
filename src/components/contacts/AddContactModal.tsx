@@ -55,10 +55,8 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     if (!isCameraActive) {
       startCamera();
     } else if (capturedImage) {
-      // If we already have an image, allow retaking
       setCapturedImage('');
     } else {
-      // Capture new image
       const image = captureImage();
       if (image) {
         setCapturedImage(image);
@@ -106,6 +104,15 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     const key = await generateContactKey();
     setGeneratedKey(key);
     setShowQR(true);
+  };
+
+  const handleAcceptKey = (key: string) => {
+    setGeneratedKey(key);
+    setShowQR(false);
+    toast({
+      title: 'Key Generated',
+      description: 'Encryption key has been generated and associated with the contact',
+    });
   };
 
   const handleScanSuccess = (data: string) => {
@@ -192,6 +199,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
             title="Your Encryption Key"
             description="Let your contact scan this QR code to add you"
             onClose={() => setShowQR(false)}
+            onAccept={handleAcceptKey}
           />
         </DialogContent>
       </Dialog>

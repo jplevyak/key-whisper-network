@@ -9,9 +9,10 @@ interface QRCodeGeneratorProps {
   title: string;
   description: string;
   onClose: () => void;
+  onAccept: (key: string) => void;
 }
 
-const QRCodeGenerator = ({ data, title, description, onClose }: QRCodeGeneratorProps) => {
+const QRCodeGenerator = ({ data, title, description, onClose, onAccept }: QRCodeGeneratorProps) => {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
@@ -23,13 +24,14 @@ const QRCodeGenerator = ({ data, title, description, onClose }: QRCodeGeneratorP
           <QRCodeSVG 
             value={data}
             size={256}
-            level="H" // High error correction
+            level="H"
             includeMargin={true}
           />
         </div>
       </CardContent>
-      <CardFooter className="flex justify-center">
-        <Button onClick={onClose}>Done</Button>
+      <CardFooter className="flex justify-end space-x-2">
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button onClick={() => onAccept(data)}>Accept</Button>
       </CardFooter>
     </Card>
   );
