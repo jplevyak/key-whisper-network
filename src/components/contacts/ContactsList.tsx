@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Contact, useContacts } from '@/contexts/ContactsContext';
 import { useMessages } from '@/contexts/MessagesContext';
@@ -9,11 +8,17 @@ import { BadgeCheck } from 'lucide-react';
 
 interface ContactsListProps {
   onAddContact: () => void;
+  onContactSelect?: () => void;
 }
 
-const ContactsList = ({ onAddContact }: ContactsListProps) => {
+const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
   const { contacts, activeContact, setActiveContact } = useContacts();
   const { messages } = useMessages();
+
+  const handleContactClick = (contact: Contact) => {
+    setActiveContact(contact);
+    onContactSelect?.();
+  };
 
   // Function to count unread messages for a contact
   const countUnread = (contactId: string): number => {
@@ -73,7 +78,7 @@ const ContactsList = ({ onAddContact }: ContactsListProps) => {
                 isActive={activeContact?.id === contact.id}
                 unreadCount={countUnread(contact.id)}
                 lastMessageTime={getLastMessageTime(contact.id)}
-                onClick={() => setActiveContact(contact)}
+                onClick={() => handleContactClick(contact)}
               />
             ))
           )}
