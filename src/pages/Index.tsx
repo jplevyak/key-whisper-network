@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ContactsProvider } from '@/contexts/ContactsContext';
@@ -20,8 +20,17 @@ const IndexContent = () => {
   const isMobile = useIsMobile();
   const [showContacts, setShowContacts] = useState(true);
 
+  // Set the header height variable for mobile layout calculations
+  useEffect(() => {
+    if (isMobile) {
+      const headerHeight = '4rem'; // Matches the header height
+      document.documentElement.style.setProperty('--header-height', headerHeight);
+      document.documentElement.style.setProperty('--input-height', '4rem'); // Set input height var
+    }
+  }, [isMobile]);
+
   // Show contacts list when active contact is cleared on mobile
-  React.useEffect(() => {
+  useEffect(() => {
     if (isMobile && !activeContact) {
       setShowContacts(true);
     }

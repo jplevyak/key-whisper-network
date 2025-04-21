@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages, Message } from '@/contexts/MessagesContext';
 import { Send, Fingerprint } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
 
@@ -17,6 +18,7 @@ const ChatInterface = () => {
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
   
   // Get messages for the active contact
   const activeMessages = activeContact ? messages[activeContact.id] || [] : [];
@@ -36,6 +38,27 @@ const ChatInterface = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages]);
+  
+  // Effect to set viewport height for mobile devices
+  useEffect(() => {
+    const setVh = () => {
+      // Set the value of --vh CSS variable to the actual viewport height
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    
+    // Set the initial value
+    setVh();
+    
+    // Update on resize and orientation change
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', setVh);
+    
+    return () => {
+      window.removeEventListener('resize', setVh);
+      window.removeEventListener('orientationchange', setVh);
+    };
+  }, []);
   
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +92,7 @@ const ChatInterface = () => {
   }
   
   return (
-    <div className="h-full flex flex-col">
+    <div className={`flex flex-col ${isMobile ? 'h-[calc(100vh-var(--header-height,4rem))]' : 'h-full'}`}>
       {/* Chat header */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 sticky top-0 z-10">
         <div className="flex items-center space-x-3">
@@ -88,7 +111,7 @@ const ChatInterface = () => {
       
       {/* Messages area with ScrollArea */}
       <ScrollArea className="flex-1 px-4 py-2">
-        <div className="space-y-4 min-h-[calc(100vh-8rem)]">
+        <div className={`space-y-4 ${isMobile ? 'min-h-[calc(100vh-var(--header-height,4rem)-var(--input-height,4rem))]' : ''}`}>
           {activeMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No messages yet</p>
