@@ -87,23 +87,44 @@ export const decryptMessage = async (
   }
 };
 
-// Helper functions
+// Better, URL-safe base64 encoding/decoding functions
 export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return window.btoa(binary);
+  // Use URL-safe base64 encoding
+  return window.btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 };
 
 export const base64ToArrayBuffer = (base64: string): Uint8Array => {
-  const binaryString = window.atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  // Restore non-URL safe characters and padding
+  const base64Std = base64
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  
+  // Add padding if needed
+  const padding = base64Std.length % 4;
+  const paddedBase64 = padding ? 
+    base64Std + '='.repeat(4 - padding) : 
+    base64Std;
+  
+  try {
+    const binaryString = window.atob(paddedBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (error) {
+    console.error("Base64 decoding error:", error);
+    // Return empty array in case of error
+    return new Uint8Array(0);
   }
-  return bytes;
 };
 
 // Define WebAuthn types to match the expected types
@@ -155,8 +176,12 @@ export const createPasskey = async (username: string): Promise<boolean> => {
     });
 
     if (credential) {
-      // Store the credential ID in localStorage for later use
-      localStorage.setItem("passkey-credential-id", credential.id);
+      // Store the credential ID in localStorage using URL-safe base64
+      const credentialIdBase64 = arrayBufferToBase64(
+        // @ts-ignore - Access raw ID from credential
+        new Uint8Array(credential.rawId)
+      );
+      localStorage.setItem("passkey-credential-id", credentialIdBase64);
       return true;
     }
     
@@ -216,3 +241,4 @@ export const isBiometricSupported = async (): Promise<boolean> => {
   // @ts-ignore - TypeScript doesn't recognize the isUserVerifyingPlatformAuthenticatorAvailable method
   return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
 };
+
