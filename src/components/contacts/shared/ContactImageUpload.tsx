@@ -20,23 +20,6 @@ const ContactImageUpload = ({ currentImage, onImageCapture }: ContactImageUpload
 
   return (
     <div className="flex flex-col items-center space-y-4">
-      <div className="relative">
-        <img
-          src={currentImage}
-          alt="Contact"
-          className="w-20 h-20 rounded-full object-cover"
-        />
-        {!isPlaceholder && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="absolute bottom-0 right-0"
-            onClick={handleClearImage}
-          >
-            <Image className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
       <div className="w-full max-w-xs">
         <ImageCapture
           onImageCapture={onImageCapture}

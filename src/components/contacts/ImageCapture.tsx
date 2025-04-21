@@ -55,6 +55,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
 
   const handleRetakeClick = () => {
     // Reset the image and start the camera
+    onImageCapture(''); // Clear the current image
     startCamera();
   };
 
