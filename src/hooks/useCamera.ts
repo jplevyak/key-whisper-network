@@ -1,5 +1,5 @@
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 export const useCamera = () => {
@@ -9,11 +9,29 @@ export const useCamera = () => {
   const [devices, setDevices] = useState<{ deviceId: string; label: string }[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const { toast } = useToast();
+
+  // Clean up camera resources when component unmounts
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      setIsCameraActive(false);
+    };
+  }, []);
 
   const startCamera = async (deviceId?: string) => {
     try {
       if (!videoRef.current) return;
+      
+      // Stop any existing stream first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
       
       const constraints = {
         video: deviceId ? { deviceId } : { facingMode: "environment" },
@@ -21,6 +39,7 @@ export const useCamera = () => {
       };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
       videoRef.current.srcObject = stream;
       setIsCameraActive(true);
       setShowDeviceSelector(false);
@@ -54,11 +73,15 @@ export const useCamera = () => {
   const stopCamera = () => {
     if (!videoRef.current) return;
     
-    const stream = videoRef.current.srcObject as MediaStream;
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
-    videoRef.current.srcObject = null;
+    
+    if (videoRef.current.srcObject) {
+      videoRef.current.srcObject = null;
+    }
+    
     setIsCameraActive(false);
   };
 
@@ -97,4 +120,3 @@ export const useCamera = () => {
     handleDeviceSelect
   };
 };
-

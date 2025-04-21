@@ -3,6 +3,7 @@ import React from 'react';
 import { Camera, CameraOff } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import CameraDeviceSelector from './CameraDeviceSelector';
+import { Button } from '@/components/ui/button';
 
 interface ImageCaptureProps {
   onImageCapture: (image: string) => void;
@@ -26,7 +27,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
   const handleCaptureOrRetake = () => {
     if (!isCameraActive) {
       startCamera();
-    } else if (capturedImage) {
+    } else if (capturedImage && capturedImage !== '/placeholder.svg') {
       onImageCapture('');
       startCamera();
     } else {
@@ -38,13 +39,16 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     }
   };
 
+  // Check if the image is a placeholder
+  const isPlaceholder = capturedImage.includes('placeholder.svg');
+
   return (
     <div className="space-y-2">
       <div 
         className="relative aspect-square max-w-[200px] mx-auto overflow-hidden rounded-full border border-border bg-muted/50 cursor-pointer group"
         onClick={handleCaptureOrRetake}
       >
-        {capturedImage ? (
+        {capturedImage && !isPlaceholder ? (
           <img 
             src={capturedImage} 
             alt="Contact" 
@@ -60,7 +64,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
           />
         )}
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-          {capturedImage ? (
+          {capturedImage && !isPlaceholder ? (
             <CameraOff className="w-8 h-8 text-white" />
           ) : (
             <Camera className="w-8 h-8 text-white" />
@@ -68,6 +72,15 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
         </div>
       </div>
       <canvas ref={canvasRef} className="hidden" />
+      
+      <Button 
+        variant="outline" 
+        type="button" 
+        className="w-full mt-2"
+        onClick={handleCaptureOrRetake}
+      >
+        {isCameraActive ? "Take Photo" : (capturedImage && !isPlaceholder) ? "Retake Photo" : "Open Camera"}
+      </Button>
       
       <CameraDeviceSelector
         devices={devices}
@@ -80,4 +93,3 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
 };
 
 export default ImageCapture;
-
