@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 const LoginForm = () => {
-  const [username, setUsername] = useState<string>('');
+  const [username, setUsername] = useState<string>(localStorage.getItem('username') || '');
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const { login, hasPasskey, supportsBiometric, supportsPasskeys } = useAuth();
 
@@ -78,3 +78,4 @@ const LoginForm = () => {
 };
 
 export default LoginForm;
+
