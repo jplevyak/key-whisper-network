@@ -8,10 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Trash2, QrCode, Pencil, Image, TrashIcon } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import QRCodeScanner from './QRCodeScanner';
 import QRCodeGenerator from './QRCodeGenerator';
-import { generateContactKey } from '@/contexts/ContactsContext';
 
 interface ContactProfileProps {
   contact: Contact;
@@ -20,13 +19,14 @@ interface ContactProfileProps {
 }
 
 const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
-  const { deleteContact } = useContacts();
+  const { deleteContact, generateContactKey, updateContact } = useContacts();
   const { messages, clearHistory } = useMessages();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(contact.name);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [showQRGenerator, setShowQRGenerator] = useState(false);
+  const [qrData, setQrData] = useState('');
 
   const contactMessages = messages[contact.id] || [];
   const sentMessages = contactMessages.filter(m => m.sent).length;
@@ -35,12 +35,17 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
 
   const handleUpdateName = async () => {
     if (newName.trim() === '') return;
-    // Note: We'll need to implement updateContact in ContactsContext later
+    updateContact(contact.id, { name: newName.trim() });
     setIsEditing(false);
+    toast({
+      title: 'Contact Updated',
+      description: 'The contact name has been updated.',
+    });
   };
 
   const handleGenerateNewKey = async () => {
     const newKey = await generateContactKey();
+    setQrData(newKey);
     setShowQRGenerator(true);
   };
 
@@ -194,7 +199,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         <Dialog open={showQRGenerator} onOpenChange={() => setShowQRGenerator(false)}>
           <DialogContent>
             <QRCodeGenerator
-              data="key-data-here" // Replace with actual key data
+              data={qrData}
               title="New Encryption Key"
               description="Scan this QR code to update the encryption key on another device"
               onClose={() => setShowQRGenerator(false)}
