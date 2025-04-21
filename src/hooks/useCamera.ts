@@ -1,5 +1,5 @@
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
 export const useCamera = () => {
@@ -23,15 +23,25 @@ export const useCamera = () => {
     };
   }, []);
 
-  const startCamera = async (deviceId?: string) => {
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setIsCameraActive(false);
+  }, []);
+
+  const startCamera = useCallback(async (deviceId?: string) => {
     try {
       if (!videoRef.current) return;
       
       // Stop any existing stream first
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
+      stopCamera();
       
       const constraints = {
         video: deviceId ? { deviceId } : { facingMode: "environment" },
@@ -68,24 +78,9 @@ export const useCamera = () => {
         });
       }
     }
-  };
+  }, [stopCamera, toast]);
 
-  const stopCamera = () => {
-    if (!videoRef.current) return;
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    
-    if (videoRef.current.srcObject) {
-      videoRef.current.srcObject = null;
-    }
-    
-    setIsCameraActive(false);
-  };
-
-  const captureImage = () => {
+  const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return '';
     
     const video = videoRef.current;
@@ -99,11 +94,11 @@ export const useCamera = () => {
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL('image/jpeg', 0.8);
-  };
+  }, []);
 
-  const handleDeviceSelect = (deviceId: string) => {
+  const handleDeviceSelect = useCallback((deviceId: string) => {
     startCamera(deviceId);
-  };
+  }, [startCamera]);
 
   return {
     isCameraActive,

@@ -13,6 +13,11 @@ const ContactImageUpload = ({ currentImage, onImageCapture }: ContactImageUpload
   // Check if the current image is the placeholder or a captured image
   const isPlaceholder = currentImage.includes('placeholder.svg');
 
+  const handleClearImage = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent event from bubbling up
+    onImageCapture('');
+  };
+
   return (
     <div className="flex flex-col items-center space-y-4">
       <div className="relative">
@@ -26,7 +31,7 @@ const ContactImageUpload = ({ currentImage, onImageCapture }: ContactImageUpload
             size="icon"
             variant="ghost"
             className="absolute bottom-0 right-0"
-            onClick={() => onImageCapture('')}
+            onClick={handleClearImage}
           >
             <Image className="h-4 w-4" />
           </Button>
