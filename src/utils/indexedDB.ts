@@ -1,3 +1,4 @@
+import { secureStorage } from './secureStorage';
 
 interface DBSchema {
   contacts: {
@@ -50,10 +51,13 @@ class IndexedDBManager {
     await this.init();
     if (!this.db) throw new Error('Database not initialized');
 
+    // Encrypt the value before storing
+    const encryptedValue = await secureStorage.encrypt(value);
+
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(store, 'readwrite');
       const objectStore = transaction.objectStore(store);
-      const request = objectStore.put({ id, value });
+      const request = objectStore.put({ id, value: encryptedValue });
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve();
@@ -70,8 +74,20 @@ class IndexedDBManager {
       const request = objectStore.get(id);
 
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        resolve(request.result ? request.result.value : null);
+      request.onsuccess = async () => {
+        if (!request.result) {
+          resolve(null);
+          return;
+        }
+        
+        try {
+          // Decrypt the value before returning
+          const decryptedValue = await secureStorage.decrypt(request.result.value);
+          resolve(decryptedValue);
+        } catch (error) {
+          console.error('Error decrypting value:', error);
+          resolve(null);
+        }
       };
     });
   }
@@ -92,4 +108,3 @@ class IndexedDBManager {
 }
 
 export const db = new IndexedDBManager();
-
