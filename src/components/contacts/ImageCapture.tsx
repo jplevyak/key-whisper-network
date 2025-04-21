@@ -2,6 +2,7 @@
 import React from 'react';
 import { Camera, CameraOff } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
+import CameraDeviceSelector from './CameraDeviceSelector';
 
 interface ImageCaptureProps {
   onImageCapture: (image: string) => void;
@@ -15,7 +16,11 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     canvasRef,
     startCamera,
     stopCamera,
-    captureImage
+    captureImage,
+    showDeviceSelector,
+    setShowDeviceSelector,
+    devices,
+    handleDeviceSelect
   } = useCamera();
 
   const handleCaptureOrRetake = () => {
@@ -63,8 +68,16 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
         </div>
       </div>
       <canvas ref={canvasRef} className="hidden" />
+      
+      <CameraDeviceSelector
+        devices={devices}
+        onDeviceSelect={handleDeviceSelect}
+        onClose={() => setShowDeviceSelector(false)}
+        isOpen={showDeviceSelector}
+      />
     </div>
   );
 };
 
 export default ImageCapture;
+

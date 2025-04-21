@@ -5,40 +5,41 @@ import { useToast } from '@/hooks/use-toast';
 export const useCamera = () => {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string>('');
+  const [showDeviceSelector, setShowDeviceSelector] = useState(false);
+  const [devices, setDevices] = useState<{ deviceId: string; label: string }[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
-  const startCamera = async () => {
+  const startCamera = async (deviceId?: string) => {
     try {
       if (!videoRef.current) return;
       
       const constraints = {
-        video: { facingMode: "environment" },
+        video: deviceId ? { deviceId } : { facingMode: "environment" },
         audio: false 
       };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       videoRef.current.srcObject = stream;
       setIsCameraActive(true);
+      setShowDeviceSelector(false);
     } catch (error) {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const videoDevices = devices
+          .filter(device => device.kind === 'videoinput')
+          .map(device => ({
+            deviceId: device.deviceId,
+            label: device.label || `Camera ${device.deviceId.slice(0, 8)}...`
+          }));
         
         if (videoDevices.length === 0) {
           throw new Error('No camera devices found');
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true,
-          audio: false 
-        });
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsCameraActive(true);
-        }
+        setDevices(videoDevices);
+        setShowDeviceSelector(true);
       } catch (fallbackError) {
         console.error('Error accessing camera (fallback):', fallbackError);
         toast({
@@ -77,6 +78,10 @@ export const useCamera = () => {
     return canvas.toDataURL('image/jpeg', 0.8);
   };
 
+  const handleDeviceSelect = (deviceId: string) => {
+    startCamera(deviceId);
+  };
+
   return {
     isCameraActive,
     capturedImage,
@@ -85,6 +90,11 @@ export const useCamera = () => {
     startCamera,
     stopCamera,
     captureImage,
-    setCapturedImage
+    setCapturedImage,
+    showDeviceSelector,
+    setShowDeviceSelector,
+    devices,
+    handleDeviceSelect
   };
 };
+
