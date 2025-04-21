@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
-import { Camera } from 'lucide-react';
+import { Camera, CameraOff } from 'lucide-react';
 import QRCodeScanner from './QRCodeScanner';
 import QRCodeGenerator from './QRCodeGenerator';
 
@@ -21,6 +21,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const [showQR, setShowQR] = useState(false);
   const [generatedKey, setGeneratedKey] = useState('');
   const [scannedKey, setScannedKey] = useState('');
+  const [capturedImage, setCapturedImage] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { addContact, generateContactKey } = useContacts();
@@ -40,8 +41,23 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     if (!ctx) return '';
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
     return canvas.toDataURL('image/jpeg', 0.8);
+  };
+
+  const handleCaptureOrRetake = () => {
+    if (!isCameraActive) {
+      startCamera();
+    } else if (capturedImage) {
+      // If we already have an image, allow retaking
+      setCapturedImage('');
+    } else {
+      // Capture new image
+      const image = captureImage();
+      if (image) {
+        setCapturedImage(image);
+        stopCamera();
+      }
+    }
   };
 
   const handleCreateContact = async () => {
@@ -63,17 +79,16 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       return;
     }
 
-    const avatar = captureImage();
-    if (!avatar) {
+    if (!capturedImage) {
       toast({
-        title: 'Camera Issue',
-        description: 'Could not capture an image. Please ensure camera access is allowed.',
+        title: 'Missing Photo',
+        description: 'Please take a photo for your contact',
         variant: 'destructive',
       });
       return;
     }
 
-    const success = await addContact(name, avatar, scannedKey);
+    const success = await addContact(name, capturedImage, scannedKey);
     if (success) {
       resetForm();
       onClose();
@@ -99,6 +114,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     setName('');
     setScannedKey('');
     setGeneratedKey('');
+    setCapturedImage('');
     setShowScanner(false);
     setShowQR(false);
     setIsCameraActive(false);
@@ -110,7 +126,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       if (!videoRef.current) return;
       
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" }, // Use back camera
+        video: { facingMode: "environment" },
         audio: false 
       });
       
@@ -126,14 +142,6 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     }
   };
 
-  const toggleCamera = () => {
-    if (isCameraActive) {
-      stopCamera();
-    } else {
-      startCamera();
-    }
-  };
-
   const stopCamera = () => {
     if (!videoRef.current) return;
     
@@ -146,9 +154,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   };
 
   React.useEffect(() => {
-    if (isOpen) {
-      startCamera();
-    } else {
+    if (!isOpen) {
       stopCamera();
       resetForm();
     }
@@ -210,20 +216,30 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
             <Label>Contact Photo</Label>
             <div 
               className="relative aspect-square max-w-[200px] mx-auto overflow-hidden rounded-full border border-border bg-muted/50 cursor-pointer group"
-              onClick={toggleCamera}
+              onClick={handleCaptureOrRetake}
             >
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                muted 
-                className="w-full h-full object-cover"
-              />
-              {!isCameraActive && (
-                <div className="absolute inset-0 flex items-center justify-center bg-muted/50 group-hover:bg-muted/70 transition-colors">
-                  <Camera className="w-8 h-8 text-muted-foreground" />
-                </div>
+              {capturedImage ? (
+                <img 
+                  src={capturedImage} 
+                  alt="Contact" 
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="w-full h-full object-cover"
+                />
               )}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                {capturedImage ? (
+                  <CameraOff className="w-8 h-8 text-white" />
+                ) : (
+                  <Camera className="w-8 h-8 text-white" />
+                )}
+              </div>
             </div>
             <canvas ref={canvasRef} className="hidden" />
           </div>
@@ -256,7 +272,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleCreateContact} disabled={!name || !scannedKey}>
+          <Button onClick={handleCreateContact} disabled={!name || !scannedKey || !capturedImage}>
             Create Contact
           </Button>
         </DialogFooter>
