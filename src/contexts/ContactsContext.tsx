@@ -23,6 +23,7 @@ interface ContactsContextType {
   deleteContact: (contactId: string) => void;
   forwardingPath: Contact[];
   setForwardingPath: (path: Contact[]) => void;
+  updateContact: (contactId: string, updates: Partial<Contact>) => void;
 }
 
 const ContactsContext = createContext<ContactsContextType | undefined>(undefined);
@@ -180,6 +181,12 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
+  const updateContact = (contactId: string, updates: Partial<Contact>) => {
+    setContacts(prev => prev.map(contact => 
+      contact.id === contactId ? { ...contact, ...updates } : contact
+    ));
+  };
+
   return (
     <ContactsContext.Provider
       value={{
@@ -192,6 +199,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         deleteContact,
         forwardingPath,
         setForwardingPath,
+        updateContact,
       }}
     >
       {children}

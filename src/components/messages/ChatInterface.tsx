@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -10,6 +9,7 @@ import { Send, Fingerprint } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
+import ContactProfile from '../contacts/ContactProfile';
 
 const ChatInterface = () => {
   const { activeContact } = useContacts();
@@ -19,6 +19,7 @@ const ChatInterface = () => {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const [showProfile, setShowProfile] = useState(false);
   
   // Get messages for the active contact
   const activeMessages = activeContact ? messages[activeContact.id] || [] : [];
@@ -95,7 +96,10 @@ const ChatInterface = () => {
     <div className={`flex flex-col ${isMobile ? 'h-[calc(100vh-var(--header-height,4rem))]' : 'h-full'}`}>
       {/* Chat header */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 sticky top-0 z-10">
-        <div className="flex items-center space-x-3">
+        <div 
+          className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => activeContact && setShowProfile(true)}
+        >
           <Avatar className="h-10 w-10">
             <AvatarImage src={activeContact?.avatar} alt={activeContact?.name} />
             <AvatarFallback>{activeContact?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
@@ -154,6 +158,15 @@ const ChatInterface = () => {
             setIsForwarding(false);
             setSelectedMessage(null);
           }}
+        />
+      )}
+
+      {/* Contact Profile Dialog */}
+      {activeContact && (
+        <ContactProfile
+          contact={activeContact}
+          isOpen={showProfile}
+          onClose={() => setShowProfile(false)}
         />
       )}
     </div>
