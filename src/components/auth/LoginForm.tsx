@@ -20,13 +20,16 @@ const LoginForm = () => {
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Key Whisper Network</CardTitle>
-        <CardDescription>
+    <Card className="w-full max-w-md mx-auto shadow-2xl bg-white/10 backdrop-blur-lg border-white/20">
+      <CardHeader className="space-y-1 text-center">
+        <div className="flex justify-center mb-4">
+          <Fingerprint className="h-12 w-12 text-primary" />
+        </div>
+        <CardTitle className="text-3xl font-bold text-center text-foreground">CCred</CardTitle>
+        <CardDescription className="text-center text-muted-foreground">
           {hasPasskey
-            ? 'Sign in with your secure passkey'
-            : 'Create your secure account with a passkey'}
+            ? 'Secure access to your encrypted communication'
+            : 'Create a secure communication account'}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -35,12 +38,12 @@ const LoginForm = () => {
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
-              placeholder="Enter your username"
+              placeholder="Enter your secure username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              className="bg-muted/50"
+              className="bg-muted/30 border-white/20 focus:ring-primary focus:border-primary"
             />
           </div>
           
@@ -67,8 +70,8 @@ const LoginForm = () => {
             {isLoggingIn 
               ? 'Authenticating...' 
               : hasPasskey 
-                ? 'Sign In with Passkey' 
-                : 'Create Account with Passkey'
+                ? 'Secure Sign In' 
+                : 'Create Secure Account'
             }
           </Button>
         </CardFooter>
@@ -78,4 +81,3 @@ const LoginForm = () => {
 };
 
 export default LoginForm;
-
