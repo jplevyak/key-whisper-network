@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Image, Camera } from 'lucide-react';
+import { Image } from 'lucide-react';
 import ImageCapture from '../ImageCapture';
 
 interface ContactImageUploadProps {
@@ -11,7 +11,7 @@ interface ContactImageUploadProps {
 
 const ContactImageUpload = ({ currentImage, onImageCapture }: ContactImageUploadProps) => {
   // Check if the current image is the placeholder or a captured image
-  const isPlaceholder = currentImage.includes('placeholder.svg');
+  const isPlaceholder = !currentImage || currentImage.includes('placeholder.svg');
 
   const handleClearImage = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent event from bubbling up

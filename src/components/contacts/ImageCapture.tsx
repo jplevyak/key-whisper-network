@@ -34,20 +34,27 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     };
   }, [stopCamera]);
 
-  const handleCaptureClick = () => {
-    if (!isCameraActive) {
+  // When the user clicks on the camera area with no image
+  const handlePlaceholderClick = () => {
+    if (isPlaceholder && !isCameraActive) {
       startCamera();
-    } else {
+    }
+  };
+
+  const handleCaptureClick = () => {
+    if (isCameraActive) {
       const image = captureImage();
       if (image) {
         onImageCapture(image);
         stopCamera();
       }
+    } else {
+      startCamera();
     }
   };
 
   const handleRetakeClick = () => {
-    onImageCapture('');
+    // Reset the image and start the camera
     startCamera();
   };
 
@@ -55,7 +62,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     <div className="space-y-2">
       <div 
         className="relative aspect-square max-w-[200px] mx-auto overflow-hidden rounded-full border border-border bg-muted/50 cursor-pointer group"
-        onClick={isCameraActive ? handleCaptureClick : undefined}
+        onClick={isPlaceholder && !isCameraActive ? handlePlaceholderClick : undefined}
       >
         {!isPlaceholder ? (
           <img 
