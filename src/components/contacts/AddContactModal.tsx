@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -163,12 +162,8 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     try {
       if (!videoRef.current) return;
       
-      // If we don't know about camera capabilities yet, or we know there's no environment camera,
-      // or we're on Windows (which often has issues with environment mode)
       const constraints = {
-        video: hasEnvironmentCamera === true && !isWindowsOS() ? 
-          { facingMode: "environment" } : 
-          true,
+        video: { facingMode: "environment" },
         audio: false 
       };
       
@@ -179,27 +174,19 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     } catch (error) {
       console.error('Error accessing camera:', error);
       
-      // If first attempt fails with environment mode, try again with default
-      if (hasEnvironmentCamera === true && !isWindowsOS()) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: true,
-            audio: false 
-          });
-          
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            setIsCameraActive(true);
-          }
-        } catch (fallbackError) {
-          console.error('Error accessing camera (fallback):', fallbackError);
-          toast({
-            title: 'Camera Error',
-            description: 'Could not access your camera. Please check permissions.',
-            variant: 'destructive',
-          });
+      // If environment camera fails, try with default camera
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true,
+          audio: false 
+        });
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          setIsCameraActive(true);
         }
-      } else {
+      } catch (fallbackError) {
+        console.error('Error accessing camera (fallback):', fallbackError);
         toast({
           title: 'Camera Error',
           description: 'Could not access your camera. Please check permissions.',
