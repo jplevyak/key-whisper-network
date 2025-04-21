@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,10 +29,32 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const { addContact, generateContactKey } = useContacts();
   const { toast } = useToast();
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [hasEnvironmentCamera, setHasEnvironmentCamera] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (isOpen && !name) {
       setName(haikunator.haikunate());
+    }
+  }, [isOpen]);
+
+  // Check for available camera modes
+  useEffect(() => {
+    const checkCameraCapabilities = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        // We can't directly check if a camera supports "environment" mode
+        // But if there are multiple cameras, we assume one is environment-facing
+        setHasEnvironmentCamera(videoDevices.length > 1);
+      } catch (error) {
+        console.error('Error checking camera capabilities:', error);
+        setHasEnvironmentCamera(false);
+      }
+    };
+
+    if (isOpen) {
+      checkCameraCapabilities();
     }
   }, [isOpen]);
 
@@ -75,10 +98,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       return;
     }
 
-    if (!scannedKey) {
+    if (!scannedKey && !generatedKey) {
       toast({
         title: 'Missing Key',
-        description: "Please scan your contact's QR code first",
+        description: "Please scan your contact's QR code or generate a key",
         variant: 'destructive',
       });
       return;
@@ -93,7 +116,8 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       return;
     }
 
-    const success = await addContact(name, capturedImage, scannedKey);
+    const keyToUse = scannedKey || generatedKey;
+    const success = await addContact(name, capturedImage, keyToUse);
     if (success) {
       resetForm();
       onClose();
@@ -139,21 +163,55 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     try {
       if (!videoRef.current) return;
       
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment" },
+      // If we don't know about camera capabilities yet, or we know there's no environment camera,
+      // or we're on Windows (which often has issues with environment mode)
+      const constraints = {
+        video: hasEnvironmentCamera === true && !isWindowsOS() ? 
+          { facingMode: "environment" } : 
+          true,
         audio: false 
-      });
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       videoRef.current.srcObject = stream;
       setIsCameraActive(true);
     } catch (error) {
       console.error('Error accessing camera:', error);
-      toast({
-        title: 'Camera Error',
-        description: 'Could not access your camera. Please check permissions.',
-        variant: 'destructive',
-      });
+      
+      // If first attempt fails with environment mode, try again with default
+      if (hasEnvironmentCamera === true && !isWindowsOS()) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true,
+            audio: false 
+          });
+          
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            setIsCameraActive(true);
+          }
+        } catch (fallbackError) {
+          console.error('Error accessing camera (fallback):', fallbackError);
+          toast({
+            title: 'Camera Error',
+            description: 'Could not access your camera. Please check permissions.',
+            variant: 'destructive',
+          });
+        }
+      } else {
+        toast({
+          title: 'Camera Error',
+          description: 'Could not access your camera. Please check permissions.',
+          variant: 'destructive',
+        });
+      }
     }
+  };
+
+  // Helper to detect Windows OS
+  const isWindowsOS = () => {
+    return navigator.userAgent.indexOf("Win") !== -1;
   };
 
   const stopCamera = () => {
@@ -288,9 +346,9 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
             </Button>
           </div>
           
-          {scannedKey && (
+          {(scannedKey || generatedKey) && (
             <div className="p-3 bg-success/20 text-success rounded-md text-sm">
-              Key successfully scanned! Ready to create contact.
+              Key successfully {scannedKey ? 'scanned' : 'generated'}! Ready to create contact.
             </div>
           )}
         </div>
@@ -299,7 +357,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleCreateContact} disabled={!name || !scannedKey || !capturedImage}>
+          <Button 
+            onClick={handleCreateContact} 
+            disabled={!name || (!scannedKey && !generatedKey) || !capturedImage}
+          >
             Create Contact
           </Button>
         </DialogFooter>
