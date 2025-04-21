@@ -30,7 +30,7 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
         } else {
           toast({
             title: 'No Camera Found',
-            description: 'Please ensure your device has a camera and you've granted permission.',
+            description: 'Please ensure your device has a camera and you have granted permission.',
             variant: 'destructive',
           });
         }
