@@ -110,7 +110,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       if (!videoRef.current) return;
       
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' },
+        video: { facingMode: "environment" }, // Use back camera
         audio: false 
       });
       

@@ -25,8 +25,14 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
     Html5Qrcode.getCameras()
       .then((devices) => {
         if (devices && devices.length) {
+          // Try to find back camera
+          const backCamera = devices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear')
+          );
+          // Use back camera if found, otherwise use first available camera
+          setCameraId(backCamera ? backCamera.id : devices[0].id);
           setCameras(devices);
-          setCameraId(devices[0].id);
         } else {
           toast({
             title: 'No Camera Found',
