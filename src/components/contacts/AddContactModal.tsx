@@ -1,14 +1,14 @@
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
-import { Camera, CameraOff } from 'lucide-react';
+import { Camera, CameraOff, X } from 'lucide-react';
 import QRCodeScanner from './QRCodeScanner';
 import QRCodeGenerator from './QRCodeGenerator';
+import Haikunator from 'haikunator';
 
 interface AddContactModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ interface AddContactModalProps {
 }
 
 const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
+  const haikunator = new Haikunator();
   const [name, setName] = useState('');
   const [showScanner, setShowScanner] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -27,6 +28,12 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const { addContact, generateContactKey } = useContacts();
   const { toast } = useToast();
   const [isCameraActive, setIsCameraActive] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && !name) {
+      setName(haikunator.haikunate());
+    }
+  }, [isOpen]);
 
   const captureImage = () => {
     if (!videoRef.current || !canvasRef.current) return '';
@@ -204,12 +211,24 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="name">Contact Label</Label>
-            <Input
-              id="name"
-              placeholder="Enter a label for this contact"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="relative">
+              <Input
+                id="name"
+                placeholder="Enter a label for this contact"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="pr-8"
+              />
+              {name && (
+                <button
+                  type="button"
+                  onClick={() => setName('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded-sm"
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
           </div>
           
           <div className="space-y-2">
