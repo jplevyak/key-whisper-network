@@ -86,6 +86,11 @@ export const useCamera = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
+    // Make sure video is ready
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+      return '';
+    }
+    
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
