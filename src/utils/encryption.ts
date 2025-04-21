@@ -106,6 +106,11 @@ export const base64ToArrayBuffer = (base64: string): Uint8Array => {
   return bytes;
 };
 
+// Define WebAuthn types to match the expected types
+type AuthenticatorTransport = 'usb' | 'nfc' | 'ble' | 'internal';
+type AttestationConveyancePreference = 'none' | 'indirect' | 'direct' | 'enterprise';
+type UserVerificationRequirement = 'required' | 'preferred' | 'discouraged';
+
 // Generate a new passkey
 export const createPasskey = async (username: string): Promise<boolean> => {
   try {
@@ -119,8 +124,8 @@ export const createPasskey = async (username: string): Promise<boolean> => {
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
 
-    // Create the publicKey options
-    const publicKeyOptions = {
+    // Create the publicKey options with correct types
+    const publicKeyOptions: PublicKeyCredentialCreationOptions = {
       challenge: window.crypto.getRandomValues(new Uint8Array(32)),
       rp: {
         name: "KeyWhisper",
@@ -137,11 +142,11 @@ export const createPasskey = async (username: string): Promise<boolean> => {
       ],
       authenticatorSelection: {
         authenticatorAttachment: "platform",
-        userVerification: "preferred",
+        userVerification: "preferred" as UserVerificationRequirement,
         requireResidentKey: true,
       },
       timeout: 60000,
-      attestation: "none",
+      attestation: "none" as AttestationConveyancePreference,
     };
 
     // @ts-ignore - TypeScript doesn't recognize the navigator.credentials.create method
@@ -172,19 +177,19 @@ export const verifyPasskey = async (): Promise<boolean> => {
       return false;
     }
 
-    // Create the publicKey options for authentication
-    const publicKeyOptions = {
+    // Create the publicKey options for authentication with correct types
+    const publicKeyOptions: PublicKeyCredentialRequestOptions = {
       challenge: window.crypto.getRandomValues(new Uint8Array(32)),
       rpId: window.location.hostname,
       allowCredentials: [
         {
           type: "public-key",
           id: base64ToArrayBuffer(credentialId),
-          transports: ["internal"],
+          transports: ["internal"] as AuthenticatorTransport[],
         },
       ],
       timeout: 60000,
-      userVerification: "preferred",
+      userVerification: "preferred" as UserVerificationRequirement,
     };
 
     // @ts-ignore - TypeScript doesn't recognize the navigator.credentials.get method
