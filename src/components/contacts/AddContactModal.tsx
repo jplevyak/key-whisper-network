@@ -48,17 +48,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
       return;
     }
 
-    if (!capturedImage) {
-      toast({
-        title: 'Missing Photo',
-        description: 'Please take a photo for your contact',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     const keyToUse = scannedKey || generatedKey;
-    const success = await addContact(name, capturedImage, keyToUse);
+    // Use capturedImage if available, otherwise pass an empty string or a default placeholder indicator
+    const imageToUse = capturedImage || ''; 
+    const success = await addContact(name, imageToUse, keyToUse);
     if (success) {
       resetForm();
       onClose();
@@ -121,7 +114,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           </Button>
           <Button 
             onClick={handleCreateContact} 
-            disabled={!name || (!scannedKey && !generatedKey) || !capturedImage}
+            disabled={!name || (!scannedKey && !generatedKey)}
           >
             Create Contact
           </Button>
