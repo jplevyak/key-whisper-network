@@ -151,7 +151,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
       </DialogContent>
     </Dialog>
 
-    {/* Confirmation Dialog for Key Change */}
     <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
