@@ -53,15 +53,14 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
 
   // Load messages from IndexedDB on init
   useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        const storedMessages = await db.get('messages', 'all');
-        if (storedMessages) {
-          const decryptedData = mockDecryptFromStorage(storedMessages);
-          setMessages(JSON.parse(decryptedData));
-        }
-      } catch (error) {
-        console.error('Error loading messages:', error);
+   const loadMessages = async () => {
+     try {
+       const loadedMessages = await loadMessagesFromStorage();
+       if (loadedMessages) {
+         setMessages(loadedMessages);
+       }
+     } catch (error) {
+       console.error('Error loading messages:', error);
         toast({
           title: 'Error',
           description: 'Could not load your messages',
@@ -73,15 +72,13 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     loadMessages();
   }, [toast]);
 
-  // Save messages to IndexedDB whenever they change
-  useEffect(() => {
-    if (Object.keys(messages).length > 0) {
-      const saveMessages = async () => {
-        const encryptedData = mockEncryptForStorage(JSON.stringify(messages));
-        await db.set('messages', 'all', encryptedData);
-      };
-      saveMessages();
-    }
+ // Save messages to IndexedDB whenever they change
+ useEffect(() => {
+   // No need to check length here, saveMessagesToStorage handles empty state
+   saveMessagesToStorage(messages).catch(error => {
+     console.error("Failed to save messages to storage:", error);
+     // Optionally show a toast here
+   });
  }, [messages]);
 
  // Use the message polling hook
