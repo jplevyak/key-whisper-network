@@ -181,6 +181,11 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     setContacts(prev => prev.map(contact => 
       contact.id === contactId ? { ...contact, ...updates } : contact
     ));
+
+    // If the updated contact is the active one, update the activeContact state too
+    if (activeContact && activeContact.id === contactId) {
+      setActiveContact(prev => prev ? { ...prev, ...updates } : null);
+    }
   };
 
   return (
