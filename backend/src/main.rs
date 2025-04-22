@@ -31,10 +31,12 @@ struct MessageRecord {
     timestamp: DateTime<Utc>,
 }
 
+// Modified FoundMessage to include the timestamp
 #[derive(Serialize)]
 struct FoundMessage {
-    message_id: String, // Hex encoded SHA256
-    message: String,    // Base64 encoded
+    message_id: String,       // Hex encoded SHA256
+    message: String,          // Base64 encoded
+    timestamp: DateTime<Utc>, // Added timestamp
 }
 
 #[derive(Serialize)]
@@ -46,7 +48,7 @@ struct GetMessagesResponse {
 
 type SharedState = Arc<Keyspace>;
 
-// --- Error Handling ---
+// --- Error Handling (No changes from previous AppError) ---
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -62,12 +64,9 @@ enum AppError {
     InvalidInput(String),
 }
 
-// Implement IntoResponse for AppError to convert errors into HTTP responses
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        // Log the error for debugging
         error!("Error processing request: {:?}", self);
-
         let (status, message) = match self {
             AppError::Fjall(_) | AppError::SerdeJson(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -83,138 +82,140 @@ impl IntoResponse for AppError {
             ),
             AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
         };
-
         (status, message).into_response()
     }
 }
 
 // --- Axum Handlers ---
 
+// put_message_handler remains the same as before
 async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    // 1. Decode Hex Message ID to bytes (Fjall uses byte slices as keys)
     let key_bytes = hex::decode(&payload.message_id)?;
-
-    // Basic validation (ensure it's 32 bytes for SHA256)
     if key_bytes.len() != 32 {
         return Err(AppError::InvalidInput(
             "message_id must be a 32-byte SHA256 hash (64 hex characters)".to_string(),
         ));
     }
-
-    // 2. Basic Base64 validation (optional, but good practice)
-    // We don't strictly need to decode it here unless we want to validate content
     if BASE64_STANDARD.decode(&payload.message).is_err() {
         return Err(AppError::InvalidInput(
             "Invalid base64 encoding for message".to_string(),
         ));
     }
-
-    // 3. Prepare record
     let record = MessageRecord {
         message_base64: payload.message,
         timestamp: Utc::now(),
     };
-
-    // 4. Serialize record to bytes (using JSON for simplicity here, bincode recommended for prod)
     let value_bytes = serde_json::to_vec(&record)?;
-
-    // 5. Open the partition (table/bucket)
-    // Caching this partition handle might be more efficient in a real app
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-
-    // 6. Insert into Fjall
     messages_partition.insert(&key_bytes, value_bytes)?;
-
-    // 7. Persist (optional, choose desired durability)
-    // Default only flushes to OS buffer. Use PersistMode::Sync for disk durability.
-    // keyspace.persist(PersistMode::BufferAsync)?; // Example
-
-    Ok(StatusCode::CREATED) // Or StatusCode::OK if updates are allowed
+    // Optionally persist explicitly
+    // keyspace.persist(PersistMode::BufferAsync)?;
+    Ok(StatusCode::CREATED)
 }
 
+// Modified get_messages_handler for transactional read-then-delete
 async fn get_messages_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
 ) -> Result<Json<GetMessagesResponse>, AppError> {
+    // Open the partition handle needed for operations inside the transaction
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+
+    // Perform the get-and-delete operations within a single transaction
+    // The transaction function takes a closure. If the closure returns Ok,
+    // the transaction is committed. If it returns Err, it's rolled back.
+    let mut write_tx = keyspace.write_tx();
     let mut results = Vec::new();
 
-    for hex_id in payload.message_ids {
-        match hex::decode(&hex_id) {
+    for hex_id in &payload.message_ids {
+        // Iterate over borrows
+        match hex::decode(hex_id) {
             Ok(key_bytes) => {
-                // Skip invalid length keys silently, or return error
                 if key_bytes.len() != 32 {
+                    // Skip invalid length keys
+                    tracing::warn!("Skipping invalid length key: {}", hex_id);
                     continue;
                 }
 
-                match messages_partition.get(&key_bytes)? {
+                // Attempt to get the message within the transaction
+                match write_tx.get(&results, &key_bytes)? {
+                    // Pass partition handle
                     Some(value_ivec) => {
-                        // Found the key, deserialize value
+                        // Found: Deserialize
                         match serde_json::from_slice::<MessageRecord>(&value_ivec) {
                             Ok(record) => {
+                                // Add to results list
                                 results.push(FoundMessage {
-                                    message_id: hex_id, // Use original hex string
+                                    message_id: hex_id.clone(), // Clone hex string for result
                                     message: record.message_base64,
+                                    timestamp: record.timestamp, // Include timestamp
                                 });
+
+                                // Successfully retrieved and deserialized, now remove within the same transaction
+                                write_tx.remove(&messages_partition, key_bytes)?;
+                                // Pass partition handle
                             }
                             Err(e) => {
-                                // Log data corruption error but continue?
+                                // Deserialization error - potentially corrupt data.
+                                // Fail the entire transaction to avoid inconsistent state.
                                 error!("Failed to deserialize record for key {}: {}", hex_id, e);
-                                // Optionally return an error for the whole request here
+                                // Convert serde error to fjall::Error or a custom transaction error
+                                // For simplicity, let's return a generic IO error kind
+                                return Err(AppError::Fjall(fjall::Error::Io(
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!("Deserialization failed for key {}", hex_id),
+                                    ),
+                                )));
                             }
                         }
                     }
                     None => {
-                        // Key not found, simply skip it
+                        // Key not found, do nothing
                     }
                 }
             }
             Err(_) => {
-                // Skip invalid hex IDs silently, or return error
+                // Skip invalid hex IDs
+                tracing::warn!("Skipping invalid hex key: {}", hex_id);
                 continue;
             }
         }
     }
 
+    write_tx.commit()?;
+    // If all operations succeeded, return the collected messages from the closure
     Ok(Json(GetMessagesResponse { results }))
 }
 
-// --- Main Application Setup ---
+// --- Main Application Setup (No changes from previous) ---
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Setup tracing/logging
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // Configure and open Fjall Keyspace
-    let db_path = Path::new("./message_db"); // Make this configurable
-    std::fs::create_dir_all(db_path)?; // Ensure directory exists
-    let keyspace = Config::new(db_path).open()?;
+    let db_path = Path::new("./message_db");
+    std::fs::create_dir_all(db_path)?;
+    let keyspace = Config::new(db_path).open_transactional()?;
 
-    // Create shared state
     let shared_state = Arc::new(keyspace);
 
-    // Build Axum router
     let app = Router::new()
         .route("/put-message", post(put_message_handler))
         .route("/get-messages", post(get_messages_handler))
-        .with_state(shared_state); // Provide the shared state to handlers
+        .with_state(shared_state);
 
-    // Define server address
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000)); // Make this configurable
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("Listening on {}", addr);
 
-    // Create TCP listener
     let listener = tokio::net::TcpListener::bind(addr).await?;
-
-    // Run the Axum server
     axum::serve(listener, app.into_make_service()).await?;
 
     Ok(())
