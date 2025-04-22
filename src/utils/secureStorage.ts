@@ -19,7 +19,7 @@ export class SecureStorage {
         name: 'AES-GCM',
         length: 256,
       },
-      true, // Make key extractable to allow export
+      false, // Make key extractable to allow export
       ['encrypt', 'decrypt']
     );
 
@@ -37,7 +37,7 @@ export class SecureStorage {
         'jwk',
         JSON.parse(keyData),
         { name: 'AES-GCM', length: 256 },
-        true, // Make imported key extractable
+        false, // Make imported key extractable
         ['encrypt', 'decrypt']
       );
     } catch (error) {
