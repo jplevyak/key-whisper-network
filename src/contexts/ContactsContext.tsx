@@ -109,12 +109,11 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         id: `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name,
         avatar,
-        keyId,
-        lastActive: new Date().toISOString(),
-        transportMethods: ['server', 'qr'], // Default methods
-      };
+       keyId,
+       lastActive: new Date().toISOString()
+     };
       
-      setContacts(prev => [...prev, newContact]);
+     setContacts(prev => [...prev, newContact]);
       
       toast({
         title: 'Contact Added',
