@@ -113,15 +113,25 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       // Encrypt the message content (assuming encryptMessage returns base64)
       const encryptedContentBase64 = await encryptMessage(content, key);
 
-      // --- Send to backend ---
-      try {
-        // Calculate SHA-256 hash of the encrypted content
-        const encryptedContentBuffer = base64ToArrayBuffer(encryptedContentBase64);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', encryptedContentBuffer);
-        const messageHashHex = bufferToHex(hashBuffer);
+     // --- Send to backend ---
+     try {
+       // Find the contact to check userGeneratedKey
+       const contact = contacts.find(c => c.id === contactId);
+       if (!contact) {
+         throw new Error(`Contact with ID ${contactId} not found.`);
+       }
 
-        // Send hash and encrypted content to the backend
-        const response = await fetch('/api/put-message', {
+       // Determine the plaintext ID based on who generated the key
+       const idPlainText = contact.userGeneratedKey
+         ? "sending to key receiver"
+         : "sending to key generator";
+
+       // Encrypt the plaintext ID using the shared key
+       const encryptedIdBase64 = await encryptMessage(idPlainText, key);
+
+
+       // Send encrypted ID and encrypted message content to the backend
+       const response = await fetch('/api/put-message', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
