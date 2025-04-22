@@ -91,11 +91,11 @@ const ChatInterface = () => {
       </div>
     );
   }
-  
+
   return (
-    <div className={`flex flex-col h-full`}>
-      {/* Chat header - fixed */}
-      <div className="p-4 border-b flex items-center justify-between bg-muted/30 sticky top-0 z-10">
+    <div className="h-full flex flex-col">
+      {/* Fixed Chat Header */}
+      <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
         <div 
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
           onClick={() => activeContact && setShowProfile(true)}
@@ -113,9 +113,9 @@ const ChatInterface = () => {
         </div>
       </div>
       
-      {/* Messages area with ScrollArea - scrollable */}
-      <ScrollArea className="flex-1 px-4 py-2">
-        <div className="min-h-full flex flex-col justify-end">
+      {/* Scrollable Messages Area */}
+      <ScrollArea className="flex-1">
+        <div className="min-h-full flex flex-col justify-end px-4 py-2">
           {activeMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No messages yet</p>
@@ -136,8 +136,8 @@ const ChatInterface = () => {
         </div>
       </ScrollArea>
       
-      {/* Message input - fixed at bottom */}
-      <div className="p-4 border-t bg-background sticky bottom-0 z-10">
+      {/* Fixed Message Input */}
+      <div className="p-4 border-t bg-background z-10 shrink-0">
         <form onSubmit={handleSendMessage} className="flex space-x-2">
           <Input
             value={newMessage}
@@ -151,7 +151,7 @@ const ChatInterface = () => {
         </form>
       </div>
       
-      {/* Forward message dialog */}
+      {/* Dialogs */}
       {isForwarding && selectedMessage && (
         <ForwardMessageDialog
           message={selectedMessage}
@@ -163,7 +163,6 @@ const ChatInterface = () => {
         />
       )}
 
-      {/* Contact Profile Dialog */}
       {activeContact && (
         <ContactProfile
           contact={activeContact}
