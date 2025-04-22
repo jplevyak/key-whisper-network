@@ -147,7 +147,7 @@ async fn get_messages_handler(
                 match write_tx.get(&messages_partition, &key_bytes)? {
                     Some(value_ivec) => {
                         // Found: Deserialize (IVec derefs to &[u8])
-                        match serde_json::from_slice::<MessageRecord>(&value_ivec) {
+                        match serde_json::from_slice::<MessageRecord>(value_ivec) { // Pass IVec directly
                             Ok(record) => {
                                 // Add to results list
                                 results.push(FoundMessage {
