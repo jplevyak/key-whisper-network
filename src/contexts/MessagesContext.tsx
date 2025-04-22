@@ -171,12 +171,15 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         return {
           ...prev,
           [contactId]: [...contactMessages, newMessage],
-        };
-      });
+       };
+     });
 
-      return true;
-    } catch (error) {
-      console.error('Error sending message:', error);
+     // Trigger fetch after sending successfully (or even if backend failed, to sync state)
+     triggerFetch(); // Call the function returned by the hook
+
+     return true;
+   } catch (error) {
+     console.error('Error sending message:', error);
       toast({
         title: 'Error',
         description: 'Could not send message',
