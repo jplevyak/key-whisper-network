@@ -146,7 +146,7 @@ async fn get_messages_handler(
                 // Attempt to get the message within the transaction using the partition handle
                 match write_tx.get(&messages_partition, &key_bytes)? {
                     Some(value_ivec) => {
-                        // Found: Deserialize
+                        // Found: Deserialize (IVec derefs to &[u8])
                         match serde_json::from_slice::<MessageRecord>(&value_ivec) {
                             Ok(record) => {
                                 // Add to results list
