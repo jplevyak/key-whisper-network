@@ -157,8 +157,8 @@ async fn get_messages_handler(
                                 });
 
                                 // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
-                                // Propagate error if remove fails
-                                write_tx.remove(&messages_partition, &key_bytes)?;
+                                // Errors during remove will be caught by commit()
+                                write_tx.remove(&messages_partition, &key_bytes);
                             }
                             Err(e) => {
                                 // Deserialization error - potentially corrupt data.
