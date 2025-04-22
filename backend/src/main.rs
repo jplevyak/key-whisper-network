@@ -129,6 +129,7 @@ async fn get_messages_handler(
     // Perform the get-and-delete operations within a single transaction
     // The transaction function takes a closure. If the closure returns Ok,
     // the transaction is committed. If it returns Err, it's rolled back.
+    // Dereference the Arc<Keyspace> to call the method on Keyspace
     let mut write_tx = keyspace.write_tx();
     let mut results = Vec::new();
 
@@ -142,9 +143,8 @@ async fn get_messages_handler(
                     continue;
                 }
 
-                // Attempt to get the message within the transaction
-                match write_tx.get(&results, &key_bytes)? {
-                    // Pass partition handle
+                // Attempt to get the message within the transaction using the partition handle
+                match write_tx.get(&messages_partition, &key_bytes)? {
                     Some(value_ivec) => {
                         // Found: Deserialize
                         match serde_json::from_slice::<MessageRecord>(&value_ivec) {
@@ -156,9 +156,8 @@ async fn get_messages_handler(
                                     timestamp: record.timestamp, // Include timestamp
                                 });
 
-                                // Successfully retrieved and deserialized, now remove within the same transaction
-                                write_tx.remove(&messages_partition, key_bytes)?;
-                                // Pass partition handle
+                                // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
+                                write_tx.remove(&messages_partition, &key_bytes)?;
                             }
                             Err(e) => {
                                 // Deserialization error - potentially corrupt data.
