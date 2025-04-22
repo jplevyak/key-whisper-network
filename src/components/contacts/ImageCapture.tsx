@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Camera, CameraOff } from 'lucide-react';
 import { useCamera } from '@/hooks/useCamera';
 import CameraDeviceSelector from './CameraDeviceSelector';
@@ -11,6 +11,14 @@ interface ImageCaptureProps {
 }
 
 const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
+  // Create a local state to immediately show the captured image
+  const [localImage, setLocalImage] = useState<string>(capturedImage);
+
+  // Update local image when capturedImage changes (for initial load and external updates)
+  useEffect(() => {
+    setLocalImage(capturedImage);
+  }, [capturedImage]);
+
   const {
     isCameraActive,
     videoRef,
@@ -25,7 +33,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
   } = useCamera();
 
   // Check if the image is a placeholder
-  const isPlaceholder = !capturedImage || capturedImage.includes('placeholder.svg');
+  const isPlaceholder = !localImage || localImage.includes('placeholder.svg');
 
   // Clean up camera when component unmounts
   useEffect(() => {
@@ -45,6 +53,9 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     if (isCameraActive) {
       const image = captureImage();
       if (image) {
+        // Update local state immediately for UI refresh
+        setLocalImage(image);
+        // Pass up to parent component for storage
         onImageCapture(image);
         stopCamera();
       }
@@ -54,7 +65,10 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
   };
 
   const handleRetakeClick = () => {
-    onImageCapture(''); // Clear the current image
+    // Clear both local and parent state
+    setLocalImage('');
+    onImageCapture(''); 
+    
     // Need to add a small delay to ensure state is updated before starting camera
     setTimeout(() => {
       startCamera(); // Start the camera after clearing the image
@@ -69,7 +83,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
       >
         {!isPlaceholder ? (
           <img 
-            src={capturedImage} 
+            src={localImage} 
             alt="Contact" 
             className="w-full h-full object-cover"
           />
