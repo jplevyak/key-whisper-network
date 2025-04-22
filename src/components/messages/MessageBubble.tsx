@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Message, useMessages } from '@/contexts/MessagesContext';
 import { useContacts } from '@/contexts/ContactsContext';
 import { formatDistanceToNow } from 'date-fns';
+import { Check, MessageSquare, MessageSquareCheck } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: Message;
@@ -71,10 +72,15 @@ const MessageBubble = ({ message, onForward }: MessageBubbleProps) => {
           </div>
           
           {isSent && (
-            <div className={`text-xs ${
+            <div className={`text-xs flex items-center gap-1 ${
               isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
             }`}>
-              {message.read ? 'Read' : 'Sent'}
+              {message.read ? (
+                <MessageSquareCheck className="h-3 w-3" />
+              ) : (
+                <MessageSquare className="h-3 w-3" />
+              )}
+              <span>{message.read ? 'Read' : 'Sent'}</span>
             </div>
           )}
         </div>

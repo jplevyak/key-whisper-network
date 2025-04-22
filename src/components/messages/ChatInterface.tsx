@@ -115,15 +115,15 @@ const ChatInterface = () => {
       </div>
       
       {/* Messages area with ScrollArea */}
-      <ScrollArea className="flex-1 px-4 py-2">
-        <div className={`flex flex-col justify-end min-h-full ${isMobile ? 'min-h-[calc(100vh-var(--header-height,4rem)-var(--input-height,4rem))]' : ''}`}>
+      <ScrollArea className="flex-1 px-4 py-2 flex flex-col">
+        <div className="flex flex-col flex-grow justify-end h-full min-h-[300px]">
           {activeMessages.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="text-center py-8 text-muted-foreground mt-auto">
               <p>No messages yet</p>
               <p className="text-sm">Start your secure conversation</p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 mt-auto">
               {activeMessages.map((message) => (
                 <MessageBubble 
                   key={message.id}
