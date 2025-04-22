@@ -1,7 +1,9 @@
-
 // A utility for encrypting/decrypting data with a non-extractable key
 export class SecureStorage {
   private encryptionKey: CryptoKey | null = null;
+  private readonly DB_NAME = 'secure_storage';
+  private readonly STORE_NAME = 'keys';
+  private readonly KEY_ID = 'main_key';
 
   async init(): Promise<void> {
     if (this.encryptionKey) return;
@@ -13,48 +15,70 @@ export class SecureStorage {
       return;
     }
 
-    // Generate new key - making it extractable to fix the export error
+    // Generate new key if none exists
     this.encryptionKey = await crypto.subtle.generateKey(
       {
         name: 'AES-GCM',
         length: 256,
       },
-      false, // Make key extractable to allow export
+      false, // Key is not extractable
       ['encrypt', 'decrypt']
     );
 
-    // Store key securely
+    // Store key in IndexedDB
     await this.storeKey(this.encryptionKey);
   }
 
   private async getStoredKey(): Promise<CryptoKey | null> {
-    try {
-      const keyData = localStorage.getItem('storage_key');
-      if (!keyData) return null;
+    return new Promise((resolve) => {
+      const request = indexedDB.open(this.DB_NAME, 1);
 
-      // Convert stored key data back to CryptoKey - make sure it's extractable
-      return await crypto.subtle.importKey(
-        'jwk',
-        JSON.parse(keyData),
-        { name: 'AES-GCM', length: 256 },
-        false, // Make imported key extractable
-        ['encrypt', 'decrypt']
-      );
-    } catch (error) {
-      console.error('Error retrieving storage key:', error);
-      return null;
-    }
+      request.onerror = () => {
+        console.error('Error opening IndexedDB');
+        resolve(null);
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+          db.createObjectStore(this.STORE_NAME);
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction(this.STORE_NAME, 'readonly');
+        const store = transaction.objectStore(this.STORE_NAME);
+        const keyRequest = store.get(this.KEY_ID);
+
+        keyRequest.onerror = () => {
+          console.error('Error retrieving key from IndexedDB');
+          resolve(null);
+        };
+
+        keyRequest.onsuccess = () => {
+          resolve(keyRequest.result || null);
+        };
+      };
+    });
   }
 
   private async storeKey(key: CryptoKey): Promise<void> {
-    try {
-      // Export key as JWK for storage
-      const exportedKey = await crypto.subtle.exportKey('jwk', key);
-      localStorage.setItem('storage_key', JSON.stringify(exportedKey));
-    } catch (error) {
-      console.error('Error storing key:', error);
-      throw new Error('Failed to store encryption key');
-    }
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.DB_NAME, 1);
+
+      request.onerror = () => reject(new Error('Failed to open IndexedDB'));
+
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction(this.STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(this.STORE_NAME);
+        const keyRequest = store.put(key, this.KEY_ID);
+
+        keyRequest.onerror = () => reject(new Error('Failed to store key in IndexedDB'));
+        keyRequest.onsuccess = () => resolve();
+      };
+    });
   }
 
   async encrypt(data: string): Promise<string> {
