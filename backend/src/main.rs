@@ -157,20 +157,16 @@ async fn get_messages_handler(
                                 });
 
                                 // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
-                                write_tx.remove(&messages_partition, &key_bytes);
+                                // Propagate error if remove fails
+                                write_tx.remove(&messages_partition, &key_bytes)?;
                             }
                             Err(e) => {
                                 // Deserialization error - potentially corrupt data.
                                 // Fail the entire transaction to avoid inconsistent state.
                                 error!("Failed to deserialize record for key {}: {}", hex_id, e);
-                                // Convert serde error to fjall::Error or a custom transaction error
-                                // For simplicity, let's return a generic IO error kind
-                                return Err(AppError::Fjall(fjall::Error::Io(
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        format!("Deserialization failed for key {}", hex_id),
-                                    ),
-                                )));
+                                // Return the specific SerdeJson error, wrapped in AppError.
+                                // This will cause the transaction closure to return Err, triggering a rollback.
+                                return Err(AppError::SerdeJson(e));
                             }
                         }
                     }
