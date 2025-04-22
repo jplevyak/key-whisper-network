@@ -144,12 +144,13 @@ export const useMessagePolling = ({
        if (newMessagesAdded) {
          toast({ title: "New Messages", description: "You have received new messages." });
        }
-        }
+        } // <-- Closing brace for 'if (data.results.length > 0)'
+       // Brace for 'try' block removed from here
       } else {
         console.log('No new messages received from server.');
       }
-
-    } catch (error) {
+    } // <-- Closing brace for 'try' block inserted here
+    catch (error) {
       console.error('Failed to fetch messages from server:', error);
     } finally {
       isFetchingRef.current = false;
