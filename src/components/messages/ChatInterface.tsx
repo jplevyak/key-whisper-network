@@ -28,9 +28,10 @@ const ChatInterface = () => {
   useEffect(() => {
     if (activeContact) {
       activeMessages
-        .filter(msg => !msg.sent && !msg.read)
-        .forEach(msg => {
-          markAsRead(activeContact.id, msg.id);
+       .filter(msg => !msg.sent && !msg.read)
+       .forEach(msg => {
+         markAsRead(activeContact.id, msg.id);
+       }); // <-- Added missing closing parenthesis and semicolon
    }
    // Trigger fetch when active contact changes
    if (activeContact) {
