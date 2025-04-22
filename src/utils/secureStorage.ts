@@ -13,13 +13,13 @@ export class SecureStorage {
       return;
     }
 
-    // Generate new non-extractable key
+    // Generate new key - making it extractable to fix the export error
     this.encryptionKey = await crypto.subtle.generateKey(
       {
         name: 'AES-GCM',
         length: 256,
       },
-      false, // Make key non-extractable
+      true, // Make key extractable to allow export
       ['encrypt', 'decrypt']
     );
 
@@ -32,12 +32,12 @@ export class SecureStorage {
       const keyData = localStorage.getItem('storage_key');
       if (!keyData) return null;
 
-      // Convert stored key data back to CryptoKey
+      // Convert stored key data back to CryptoKey - make sure it's extractable
       return await crypto.subtle.importKey(
         'jwk',
         JSON.parse(keyData),
         { name: 'AES-GCM', length: 256 },
-        false,
+        true, // Make imported key extractable
         ['encrypt', 'decrypt']
       );
     } catch (error) {

@@ -13,6 +13,14 @@ interface QRCodeGeneratorProps {
 }
 
 const QRCodeGenerator = ({ data, title, description, onClose, onAccept }: QRCodeGeneratorProps) => {
+  const handleAccept = () => {
+    try {
+      onAccept(data);
+    } catch (error) {
+      console.error('Error accepting key:', error);
+    }
+  };
+
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
@@ -31,7 +39,7 @@ const QRCodeGenerator = ({ data, title, description, onClose, onAccept }: QRCode
       </CardContent>
       <CardFooter className="flex justify-end space-x-2">
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => onAccept(data)}>Accept</Button>
+        <Button onClick={handleAccept}>Accept</Button>
       </CardFooter>
     </Card>
   );
