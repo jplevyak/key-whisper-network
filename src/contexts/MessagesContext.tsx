@@ -4,8 +4,26 @@ import { encryptMessage, decryptMessage } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
 import { db } from '@/utils/indexedDB';
 
+// Helper function to convert ArrayBuffer to Hex string
+function bufferToHex(buffer: ArrayBuffer): string {
+  return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
+}
+
+// Helper function to convert Base64 string to ArrayBuffer
+// Needed for hashing the encrypted content
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+
 export interface Message {
-  id: string;
+  id: string; // This will be the local message ID, not the server hash
   contactId: string;
   content: string; // Encrypted content
   timestamp: string;
@@ -92,12 +110,49 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         return false;
       }
 
-      // Encrypt the message content
-      const encryptedContent = await encryptMessage(content, key);
+      // Encrypt the message content (assuming encryptMessage returns base64)
+      const encryptedContentBase64 = await encryptMessage(content, key);
 
-      // Create the new message
+      // --- Send to backend ---
+      try {
+        // Calculate SHA-256 hash of the encrypted content
+        const encryptedContentBuffer = base64ToArrayBuffer(encryptedContentBase64);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', encryptedContentBuffer);
+        const messageHashHex = bufferToHex(hashBuffer);
+
+        // Send hash and encrypted content to the backend
+        const response = await fetch('/api/put-message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message_id: messageHashHex,
+            message: encryptedContentBase64,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API error ${response.status}: ${errorText}`);
+        }
+        console.log('Message sent to backend successfully');
+      } catch (apiError) {
+        console.error('Failed to send message to backend:', apiError);
+        toast({
+          title: 'Send Warning',
+          description: 'Message saved locally, but failed to send to the server.',
+          variant: 'destructive', // Or a 'warning' variant if available
+        });
+        // Note: We still proceed to add the message locally even if backend fails
+      }
+      // --- End send to backend ---
+
+
+      // Create the new message for local state
       const newMessage: Message = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        // Use a local unique ID for React keys and local operations
+        id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         contactId,
         content: encryptedContent,
         timestamp: new Date().toISOString(),

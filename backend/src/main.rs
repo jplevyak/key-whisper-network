@@ -203,8 +203,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_state = Arc::new(keyspace);
 
     let app = Router::new()
-        .route("/put-message", post(put_message_handler))
-        .route("/get-messages", post(get_messages_handler))
+        .route("/api/put-message", post(put_message_handler))
+        .route("/api/get-messages", post(get_messages_handler))
         .with_state(shared_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
