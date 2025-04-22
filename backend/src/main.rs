@@ -44,11 +44,11 @@ struct GetMessagesResponse {
     results: Vec<FoundMessage>,
 }
 
-use fjall::{Config, Keyspace, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
-use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc};
-use tracing::error;
+// --- Shared State Type ---
+// Define the type for the shared application state (the transactional keyspace)
+type SharedState = Arc<TransactionalKeyspace>;
 
+// --- Error Handling ---
 #[derive(Debug, thiserror::Error)]
 enum AppError {
     #[error("Fjall DB error: {0}")]
