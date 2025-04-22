@@ -92,17 +92,17 @@ async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    let key_bytes = hex::decode(&payload.message_id)?;
-    if key_bytes.len() != 32 {
-        return Err(AppError::InvalidInput(
-            "message_id must be a 32-byte SHA256 hash (64 hex characters)".to_string(),
-        ));
-    }
+    // Validate that the message content is valid base64
     if BASE64_STANDARD.decode(&payload.message).is_err() {
         return Err(AppError::InvalidInput(
             "Invalid base64 encoding for message".to_string(),
         ));
     }
+
+    // Use the received message_id string directly as the key (as bytes)
+    // No more hex decoding or length validation for message_id
+    let key_bytes = payload.message_id.as_bytes();
+
     let record = MessageRecord {
         message_base64: payload.message,
         timestamp: Utc::now(),
@@ -110,7 +110,8 @@ async fn put_message_handler(
     let value_bytes = serde_json::to_vec(&record)?;
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-    messages_partition.insert(&key_bytes, value_bytes)?;
+    // Insert using the message_id bytes as the key
+    messages_partition.insert(key_bytes, value_bytes)?;
     // Optionally persist explicitly
     // keyspace.persist(PersistMode::BufferAsync)?;
     Ok(StatusCode::CREATED)
