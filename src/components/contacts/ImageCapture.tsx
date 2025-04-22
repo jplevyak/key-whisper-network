@@ -53,11 +53,6 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
     }
   };
 
-  const handleRetakeClick = () => {
-    onImageCapture(''); // Clear the current image
-    startCamera(); // Immediately start the camera
-  };
-
   return (
     <div className="space-y-2">
       <div 
@@ -103,7 +98,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
           variant="outline" 
           type="button" 
           className="w-full mt-2"
-          onClick={handleRetakeClick}
+          onClick={() => startCamera()}
         >
           Retake Photo
         </Button>
