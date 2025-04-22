@@ -79,61 +79,71 @@ export const useMessagePolling = ({
       const data: GetMessagesApiResponse = await response.json();
 
       if (data.results.length > 0) {
-        console.log(`Received ${data.results.length} new messages.`);
-        let newMessagesAdded = false;
+       console.log(`Received ${data.results.length} new messages.`);
+       let newMessagesAdded = false;
 
-        setMessages(prevMessages => {
-          const updatedMessages = { ...prevMessages };
-          let changed = false;
+       const newlyReceivedMessages: Message[] = [];
 
-          for (const receivedMsg of data.results) {
-            const contactId = idToContactMap.get(receivedMsg.message_id);
-            const key = contactId ? contactKeysMap.get(contactId) : null;
+       // Process messages asynchronously first
+       for (const receivedMsg of data.results) {
+         const contactId = idToContactMap.get(receivedMsg.message_id);
+         const key = contactId ? contactKeysMap.get(contactId) : null;
 
-            if (!contactId || !key) {
-              console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
-              continue;
-            }
+         if (!contactId || !key) {
+           console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
+           continue;
+         }
 
-            let decryptedContent: string;
-            try {
-              // We don't actually need the decrypted content here, just need to store the encrypted one.
-              // Decryption happens on demand via getDecryptedContent.
-              // We could optionally try decrypting here to validate the message early.
-               await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
-            } catch (decryptError) {
-              console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
-              // Continue processing even if decryption fails here, store the encrypted message
-            }
+         try {
+           // We could optionally try decrypting here to validate the message early.
+           await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
+         } catch (decryptError) {
+           console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
+           // Continue processing even if decryption fails here, store the encrypted message
+         }
 
-            const newMessage: Message = {
-              id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
-              contactId: contactId,
-              content: receivedMsg.message,
-              timestamp: receivedMsg.timestamp,
-              sent: false,
-              read: false,
-              forwarded: false,
-            };
+         const newMessage: Message = {
+           id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
+           contactId: contactId,
+           content: receivedMsg.message, // Store encrypted content
+           timestamp: receivedMsg.timestamp, // Use server timestamp
+           sent: false, // Mark as received
+           read: false, // Mark as unread initially
+           forwarded: false, // Assume not forwarded initially
+         };
+         newlyReceivedMessages.push(newMessage);
+       }
 
-            const contactMessages = updatedMessages[contactId] || [];
-            const exists = contactMessages.some(
-              m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
-            );
+       // Now update the state synchronously
+       if (newlyReceivedMessages.length > 0) {
+         setMessages(prevMessages => {
+           const updatedMessages = { ...prevMessages };
+           let changed = false;
 
-            if (!exists) {
-              updatedMessages[contactId] = [...contactMessages, newMessage].sort(
-                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-              );
-              changed = true;
-              newMessagesAdded = true;
-            }
-          }
-          return changed ? updatedMessages : prevMessages;
-        });
+           for (const newMessage of newlyReceivedMessages) {
+             const contactId = newMessage.contactId;
+             const contactMessages = updatedMessages[contactId] || [];
+             // Check for duplicates based on content and timestamp before adding
+             const exists = contactMessages.some(
+               m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
+             );
 
-        if (newMessagesAdded) {
-          toast({ title: "New Messages", description: "You have received new messages." });
+             if (!exists) {
+               updatedMessages[contactId] = [...contactMessages, newMessage].sort(
+                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+               );
+               changed = true;
+               newMessagesAdded = true; // Track if any messages were actually added
+             }
+           }
+           // Only return a new object if changes were actually made
+           return changed ? updatedMessages : prevMessages;
+         });
+       }
+
+       if (newMessagesAdded) {
+         toast({ title: "New Messages", description: "You have received new messages." });
+       }
         }
       } else {
         console.log('No new messages received from server.');
