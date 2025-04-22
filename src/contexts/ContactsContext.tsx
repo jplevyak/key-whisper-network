@@ -9,7 +9,6 @@ export interface Contact {
   avatar: string; // base64 image
   keyId: string; // Identifier for the encrypted key
   lastActive?: string; // ISO date string
-  transportMethods: ('server' | 'bluetooth' | 'wifi' | 'qr')[];
 }
 
 interface ContactsContextType {
