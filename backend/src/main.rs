@@ -7,7 +7,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use chrono::{DateTime, Utc};
-use fjall::{Config, Keyspace, PartitionCreateOptions};
+use fjall::{Config, Keyspace, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
 use tracing::error;
@@ -44,11 +44,10 @@ struct GetMessagesResponse {
     results: Vec<FoundMessage>,
 }
 
-// --- Shared State ---
-
-type SharedState = Arc<Keyspace>;
-
-// --- Error Handling (No changes from previous AppError) ---
+use fjall::{Config, Keyspace, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
+use serde::{Deserialize, Serialize};
+use std::{net::SocketAddr, path::Path, sync::Arc};
+use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
