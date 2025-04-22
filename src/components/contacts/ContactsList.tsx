@@ -104,15 +104,9 @@ const ContactItem = ({ contact, isActive, unreadCount, lastMessageTime, onClick 
       }`}
       onClick={onClick}
     >
-      <Avatar className="h-10 w-10 relative">
+      <Avatar className="h-10 w-10">
         <AvatarImage src={contact.avatar} alt={contact.name} />
         <AvatarFallback>{contact.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-        
-        {contact.connected && (
-          <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-success">
-            <span className="animate-pulse-secure absolute inset-0 rounded-full bg-success opacity-75"></span>
-          </div>
-        )}
       </Avatar>
       
       <div className="flex-1 min-w-0">

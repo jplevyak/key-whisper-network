@@ -9,7 +9,6 @@ export interface Contact {
   avatar: string; // base64 image
   keyId: string; // Identifier for the encrypted key
   lastActive?: string; // ISO date string
-  connected: boolean; // Currently online/available
   transportMethods: ('server' | 'bluetooth' | 'wifi' | 'qr')[];
 }
 
@@ -113,7 +112,6 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         avatar,
         keyId,
         lastActive: new Date().toISOString(),
-        connected: false,
         transportMethods: ['server', 'qr'], // Default methods
       };
       

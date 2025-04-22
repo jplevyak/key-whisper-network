@@ -106,9 +106,6 @@ const ChatInterface = () => {
           </Avatar>
           <div>
             <div className="font-medium">{activeContact?.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {activeContact?.connected ? 'Online' : 'Offline'}
-            </div>
           </div>
         </div>
       </div>
