@@ -1,7 +1,12 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogTitle,
+  DialogHeader
+} from '@/components/ui/dialog';
 import { QrCode } from 'lucide-react';
 import QRCodeScanner from '../QRCodeScanner';
 import QRCodeGenerator from '../QRCodeGenerator';
@@ -49,6 +54,9 @@ const QRCodeActions = ({ onScanSuccess, onGenerateKey, variant = 'inline' }: QRC
       {showQRScanner && (
         <Dialog open={showQRScanner} onOpenChange={() => setShowQRScanner(false)}>
           <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Scan QR Code</DialogTitle>
+            </DialogHeader>
             <QRCodeScanner
               onScanSuccess={(keyData) => {
                 onScanSuccess(keyData);
@@ -63,6 +71,9 @@ const QRCodeActions = ({ onScanSuccess, onGenerateKey, variant = 'inline' }: QRC
       {showQRGenerator && (
         <Dialog open={showQRGenerator} onOpenChange={() => setShowQRGenerator(false)}>
           <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New Encryption Key</DialogTitle>
+            </DialogHeader>
             <QRCodeGenerator
               data={qrData}
               title="New Encryption Key"
