@@ -135,12 +135,12 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message_id: messageHashHex,
-            message: encryptedContentBase64,
-          }),
-        });
+         },
+         body: JSON.stringify({
+           message_id: encryptedIdBase64, // Use the encrypted ID string (base64)
+           message: encryptedContentBase64, // Keep the encrypted message content
+         }),
+       });
 
         if (!response.ok) {
           const errorText = await response.text();
