@@ -1,27 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'; // Added useRef, useCallback
 import { Contact, useContacts } from './ContactsContext';
 import { encryptMessage, decryptMessage } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
-import { db } from '@/utils/indexedDB';
+// Import storage service and polling hook
+import { loadMessagesFromStorage, saveMessagesToStorage } from '@/services/messageStorage';
+import { useMessagePolling } from '@/hooks/useMessagePolling';
+// Buffer utils are no longer needed directly in this file
 
-// Helper function to convert ArrayBuffer to Hex string
-function bufferToHex(buffer: ArrayBuffer): string {
-  return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
-}
-
-// Helper function to convert Base64 string to ArrayBuffer
-// Needed for hashing the encrypted content
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-
+// Export the Message interface
 export interface Message {
   id: string; // This will be the local message ID, not the server hash
   contactId: string;
@@ -56,149 +42,13 @@ interface GetMessagesApiResponse {
 
 const MessagesContext = createContext<MessagesContextType | undefined>(undefined);
 
-// Mock encryption for the local storage (in a real app, this would use the passkey-protected key)
-const mockEncryptForStorage = (data: string): string => {
-  return btoa(data);
-};
-
-const mockDecryptFromStorage = (encryptedData: string): string => {
-  return atob(encryptedData);
-};
+// Mock storage functions moved to messageStorage.ts
 
 export const MessagesProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const { getContactKey, contacts } = useContacts();
   const { toast } = useToast();
-  const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store interval ID
-  const isFetchingRef = useRef(false); // Ref to prevent concurrent fetches
-
-
-  // --- Fetch Messages from Server ---
-  const fetchMessagesFromServer = async () => {
-    if (isFetchingRef.current || contacts.length === 0) {
-      console.log('Skipping fetch: already fetching or no contacts.');
-      return;
-    }
-    isFetchingRef.current = true;
-    console.log('Starting message fetch...');
-
-    const requestIds: string[] = [];
-    const idToContactMap: Map<string, string> = new Map(); // Map encrypted request ID -> contactId
-    const contactKeysMap: Map<string, CryptoKey> = new Map(); // Cache keys used for this fetch
-
-    try {
-      // 1. Generate request IDs for all contacts
-      for (const contact of contacts) {
-        const key = await getContactKey(contact.id);
-        if (!key) {
-          console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
-          continue;
-        }
-        contactKeysMap.set(contact.id, key); // Store key for decryption later
-
-        // Determine the *request* plaintext based on INVERTED logic
-        const requestPlainText = contact.userGeneratedKey
-          ? "sending to key generator" // If user generated key, ask for messages sent TO generator
-          : "sending to key receiver";  // If user scanned key, ask for messages sent TO receiver
-
-        const encryptedRequestId = await encryptMessage(requestPlainText, key);
-        requestIds.push(encryptedRequestId);
-        idToContactMap.set(encryptedRequestId, contact.id); // Map for lookup later
-      }
-
-      if (requestIds.length === 0) {
-        console.log('No valid contacts/keys to fetch messages for.');
-        isFetchingRef.current = false;
-        return;
-      }
-
-      // 2. Make API call
-      const response = await fetch('/api/get-messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message_ids: requestIds }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API error ${response.status}: ${errorText}`);
-      }
-
-      const data: GetMessagesApiResponse = await response.json();
-
-      if (data.results.length > 0) {
-        console.log(`Received ${data.results.length} new messages.`);
-        let newMessagesAdded = false;
-
-        // 3. Process received messages
-        setMessages(prevMessages => {
-          const updatedMessages = { ...prevMessages };
-          let changed = false;
-
-          for (const receivedMsg of data.results) {
-            const contactId = idToContactMap.get(receivedMsg.message_id);
-            const key = contactId ? contactKeysMap.get(contactId) : null;
-
-            if (!contactId || !key) {
-              console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
-              continue;
-            }
-
-            // Decrypt content (handle potential errors)
-            let decryptedContent: string;
-            try {
-              decryptedContent = await decryptMessage(receivedMsg.message, key);
-            } catch (decryptError) {
-              console.error(`Failed to decrypt message for contact ${contactId}:`, decryptError);
-              // Optionally add a placeholder message or skip
-              continue;
-            }
-
-            // Create new message object
-            const newMessage: Message = {
-              // Generate a unique local ID
-              id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
-              contactId: contactId,
-              content: receivedMsg.message, // Store encrypted content
-              timestamp: receivedMsg.timestamp, // Use server timestamp
-              sent: false, // Mark as received
-              read: false, // Mark as unread initially
-              forwarded: false, // Assume not forwarded initially
-            };
-
-            // Add to state, preventing duplicates based on content and timestamp
-            const contactMessages = updatedMessages[contactId] || [];
-            const exists = contactMessages.some(
-              m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
-            );
-
-            if (!exists) {
-              updatedMessages[contactId] = [...contactMessages, newMessage].sort(
-                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-              );
-              changed = true;
-              newMessagesAdded = true; // Track if any messages were actually added
-            }
-          }
-          return changed ? updatedMessages : prevMessages;
-        });
-         if (newMessagesAdded) {
-           toast({ title: "New Messages", description: "You have received new messages." });
-         }
-      } else {
-        console.log('No new messages received from server.');
-      }
-
-    } catch (error) {
-      console.error('Failed to fetch messages from server:', error);
-      // Avoid spamming toasts on background fetches, maybe only toast on manual trigger?
-      // toast({ title: 'Fetch Error', description: 'Could not check for new messages.', variant: 'destructive' });
-    } finally {
-      isFetchingRef.current = false;
-      console.log('Message fetch finished.');
-    }
-  };
-  // --- End Fetch Messages ---
+  // Fetching logic and refs moved to useMessagePolling hook
 
 
   // Load messages from IndexedDB on init
@@ -232,10 +82,14 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       };
       saveMessages();
     }
-  }, [messages]);
+ }, [messages]);
 
-  // Send a message to a contact
-  const sendMessage = async (
+ // Use the message polling hook
+ const triggerFetch = useMessagePolling({ setMessages });
+
+
+ // Send a message to a contact
+ const sendMessage = async (
     contactId: string, 
     content: string, 
     forwarding: Contact[] = []
@@ -459,11 +313,11 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         forwardMessage,
         getDecryptedContent,
         markAsRead,
-       deleteMessage,
-       clearHistory,
-       triggerFetch: fetchMessagesFromServer, // Expose fetch function
-     }}
-   >
+      deleteMessage,
+      clearHistory,
+      triggerFetch, // Expose fetch function from the hook
+    }}
+  >
       {children}
     </MessagesContext.Provider>
   );

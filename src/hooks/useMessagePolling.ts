@@ -1,0 +1,193 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useContacts } from '@/contexts/ContactsContext';
+import { useToast } from '@/components/ui/use-toast';
+import { encryptMessage, decryptMessage } from '@/utils/encryption';
+import { Message, MessagesContextType } from '@/contexts/MessagesContext'; // Assuming types are exported or moved
+
+// Type for the response from /api/get-messages
+interface GetMessagesApiResponse {
+  results: {
+    message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
+    message: string;    // Base64 encoded encrypted message content
+    timestamp: string;  // ISO timestamp from backend
+  }[];
+}
+
+interface UseMessagePollingOptions {
+  setMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>;
+  initialFetchDelay?: number;
+  pollingInterval?: number;
+}
+
+export const useMessagePolling = ({
+  setMessages,
+  initialFetchDelay = 500,
+  pollingInterval = 10000,
+}: UseMessagePollingOptions) => {
+  const { contacts, getContactKey } = useContacts();
+  const { toast } = useToast();
+  const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingRef = useRef(false);
+
+  const fetchMessagesFromServer = useCallback(async () => {
+    if (isFetchingRef.current || contacts.length === 0) {
+      console.log('Skipping fetch: already fetching or no contacts.');
+      return;
+    }
+    isFetchingRef.current = true;
+    console.log('Starting message fetch...');
+
+    const requestIds: string[] = [];
+    const idToContactMap: Map<string, string> = new Map();
+    const contactKeysMap: Map<string, CryptoKey> = new Map();
+
+    try {
+      for (const contact of contacts) {
+        const key = await getContactKey(contact.id);
+        if (!key) {
+          console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
+          continue;
+        }
+        contactKeysMap.set(contact.id, key);
+
+        const requestPlainText = contact.userGeneratedKey
+          ? "sending to key generator"
+          : "sending to key receiver";
+
+        const encryptedRequestId = await encryptMessage(requestPlainText, key);
+        requestIds.push(encryptedRequestId);
+        idToContactMap.set(encryptedRequestId, contact.id);
+      }
+
+      if (requestIds.length === 0) {
+        console.log('No valid contacts/keys to fetch messages for.');
+        isFetchingRef.current = false;
+        return;
+      }
+
+      const response = await fetch('/api/get-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_ids: requestIds }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error ${response.status}: ${errorText}`);
+      }
+
+      const data: GetMessagesApiResponse = await response.json();
+
+      if (data.results.length > 0) {
+        console.log(`Received ${data.results.length} new messages.`);
+        let newMessagesAdded = false;
+
+        setMessages(prevMessages => {
+          const updatedMessages = { ...prevMessages };
+          let changed = false;
+
+          for (const receivedMsg of data.results) {
+            const contactId = idToContactMap.get(receivedMsg.message_id);
+            const key = contactId ? contactKeysMap.get(contactId) : null;
+
+            if (!contactId || !key) {
+              console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
+              continue;
+            }
+
+            let decryptedContent: string;
+            try {
+              // We don't actually need the decrypted content here, just need to store the encrypted one.
+              // Decryption happens on demand via getDecryptedContent.
+              // We could optionally try decrypting here to validate the message early.
+               await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
+            } catch (decryptError) {
+              console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
+              // Continue processing even if decryption fails here, store the encrypted message
+            }
+
+            const newMessage: Message = {
+              id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
+              contactId: contactId,
+              content: receivedMsg.message,
+              timestamp: receivedMsg.timestamp,
+              sent: false,
+              read: false,
+              forwarded: false,
+            };
+
+            const contactMessages = updatedMessages[contactId] || [];
+            const exists = contactMessages.some(
+              m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
+            );
+
+            if (!exists) {
+              updatedMessages[contactId] = [...contactMessages, newMessage].sort(
+                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              );
+              changed = true;
+              newMessagesAdded = true;
+            }
+          }
+          return changed ? updatedMessages : prevMessages;
+        });
+
+        if (newMessagesAdded) {
+          toast({ title: "New Messages", description: "You have received new messages." });
+        }
+      } else {
+        console.log('No new messages received from server.');
+      }
+
+    } catch (error) {
+      console.error('Failed to fetch messages from server:', error);
+    } finally {
+      isFetchingRef.current = false;
+      console.log('Message fetch finished.');
+    }
+  }, [contacts, getContactKey, setMessages, toast]); // Include all dependencies
+
+  useEffect(() => {
+    // Initial fetch delay
+    const initialTimeout = setTimeout(() => fetchMessagesFromServer(), initialFetchDelay);
+
+    const setupPolling = () => {
+      if (fetchIntervalRef.current) clearInterval(fetchIntervalRef.current);
+      console.log(`Setting up polling interval (${pollingInterval}ms)`);
+      fetchIntervalRef.current = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          fetchMessagesFromServer();
+        } else {
+          console.log('Skipping background fetch: tab not visible.');
+        }
+      }, pollingInterval);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('Tab became visible, triggering fetch.');
+        fetchMessagesFromServer();
+        setupPolling();
+      } else {
+        console.log('Tab became hidden, stopping polling.');
+        if (fetchIntervalRef.current) {
+          clearInterval(fetchIntervalRef.current);
+          fetchIntervalRef.current = null;
+        }
+      }
+    };
+
+    setupPolling();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      console.log('Cleaning up message polling hook');
+      clearTimeout(initialTimeout);
+      if (fetchIntervalRef.current) clearInterval(fetchIntervalRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchMessagesFromServer, initialFetchDelay, pollingInterval]); // Dependencies for setting up/tearing down listeners/intervals
+
+  // Return the manual trigger function
+  return fetchMessagesFromServer;
+};
