@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -94,8 +93,8 @@ const ChatInterface = () => {
   }
   
   return (
-    <div className={`flex flex-col ${isMobile ? 'h-[calc(100vh-var(--header-height,4rem))]' : 'h-full'}`}>
-      {/* Chat header */}
+    <div className={`flex flex-col h-full`}>
+      {/* Chat header - fixed */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 sticky top-0 z-10">
         <div 
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
@@ -114,16 +113,16 @@ const ChatInterface = () => {
         </div>
       </div>
       
-      {/* Messages area with ScrollArea */}
-      <ScrollArea className="flex-1 px-4 py-2 flex flex-col">
-        <div className="flex flex-col flex-grow justify-end h-full min-h-[300px]">
+      {/* Messages area with ScrollArea - scrollable */}
+      <ScrollArea className="flex-1 px-4 py-2">
+        <div className="min-h-full flex flex-col justify-end">
           {activeMessages.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground mt-auto">
+            <div className="text-center py-8 text-muted-foreground">
               <p>No messages yet</p>
               <p className="text-sm">Start your secure conversation</p>
             </div>
           ) : (
-            <div className="space-y-4 mt-auto">
+            <div className="space-y-4">
               {activeMessages.map((message) => (
                 <MessageBubble 
                   key={message.id}

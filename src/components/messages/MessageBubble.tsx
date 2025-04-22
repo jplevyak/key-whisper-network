@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,43 +63,43 @@ const MessageBubble = ({ message, onForward }: MessageBubbleProps) => {
           )}
         </div>
         
-        <div className="flex justify-between items-center mt-1">
+        <div className="flex justify-between items-center gap-2 mt-2">
           <div className={`text-xs ${
             isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
           }`}>
             {formattedTime}
           </div>
           
-          {isSent && (
-            <div className={`text-xs flex items-center gap-1 ${
-              isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
-            }`}>
-              {message.read ? (
-                <div className="flex items-center">
-                  <MessageSquare className="h-3 w-3 mr-0.5" />
-                  <Check className="h-2.5 w-2.5 -ml-1.5" />
-                </div>
-              ) : (
-                <MessageSquare className="h-3 w-3" />
-              )}
-              <span>{message.read ? 'Read' : 'Sent'}</span>
-            </div>
-          )}
-        </div>
-        
-        <div className="mt-2 flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`px-2 py-1 h-auto text-xs ${
-              isSent 
-                ? 'hover:bg-primary-foreground/10 text-primary-foreground/90' 
-                : 'hover:bg-background/50 text-foreground/90'
-            }`}
-            onClick={() => onForward(message)}
-          >
-            Forward
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSent && (
+              <div className={`text-xs flex items-center gap-1 ${
+                isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
+              }`}>
+                {message.read ? (
+                  <div className="flex items-center">
+                    <MessageSquare className="h-3 w-3 mr-0.5" />
+                    <Check className="h-2.5 w-2.5 -ml-1.5" />
+                  </div>
+                ) : (
+                  <MessageSquare className="h-3 w-3" />
+                )}
+                <span>{message.read ? 'Read' : 'Sent'}</span>
+              </div>
+            )}
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`px-2 py-1 h-auto text-xs ${
+                isSent 
+                  ? 'hover:bg-primary-foreground/10 text-primary-foreground/90' 
+                  : 'hover:bg-background/50 text-foreground/90'
+              }`}
+              onClick={() => onForward(message)}
+            >
+              Forward
+            </Button>
+          </div>
         </div>
       </Card>
     </div>
