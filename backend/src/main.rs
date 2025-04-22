@@ -7,7 +7,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use chrono::{DateTime, Utc};
-use fjall::{Config, Keyspace, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
+use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
 use tracing::error;
@@ -146,7 +146,8 @@ async fn get_messages_handler(
                 match write_tx.get(&messages_partition, &key_bytes)? {
                     Some(value_ivec) => {
                         // Found: Deserialize (IVec derefs to &[u8])
-                        match serde_json::from_slice::<MessageRecord>(value_ivec) { // Pass IVec directly
+                        match serde_json::from_slice::<MessageRecord>(&value_ivec) {
+                            // Pass IVec directly
                             Ok(record) => {
                                 // Add to results list
                                 results.push(FoundMessage {
@@ -156,7 +157,7 @@ async fn get_messages_handler(
                                 });
 
                                 // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
-                                write_tx.remove(&messages_partition, &key_bytes)?;
+                                write_tx.remove(&messages_partition, &key_bytes);
                             }
                             Err(e) => {
                                 // Deserialization error - potentially corrupt data.
