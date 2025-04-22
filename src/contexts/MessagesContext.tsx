@@ -154,9 +154,9 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         // Use a local unique ID for React keys and local operations
         id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         contactId,
-        content: encryptedContent,
+        content: encryptedContentBase64, // Store the base64 content locally
         timestamp: new Date().toISOString(),
-        sent: true,
+        sent: true, // Mark as sent from the user's perspective
         read: true, // Sent messages are read by default
         forwarded: forwarding.length > 0,
         forwardedPath: forwarding.length > 0 ? forwarding.map(c => c.id) : undefined,
