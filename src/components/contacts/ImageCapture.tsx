@@ -55,7 +55,10 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
 
   const handleRetakeClick = () => {
     onImageCapture(''); // Clear the current image
-    startCamera(); // Immediately start the camera
+    // Need to add a small delay to ensure state is updated before starting camera
+    setTimeout(() => {
+      startCamera(); // Start the camera after clearing the image
+    }, 10);
   };
 
   return (
