@@ -150,11 +150,11 @@ function toast({ ...props }: Toast) {
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
   // Add click handler to document when toast appears
-  React.useEffect(() => {
-    const handleClick = () => dismiss()
-    document.addEventListener('click', handleClick)
-    return () => document.removeEventListener('click', handleClick)
-  }, [])
+  //React.useEffect(() => {
+  //  const handleClick = () => dismiss()
+  //  document.addEventListener('click', handleClick)
+  //  return () => document.removeEventListener('click', handleClick)
+  //}, [])
 
   dispatch({
     type: "ADD_TOAST",
