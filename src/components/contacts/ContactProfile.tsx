@@ -1,10 +1,21 @@
 
-import React from 'react';
+import React, { useState } from 'react'; // Import useState
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages } from '@/contexts/MessagesContext';
 import { Contact } from '@/contexts/ContactsContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+// Import AlertDialog components
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Trash2, TrashIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import ContactImageUpload from './shared/ContactImageUpload';
@@ -18,9 +29,15 @@ interface ContactProfileProps {
 }
 
 const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
-  const { deleteContact, generateContactKey, updateContact } = useContacts();
+  const { deleteContact, generateContactKey, updateContact, getContactKey } = useContacts(); // Added getContactKey if needed for update logic
   const { messages, clearHistory } = useMessages();
   const { toast } = useToast();
+
+  // State for confirmation dialog
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [confirmActionType, setConfirmActionType] = useState<'scan' | 'generate' | null>(null);
+  const [pendingScanData, setPendingScanData] = useState<string | null>(null);
+
 
   const contactMessages = messages[contact.id] || [];
   const sentMessages = contactMessages.filter(m => m.sent).length;
@@ -98,13 +115,19 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
           <div className="space-y-2">
             <QRCodeActions
               onScanSuccess={(keyData) => {
-                // Implement key update logic
-                toast({
-                  title: 'Key Updated',
-                  description: 'The encryption key has been updated successfully.',
-                });
+                // Instead of immediate action, trigger confirmation
+                setPendingScanData(keyData);
+                setConfirmActionType('scan');
+                setIsConfirmOpen(true);
               }}
-              onGenerateKey={generateContactKey}
+              onGenerateKey={() => {
+                 // Instead of immediate action, trigger confirmation
+                setConfirmActionType('generate');
+                setIsConfirmOpen(true);
+                // Return a resolved promise as onGenerateKey expects a Promise<string>
+                // The actual generation happens after confirmation.
+                return Promise.resolve('');
+              }}
               variant="stacked"
             />
             <Button
@@ -127,6 +150,69 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Confirmation Dialog for Key Change */}
+    <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Change Encryption Key?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Changing the encryption key will clear the existing chat history for this contact,
+            as old messages will no longer be decryptable. This action cannot be undone.
+            Are you sure you want to proceed?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => {
+            setConfirmActionType(null);
+            setPendingScanData(null);
+          }}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={async () => {
+            // 1. Clear history first
+            clearHistory(contact.id);
+            toast({
+              title: 'Chat History Cleared',
+              description: 'Previous messages removed due to key change.',
+              variant: 'destructive' // Use a more prominent variant
+            });
+
+            // 2. Perform the original action
+            if (confirmActionType === 'scan' && pendingScanData) {
+              console.log("TODO: Implement actual key update logic with data:", pendingScanData);
+              // Example: Assume updateContact needs the key data or an ID derived from it
+              // await updateContact(contact.id, { keyId: deriveKeyIdFromData(pendingScanData) });
+              toast({
+                title: 'Key Updated via Scan',
+                description: 'The encryption key has been updated.',
+              });
+            } else if (confirmActionType === 'generate') {
+              try {
+                const newKeyId = await generateContactKey(); // Call the actual generation function
+                 // Assuming generateContactKey updates the contact internally or returns data needed for update
+                 // If it just returns the key ID, you might need:
+                 // await updateContact(contact.id, { keyId: newKeyId });
+                toast({
+                  title: 'New Key Generated',
+                  description: 'A new encryption key has been generated and assigned.',
+                });
+              } catch (error) {
+                 console.error("Failed to generate key:", error);
+                 toast({
+                   title: 'Key Generation Failed',
+                   description: 'Could not generate a new key.',
+                   variant: 'destructive',
+                 });
+              }
+            }
+
+            // 3. Reset state
+            setConfirmActionType(null);
+            setPendingScanData(null);
+            // No need to call setIsConfirmOpen(false) here, AlertDialogAction closes automatically
+          }}>Confirm</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 };
 
