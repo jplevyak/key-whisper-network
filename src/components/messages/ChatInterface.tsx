@@ -31,12 +31,17 @@ const ChatInterface = () => {
         .filter(msg => !msg.sent && !msg.read)
         .forEach(msg => {
           markAsRead(activeContact.id, msg.id);
-        });
-    }
-  }, [activeContact, activeMessages, markAsRead]);
-  
-  // Scroll to bottom when messages change
-  useEffect(() => {
+   }
+   // Trigger fetch when active contact changes
+   if (activeContact) {
+     console.log(`Active contact changed to ${activeContact.name}, triggering fetch.`);
+     triggerFetch();
+   }
+ }, [activeContact, activeMessages, markAsRead, triggerFetch]); // Add triggerFetch dependency
+
+
+ // Scroll to bottom when messages change
+ useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages]);
   

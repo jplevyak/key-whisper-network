@@ -41,7 +41,18 @@ interface MessagesContextType {
   markAsRead: (contactId: string, messageId: string) => void;
   deleteMessage: (contactId: string, messageId: string) => void;
   clearHistory: (contactId: string) => void;
+  triggerFetch: () => void; // Add function to trigger fetch manually
 }
+
+// Type for the response from /api/get-messages
+interface GetMessagesApiResponse {
+  results: {
+    message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
+    message: string;    // Base64 encoded encrypted message content
+    timestamp: string;  // ISO timestamp from backend
+  }[];
+}
+
 
 const MessagesContext = createContext<MessagesContextType | undefined>(undefined);
 
@@ -58,6 +69,137 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const { getContactKey, contacts } = useContacts();
   const { toast } = useToast();
+  const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to store interval ID
+  const isFetchingRef = useRef(false); // Ref to prevent concurrent fetches
+
+
+  // --- Fetch Messages from Server ---
+  const fetchMessagesFromServer = async () => {
+    if (isFetchingRef.current || contacts.length === 0) {
+      console.log('Skipping fetch: already fetching or no contacts.');
+      return;
+    }
+    isFetchingRef.current = true;
+    console.log('Starting message fetch...');
+
+    const requestIds: string[] = [];
+    const idToContactMap: Map<string, string> = new Map(); // Map encrypted request ID -> contactId
+    const contactKeysMap: Map<string, CryptoKey> = new Map(); // Cache keys used for this fetch
+
+    try {
+      // 1. Generate request IDs for all contacts
+      for (const contact of contacts) {
+        const key = await getContactKey(contact.id);
+        if (!key) {
+          console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
+          continue;
+        }
+        contactKeysMap.set(contact.id, key); // Store key for decryption later
+
+        // Determine the *request* plaintext based on INVERTED logic
+        const requestPlainText = contact.userGeneratedKey
+          ? "sending to key generator" // If user generated key, ask for messages sent TO generator
+          : "sending to key receiver";  // If user scanned key, ask for messages sent TO receiver
+
+        const encryptedRequestId = await encryptMessage(requestPlainText, key);
+        requestIds.push(encryptedRequestId);
+        idToContactMap.set(encryptedRequestId, contact.id); // Map for lookup later
+      }
+
+      if (requestIds.length === 0) {
+        console.log('No valid contacts/keys to fetch messages for.');
+        isFetchingRef.current = false;
+        return;
+      }
+
+      // 2. Make API call
+      const response = await fetch('/api/get-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_ids: requestIds }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error ${response.status}: ${errorText}`);
+      }
+
+      const data: GetMessagesApiResponse = await response.json();
+
+      if (data.results.length > 0) {
+        console.log(`Received ${data.results.length} new messages.`);
+        let newMessagesAdded = false;
+
+        // 3. Process received messages
+        setMessages(prevMessages => {
+          const updatedMessages = { ...prevMessages };
+          let changed = false;
+
+          for (const receivedMsg of data.results) {
+            const contactId = idToContactMap.get(receivedMsg.message_id);
+            const key = contactId ? contactKeysMap.get(contactId) : null;
+
+            if (!contactId || !key) {
+              console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
+              continue;
+            }
+
+            // Decrypt content (handle potential errors)
+            let decryptedContent: string;
+            try {
+              decryptedContent = await decryptMessage(receivedMsg.message, key);
+            } catch (decryptError) {
+              console.error(`Failed to decrypt message for contact ${contactId}:`, decryptError);
+              // Optionally add a placeholder message or skip
+              continue;
+            }
+
+            // Create new message object
+            const newMessage: Message = {
+              // Generate a unique local ID
+              id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
+              contactId: contactId,
+              content: receivedMsg.message, // Store encrypted content
+              timestamp: receivedMsg.timestamp, // Use server timestamp
+              sent: false, // Mark as received
+              read: false, // Mark as unread initially
+              forwarded: false, // Assume not forwarded initially
+            };
+
+            // Add to state, preventing duplicates based on content and timestamp
+            const contactMessages = updatedMessages[contactId] || [];
+            const exists = contactMessages.some(
+              m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
+            );
+
+            if (!exists) {
+              updatedMessages[contactId] = [...contactMessages, newMessage].sort(
+                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              );
+              changed = true;
+              newMessagesAdded = true; // Track if any messages were actually added
+            }
+          }
+          return changed ? updatedMessages : prevMessages;
+        });
+         if (newMessagesAdded) {
+           toast({ title: "New Messages", description: "You have received new messages." });
+         }
+      } else {
+        console.log('No new messages received from server.');
+      }
+
+    } catch (error) {
+      console.error('Failed to fetch messages from server:', error);
+      // Avoid spamming toasts on background fetches, maybe only toast on manual trigger?
+      // toast({ title: 'Fetch Error', description: 'Could not check for new messages.', variant: 'destructive' });
+    } finally {
+      isFetchingRef.current = false;
+      console.log('Message fetch finished.');
+    }
+  };
+  // --- End Fetch Messages ---
+
 
   // Load messages from IndexedDB on init
   useEffect(() => {
@@ -317,10 +459,11 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         forwardMessage,
         getDecryptedContent,
         markAsRead,
-        deleteMessage,
-        clearHistory,
-      }}
-    >
+       deleteMessage,
+       clearHistory,
+       triggerFetch: fetchMessagesFromServer, // Expose fetch function
+     }}
+   >
       {children}
     </MessagesContext.Provider>
   );
