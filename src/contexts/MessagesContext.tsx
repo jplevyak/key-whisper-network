@@ -13,7 +13,6 @@ export interface Message {
   read: boolean;
   forwarded: boolean;
   forwardedPath?: string[]; // IDs of contacts in forwarding path
-  transportMethod: 'server' | 'bluetooth' | 'wifi' | 'qr';
 }
 
 interface MessagesContextType {
@@ -106,7 +105,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         read: true, // Sent messages are read by default
         forwarded: forwarding.length > 0,
         forwardedPath: forwarding.length > 0 ? forwarding.map(c => c.id) : undefined,
-        transportMethod: 'server', // Default method
       };
 
       // Add the message to the list

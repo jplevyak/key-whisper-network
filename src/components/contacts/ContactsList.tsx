@@ -121,13 +121,6 @@ const ContactItem = ({ contact, isActive, unreadCount, lastMessageTime, onClick 
         </div>
         
         <div className="flex justify-between items-center">
-          <div className="text-xs text-muted-foreground truncate flex items-center">
-            {contact.transportMethods.includes('server') && (
-              <BadgeCheck className="h-3 w-3 mr-1" />
-            )}
-            {contact.transportMethods.join(', ')}
-          </div>
-          
           {unreadCount > 0 && (
             <div className="bg-primary text-primary-foreground text-xs rounded-full h-5 min-w-5 flex items-center justify-center px-1.5">
               {unreadCount}
