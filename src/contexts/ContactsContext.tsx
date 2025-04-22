@@ -9,13 +9,14 @@ export interface Contact {
   avatar: string; // base64 image
   keyId: string; // Identifier for the encrypted key
   lastActive?: string; // ISO date string
+  userGeneratedKey: boolean; // True if the user generated the key, false if scanned from contact
 }
 
 interface ContactsContextType {
   contacts: Contact[];
   activeContact: Contact | null;
   setActiveContact: (contact: Contact | null) => void;
-  addContact: (name: string, avatar: string, keyData: string) => Promise<boolean>;
+  addContact: (name: string, avatar: string, keyData: string, userGeneratedKey: boolean) => Promise<boolean>;
   getContactKey: (contactId: string) => Promise<CryptoKey | null>;
   generateContactKey: () => Promise<string>;
   deleteContact: (contactId: string) => void;
@@ -94,7 +95,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  const addContact = async (name: string, avatar: string, keyData: string): Promise<boolean> => {
+  const addContact = async (name: string, avatar: string, keyData: string, userGeneratedKey: boolean): Promise<boolean> => {
     try {
       const key = await importKey(keyData);
       const keyId = `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -109,10 +110,11 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         id: `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name,
         avatar,
-       keyId,
-       lastActive: new Date().toISOString()
-     };
-      
+        keyId,
+        lastActive: new Date().toISOString(),
+        userGeneratedKey // Set the flag here
+      };
+       
      setContacts(prev => [...prev, newContact]);
       
       toast({
