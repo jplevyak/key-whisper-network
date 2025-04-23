@@ -75,7 +75,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
  }
 
  return (
-   (<div>
+   <>
      <Dialog open={isOpen} onOpenChange={() => onClose()}>
        <DialogContent className="sm:max-w-[425px]">
          <DialogHeader>
@@ -217,7 +217,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
                    description: 'Could not generate or assign a new key.',
                    variant: 'destructive',
                  });
-              });
+              };
             }
 
             // 3. Reset state
@@ -228,7 +228,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-   </div>)
+    </>
   );
 };
 
