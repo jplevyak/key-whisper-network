@@ -191,6 +191,31 @@ export const useMessagePolling = ({
          });
        }
 
+       // --- Send Acknowledgment ---
+       if (messagesToAck.length > 0) {
+         console.log(`Acknowledging ${messagesToAck.length} messages...`);
+         try {
+           const ackResponse = await fetch('/api/ack-messages', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ acks: messagesToAck }),
+             // Don't use the main abort signal here, ACK should try to complete
+           });
+           if (!ackResponse.ok) {
+             const errorText = await ackResponse.text();
+             console.error(`Failed to acknowledge messages: ${ackResponse.status} ${errorText}`);
+             // Decide on retry logic? For now, just log the error.
+             // Messages are already saved locally, so loss isn't immediate.
+           } else {
+             console.log('Messages acknowledged successfully.');
+           }
+         } catch (ackError) {
+           console.error('Error sending message acknowledgments:', ackError);
+         }
+       }
+       // --- End Send Acknowledgment ---
+
+
        if (newMessagesAdded) {
          toast({ title: "New Messages", description: "You have received new messages." });
        }
