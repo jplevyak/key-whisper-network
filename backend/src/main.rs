@@ -84,8 +84,13 @@ async fn put_message_handler(
     let value_bytes = serde_json::to_vec(&record)?;
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-    let key_bytes: Vec = payload.message_id.as_bytes() + timestamp.timestamp_millis().to_le_bytes();
-    messages_partition.insert(key_bytes.into(), value_bytes)?;
+    
+    // Create the key by concatenating message_id bytes and timestamp bytes (big-endian)
+    let mut key_bytes = Vec::new();
+    key_bytes.extend_from_slice(payload.message_id.as_bytes());
+    key_bytes.extend_from_slice(&timestamp.timestamp_millis().to_be_bytes());
+
+    messages_partition.insert(key_bytes, value_bytes)?;
     // Optionally persist explicitly
     // keyspace.persist(PersistMode::BufferAsync)?;
     Ok(StatusCode::CREATED)
