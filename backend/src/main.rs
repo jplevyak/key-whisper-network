@@ -5,7 +5,10 @@ use axum::{
     routing::post,
     Router,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD as BASE64_URL_SAFE}, // Import URL_SAFE_NO_PAD
+    Engine as _,
+};
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
 use serde::{Deserialize, Serialize};
@@ -92,8 +95,8 @@ async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    // Validate that the message content is valid base64
-    if BASE64_STANDARD.decode(&payload.message).is_err() {
+    // Validate that the message content is valid URL-safe base64 (no padding)
+    if BASE64_URL_SAFE.decode(&payload.message).is_err() { // Use URL_SAFE_NO_PAD engine
         return Err(AppError::InvalidInput(
             "Invalid base64 encoding for message".to_string(),
         ));
