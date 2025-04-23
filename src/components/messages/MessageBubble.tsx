@@ -75,15 +75,8 @@ const MessageBubble = ({ message, onForward }: MessageBubbleProps) => {
               <div className={`text-xs flex items-center gap-1 ${
                 isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
               }`}>
-                {message.read ? (
-                  <div className="flex items-center">
-                    <MessageSquare className="h-3 w-3 mr-0.5" />
-                    <Check className="h-2.5 w-2.5 -ml-1.5" />
-                  </div>
-                ) : (
-                  <MessageSquare className="h-3 w-3" />
-                )}
-                <span>{message.read ? 'Read' : 'Sent'}</span>
+                <MessageSquare className="h-3 w-3" />
+                <span>Sent</span>
               </div>
             )}
             
