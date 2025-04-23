@@ -111,7 +111,9 @@ export const useMessagePolling = ({
        let newMessagesAdded = false;
 
        const newlyReceivedMessages: Message[] = [];
- 
+       const messagesToAck: { message_id: string; timestamp: string }[] = [];
+       const processedInThisCycle = new Set<string>(); // To deduplicate within this fetch
+
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
          // Log the ID being processed and the result of the map lookup
@@ -121,14 +123,24 @@ export const useMessagePolling = ({
 
          const contactId = lookedUpContactId; // Use the looked-up value
          const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
- 
+
          if (!contactId || !key) {
            console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
 
+         // Deduplicate based on message_id and timestamp within this fetch cycle
+         const uniqueMsgIdentifier = `${receivedMsg.message_id}|${receivedMsg.timestamp}`;
+         if (processedInThisCycle.has(uniqueMsgIdentifier)) {
+            console.log(`Skipping duplicate message in this cycle: ${uniqueMsgIdentifier}`);
+            continue;
+         }
+         processedInThisCycle.add(uniqueMsgIdentifier);
+
+
          try {
            // We could optionally try decrypting here to validate the message early.
+           // Note: Decryption errors here don't prevent ACK, as we successfully received it.
            await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
          } catch (decryptError) {
            console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
@@ -145,6 +157,11 @@ export const useMessagePolling = ({
            forwarded: false, // Assume not forwarded initially
          };
          newlyReceivedMessages.push(newMessage);
+         // Add to the list of messages to acknowledge
+         messagesToAck.push({
+            message_id: receivedMsg.message_id,
+            timestamp: receivedMsg.timestamp,
+         });
        }
 
        // Now update the state synchronously
