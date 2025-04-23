@@ -242,3 +242,38 @@ export const isBiometricSupported = async (): Promise<boolean> => {
   return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
 };
 
+// Generate a stable request ID based on key and context string using SHA-256
+export const generateStableRequestId = async (
+  userGeneratedKey: boolean,
+  key: CryptoKey
+): Promise<string> => {
+  try {
+    // 1. Determine the context string
+    const contextString = userGeneratedKey
+      ? "sending to key receiver" // User generated the key, they are sending to the receiver
+      : "sending to key generator"; // User scanned the key, they are sending to the generator
+
+    // 2. Encode the context string to bytes
+    const contextBytes = new TextEncoder().encode(contextString);
+
+    // 3. Export the raw key bytes
+    const exportedKeyBuffer = await window.crypto.subtle.exportKey("raw", key);
+    const keyBytes = new Uint8Array(exportedKeyBuffer);
+
+    // 4. Concatenate context string bytes and key bytes
+    const combinedBytes = new Uint8Array(contextBytes.length + keyBytes.length);
+    combinedBytes.set(contextBytes, 0);
+    combinedBytes.set(keyBytes, contextBytes.length);
+
+    // 5. Compute the SHA-256 hash
+    const hashBuffer = await window.crypto.subtle.digest("SHA-256", combinedBytes);
+
+    // 6. Encode the hash digest using URL-safe base64
+    return arrayBufferToBase64(hashBuffer);
+  } catch (error) {
+    console.error("Error generating stable request ID:", error);
+    // Return a fallback or re-throw, depending on desired error handling
+    throw new Error("Failed to generate stable request ID");
+  }
+};
+

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'; // Added useRef, useCallback
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'; // Removed useRef if no longer needed directly here
 import { Contact, useContacts } from './ContactsContext';
-import { encryptMessage, decryptMessage } from '@/utils/encryption';
+// Import generateStableRequestId, encryptMessage, decryptMessage
+import { generateStableRequestId, encryptMessage, decryptMessage } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
 // Import storage service and polling hook
 import { loadMessagesFromStorage, saveMessagesToStorage } from '@/services/messageStorage';
