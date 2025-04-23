@@ -73,8 +73,19 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     }
   }, [isOpen]);
 
+  // Correctly handle open/close state changes
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      // Only reset form and call onClose when dialog is closing
+      resetForm();
+      onClose();
+    }
+    // If opening, we don't need to do anything extra here,
+    // the isOpen prop controls the dialog visibility.
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={() => { onClose(); resetForm(); }}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add New Contact</DialogTitle>
