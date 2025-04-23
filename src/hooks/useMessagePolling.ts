@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
-// Import generateStableRequestId and decryptMessage
 import { generateStableRequestId, decryptMessage } from '@/utils/encryption';
 import { Message } from '@/contexts/MessagesContext'; // Import only Message type if needed
 
@@ -57,7 +56,7 @@ export const useMessagePolling = ({
 
         // Generate the stable request ID using the new function
         try {
-          const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
+          const requestId = await generateStableRequestId(!contact.userGeneratedKey, key);
           requestIdsToSend.push(requestId);
           // Map the generated stable ID back to the contactId to process the response
           requestIdToContactIdMap.set(requestId, contact.id);
@@ -79,7 +78,7 @@ export const useMessagePolling = ({
       const response = await fetch('/api/get-messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_ids: requestIdsToSend }), // Use 'request_ids' or similar field name
+        body: JSON.stringify({ message_ids: requestIdsToSend }), // Use 'request_ids' or similar field name
       });
 
       if (!response.ok) {

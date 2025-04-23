@@ -249,9 +249,7 @@ export const generateStableRequestId = async (
 ): Promise<string> => {
   try {
     // 1. Determine the context string
-    const contextString = userGeneratedKey
-      ? "sending to key receiver" // User generated the key, they are sending to the receiver
-      : "sending to key generator"; // User scanned the key, they are sending to the generator
+    const contextString = userGeneratedKey ? "key receiver" : "key generator";
 
     // 2. Encode the context string to bytes
     const contextBytes = new TextEncoder().encode(contextString);

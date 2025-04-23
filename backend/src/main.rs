@@ -137,53 +137,37 @@ async fn get_messages_handler(
     let mut write_tx = keyspace.write_tx();
     let mut results = Vec::new();
 
-    for hex_id in &payload.message_ids {
-        // Iterate over borrows
-        match hex::decode(hex_id) {
-            Ok(key_bytes) => {
-                if key_bytes.len() != 32 {
-                    // Skip invalid length keys
-                    tracing::warn!("Skipping invalid length key: {}", hex_id);
-                    continue;
-                }
+    for message_id in &payload.message_ids {
+        // Attempt to get the message within the transaction using the partition handle
+        match write_tx.get(&messages_partition, &message_id)? {
+            Some(value_ivec) => {
+                // Found: Deserialize (IVec derefs to &[u8])
+                match serde_json::from_slice::<MessageRecord>(&value_ivec) {
+                    // Pass IVec directly
+                    Ok(record) => {
+                        // Add to results list
+                        results.push(FoundMessage {
+                            message_id: message_id.clone(), // Clone hex string for result
+                            message: record.message_base64,
+                            timestamp: record.timestamp, // Include timestamp
+                        });
 
-                // Attempt to get the message within the transaction using the partition handle
-                match write_tx.get(&messages_partition, &key_bytes)? {
-                    Some(value_ivec) => {
-                        // Found: Deserialize (IVec derefs to &[u8])
-                        match serde_json::from_slice::<MessageRecord>(&value_ivec) {
-                            // Pass IVec directly
-                            Ok(record) => {
-                                // Add to results list
-                                results.push(FoundMessage {
-                                    message_id: hex_id.clone(), // Clone hex string for result
-                                    message: record.message_base64,
-                                    timestamp: record.timestamp, // Include timestamp
-                                });
-
-                                // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
-                                // Errors during remove will be caught by commit()
-                                write_tx.remove(&messages_partition, &key_bytes);
-                            }
-                            Err(e) => {
-                                // Deserialization error - potentially corrupt data.
-                                // Fail the entire transaction to avoid inconsistent state.
-                                error!("Failed to deserialize record for key {}: {}", hex_id, e);
-                                // Return the specific SerdeJson error, wrapped in AppError.
-                                // This will cause the transaction closure to return Err, triggering a rollback.
-                                return Err(AppError::SerdeJson(e));
-                            }
-                        }
+                        // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
+                        // Errors during remove will be caught by commit()
+                        write_tx.remove(&messages_partition, message_id.clone());
                     }
-                    None => {
-                        // Key not found, do nothing
+                    Err(e) => {
+                        // Deserialization error - potentially corrupt data.
+                        // Fail the entire transaction to avoid inconsistent state.
+                        error!("Failed to deserialize record for key {}: {}", message_id, e);
+                        // Return the specific SerdeJson error, wrapped in AppError.
+                        // This will cause the transaction closure to return Err, triggering a rollback.
+                        return Err(AppError::SerdeJson(e));
                     }
                 }
             }
-            Err(_) => {
-                // Skip invalid hex IDs
-                tracing::warn!("Skipping invalid hex key: {}", hex_id);
-                continue;
+            None => {
+                // Key not found, do nothing
             }
         }
     }

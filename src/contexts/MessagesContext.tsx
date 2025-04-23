@@ -134,7 +134,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             'Content-Type': 'application/json',
          },
          body: JSON.stringify({
-           request_id: requestId, // Use the generated stable request ID (hash)
+           message_id: requestId, // Use the generated stable request ID (hash)
            message: encryptedContentBase64, // Keep the encrypted message content
          }),
        });
