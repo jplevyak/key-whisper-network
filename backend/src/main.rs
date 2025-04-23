@@ -174,8 +174,7 @@ async fn get_messages_handler(
                     // Iterate through ALL items matching the prefix
                     for result in iter {
                         match result {
-                            Ok((key_slice, value_slice)) => {
-                                let full_key = key_slice.to_vec();
+                            Ok((_key_slice, value_slice)) => {
                                 let value_bytes = value_slice.to_vec();
 
                                 // Deserialize the found record
