@@ -116,22 +116,25 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
        }
 
        // Determine the plaintext ID based on who generated the key
-       const idPlainText = contact.userGeneratedKey
-         ? "sending to key receiver"
-         : "sending to key generator";
+       // const idPlainText = contact.userGeneratedKey
+       //  ? "sending to key receiver"
+       //  : "sending to key generator";
 
        // Encrypt the plaintext ID using the shared key
-       const encryptedIdBase64 = await encryptMessage(idPlainText, key);
+       // const encryptedIdBase64 = await encryptMessage(idPlainText, key);
+
+       // Generate the stable request ID instead
+       const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
 
 
-       // Send encrypted ID and encrypted message content to the backend
+       // Send the stable request ID and encrypted message content to the backend
        const response = await fetch('/api/put-message', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
          },
          body: JSON.stringify({
-           message_id: encryptedIdBase64, // Use the encrypted ID string (base64)
+           request_id: requestId, // Use the generated stable request ID (hash)
            message: encryptedContentBase64, // Keep the encrypted message content
          }),
        });
