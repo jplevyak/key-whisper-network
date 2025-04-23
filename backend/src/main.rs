@@ -123,37 +123,25 @@ async fn ack_messages_handler(
         return Ok(StatusCode::OK); // Nothing to do
     }
 
-    let keyspace_clone = Arc::clone(&keyspace);
+    // Directly perform operations without spawn_blocking
+    let messages_partition =
+        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
 
-    spawn_blocking(move || -> Result<(), fjall::Error> {
-        let messages_partition =
-            keyspace_clone.open_partition("messages", PartitionCreateOptions::default())?;
+    // Use a transaction for batch deletion efficiency
+    let mut write_tx = keyspace.write_tx();
 
-        // Use a transaction for batch deletion efficiency, though not strictly required for atomicity here
-        let mut write_tx = keyspace_clone.write_tx();
+    for ack in payload.acks {
+        // Reconstruct the key used in put_message_handler
+        let mut key_bytes = Vec::new();
+        key_bytes.extend_from_slice(ack.message_id.as_bytes());
+        key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
 
-        for ack in payload.acks {
-            // Reconstruct the key used in put_message_handler
-            let mut key_bytes = Vec::new();
-            key_bytes.extend_from_slice(ack.message_id.as_bytes());
-            key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
+        // Remove the message by its reconstructed key
+        write_tx.remove(&messages_partition, key_bytes);
+        tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
+    }
 
-            // Remove the message by its reconstructed key
-            write_tx.remove(&messages_partition, key_bytes);
-            tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
-        }
-
-        write_tx.commit()?; // Commit all removals
-        Ok(())
-    })
-    .await
-    .map_err(|e| {
-        error!("Blocking task panicked for ack_messages: {:?}", e);
-        AppError::Fjall(fjall::Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Blocking task panicked",
-        )))
-    })??; // Handle JoinError and inner fjall::Error
+    write_tx.commit()?; // Commit all removals, propagate error with '?'
 
     Ok(StatusCode::OK)
 }
