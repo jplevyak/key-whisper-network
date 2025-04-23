@@ -10,13 +10,24 @@ import ContactsList from '@/components/contacts/ContactsList';
 import ChatInterface from '@/components/messages/ChatInterface';
 import AddContactModal from '@/components/contacts/AddContactModal';
 import { Button } from '@/components/ui/button';
-import { Fingerprint } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog"; // Import Dialog components
+import { Fingerprint, Info } from 'lucide-react'; // Import Info icon
 import { useIsMobile } from '@/hooks/use-mobile';
 
 const IndexContent = () => {
   const { isAuthenticated, isLoading, logout, username } = useAuth();
   const { activeContact } = useContacts();
   const [showAddContact, setShowAddContact] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false); // Add state for About dialog
   const isMobile = useIsMobile();
   const [showContacts, setShowContacts] = useState(true);
 
@@ -76,6 +87,46 @@ const IndexContent = () => {
         </div>
         
         <div className="flex items-center space-x-2">
+          {/* About Dialog Trigger */}
+          <Dialog open={isAboutDialogOpen} onOpenChange={setIsAboutDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary h-8 w-8">
+                <Info className="h-5 w-5" />
+                <span className="sr-only">About Key Whisper Network</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>About Key Whisper Network</DialogTitle>
+                <DialogDescription>
+                  Secure, end-to-end encrypted messaging.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4 text-sm">
+                <p>
+                  Key Whisper Network provides a secure way to exchange messages using end-to-end encryption.
+                  Your messages are encrypted on your device and can only be decrypted by the intended recipient.
+                </p>
+                <h4 className="font-semibold mt-2">How to Use:</h4>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Add contacts by scanning their QR code or generating your own for them to scan.</li>
+                  <li>Select a contact to start a conversation.</li>
+                  <li>Messages are automatically encrypted and decrypted.</li>
+                  <li>Use the trash icon in the chat header to clear the conversation history on your device.</li>
+                  <li>Forward messages securely using the forward icon on a message bubble.</li>
+                </ul>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Remember: Keep your device secure. Lost access means lost messages.
+                </p>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button">Close</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* End About Dialog */}
           <span className="text-sm text-muted-foreground">{username}</span>
           <Button variant="outline" size="sm" onClick={logout}>
             Logout
