@@ -8,9 +8,10 @@ use axum::{
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc}; // Removed StdDuration import
-use tokio::time::{sleep, Duration, Instant}; // Added tokio time imports
-use tracing::error;
+use std::{net::SocketAddr, path::Path, sync::Arc};
+use tokio::task::spawn_blocking; // Import spawn_blocking
+use tokio::time::{sleep, Duration, Instant};
+use tracing::{error, instrument}; // Import instrument
 
 // --- Data Structures ---
 
@@ -44,6 +45,19 @@ struct FoundMessage {
 struct GetMessagesResponse {
     results: Vec<FoundMessage>,
 }
+
+// --- Structs for Acknowledgment ---
+#[derive(Deserialize, Debug)]
+struct AckMessageRequest {
+    message_id: String,       // Base64 encoded stable request ID
+    timestamp: DateTime<Utc>, // Timestamp of the message to delete
+}
+
+#[derive(Deserialize, Debug)]
+struct AckMessagesPayload {
+    acks: Vec<AckMessageRequest>,
+}
+
 
 // --- Shared State Type ---
 // Define the type for the shared application state (the transactional keyspace)
@@ -98,8 +112,56 @@ async fn put_message_handler(
     Ok(StatusCode::CREATED)
 }
 
-// Modified get_messages_handler for transactional read-then-delete
-#[axum::debug_handler] // Add this attribute
+
+// --- Handler for Acknowledging/Deleting Messages ---
+#[instrument(skip(keyspace, payload))]
+async fn ack_messages_handler(
+    State(keyspace): State<SharedState>,
+    Json(payload): Json<AckMessagesPayload>,
+) -> Result<StatusCode, AppError> {
+    if payload.acks.is_empty() {
+        return Ok(StatusCode::OK); // Nothing to do
+    }
+
+    let keyspace_clone = Arc::clone(&keyspace);
+
+    spawn_blocking(move || -> Result<(), fjall::Error> {
+        let messages_partition =
+            keyspace_clone.open_partition("messages", PartitionCreateOptions::default())?;
+
+        // Use a transaction for batch deletion efficiency, though not strictly required for atomicity here
+        let mut write_tx = keyspace_clone.write_tx();
+
+        for ack in payload.acks {
+            // Reconstruct the key used in put_message_handler
+            let mut key_bytes = Vec::new();
+            key_bytes.extend_from_slice(ack.message_id.as_bytes());
+            key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
+
+            // Remove the message by its reconstructed key
+            write_tx.remove(&messages_partition, key_bytes);
+            tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
+        }
+
+        write_tx.commit()?; // Commit all removals
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        error!("Blocking task panicked for ack_messages: {:?}", e);
+        AppError::Fjall(fjall::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Blocking task panicked",
+        )))
+    })??; // Handle JoinError and inner fjall::Error
+
+    Ok(StatusCode::OK)
+}
+
+
+// --- Modified get_messages_handler (Read-Only) ---
+#[instrument(skip(keyspace, payload))] // Add tracing instrumentation
+#[axum::debug_handler]
 async fn get_messages_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
@@ -165,17 +227,20 @@ async fn get_messages_handler(
                 }
             } // End loop through message_ids
 
-            for key in &keys_to_remove_this_iteration {
-                write_tx.remove(&messages_partition, key);
-            }
+            // --- REMOVED DELETION LOGIC ---
+            // for key in &keys_to_remove_this_iteration {
+            //     write_tx.remove(&messages_partition, key);
+            // }
+            // --- END REMOVED DELETION LOGIC ---
 
+            // Commit the read-only transaction (releases lock)
             write_tx.commit()?;
         }
 
-        if found_messages_this_iteration.len() > 0 {
-            // We found messages and successfully committed their removal. Return them.
+        if !found_messages_this_iteration.is_empty() {
+            // We found messages. Return them. Frontend will ACK later.
             tracing::debug!(
-                "Found {} messages, returning.",
+                "Found {} messages, returning (no deletion).",
                 found_messages_this_iteration.len()
             );
             return Ok(Json(GetMessagesResponse {
@@ -220,6 +285,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
+        .route("/api/ack-messages", post(ack_messages_handler)) // Add the new route
         .with_state(shared_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
