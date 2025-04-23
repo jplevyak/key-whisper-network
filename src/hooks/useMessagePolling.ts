@@ -78,7 +78,7 @@ export const useMessagePolling = ({
       const response = await fetch('/api/get-messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message_ids: requestIdsToSend }), // Use 'request_ids' or similar field name
+        body: JSON.stringify({ message_ids: requestIdsToSend }),
       });
 
       if (!response.ok) {
@@ -96,17 +96,11 @@ export const useMessagePolling = ({
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
-         // --- IMPORTANT: Backend response structure assumption ---
-         // Assumes the backend now returns the `request_id` (the stable hash) for each message,
-         // allowing us to map it back to the correct contact.
-         // Ensure your backend implements this change.
-
-         // Use the request_id from the response to find the corresponding contactId
-         const contactId = requestIdToContactIdMap.get(receivedMsg.request_id); // Use request_id from response
+         const contactId = requestIdToContactIdMap.get(receivedMsg.message_id); // Use request_id from response
          const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
 
          if (!contactId || !key) {
-           console.warn(`Could not find contact or key for received request_id: ${receivedMsg.request_id}`); // Log uses request_id
+           console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
 

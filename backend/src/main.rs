@@ -13,13 +13,13 @@ use tracing::error;
 
 // --- Data Structures ---
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct PutMessageRequest {
     message_id: String, // Base64 encoded
     message: String,    // Base64 encoded
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct GetMessagesRequest {
     message_ids: Vec<String>, // List of base64 encoded message IDs
 }
@@ -31,14 +31,14 @@ struct MessageRecord {
 }
 
 // Modified FoundMessage to include the timestamp
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct FoundMessage {
     message_id: String,       // Base64 encoded
     message: String,          // Base64 encoded
     timestamp: DateTime<Utc>, // Added timestamp
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct GetMessagesResponse {
     results: Vec<FoundMessage>,
 }
@@ -84,7 +84,7 @@ async fn put_message_handler(
     let value_bytes = serde_json::to_vec(&record)?;
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-    
+
     // Create the key by concatenating message_id bytes and timestamp bytes (big-endian)
     let mut key_bytes = Vec::new();
     key_bytes.extend_from_slice(payload.message_id.as_bytes());
@@ -109,7 +109,7 @@ async fn get_messages_handler(
 
     // Store keys to remove after iterating
     let mut keys_to_remove: Vec<Vec<u8>> = Vec::new();
-    
+
     for message_id_str in &payload.message_ids {
         let key_prefix = message_id_str.as_bytes();
         let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None; // To store (full_key, value_bytes)
@@ -153,8 +153,8 @@ async fn get_messages_handler(
                 Err(e) => {
                     error!(
                         "Failed to deserialize record for key prefix {}: {}",
-                                message_id_str, e
-                            );
+                        message_id_str, e
+                    );
                     // Decide how to handle deserialization errors, e.g., skip or fail transaction
                     // For now, let's propagate the error, which will abort the transaction
                     return Err(AppError::SerdeJson(e));
@@ -193,7 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/get-messages", post(get_messages_handler))
         .with_state(shared_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
