@@ -69,10 +69,14 @@ export const useMessagePolling = ({
         }
       }
 
+      // Log the populated map
+      console.log('Populated requestIdToContactIdMap:', requestIdToContactIdMap);
+
 
       if (requestIdsToSend.length === 0) {
         console.log('No valid contacts/keys to fetch messages for.');
-        isFetchingRef.current = false;
+        // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
+        // isFetchingRef.current = false; 
         return;
       }
 
@@ -99,18 +103,25 @@ export const useMessagePolling = ({
       }
 
       const data: GetMessagesApiResponse = await response.json();
+      // Log the received data
+      console.log('Received data.results:', data.results);
 
       if (data.results.length > 0) {
        console.log(`Received ${data.results.length} new messages.`);
        let newMessagesAdded = false;
 
        const newlyReceivedMessages: Message[] = [];
-
+ 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
-         const contactId = requestIdToContactIdMap.get(receivedMsg.message_id); // Use request_id from response
-         const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
+         // Log the ID being processed and the result of the map lookup
+         console.log('Processing receivedMsg.message_id:', receivedMsg.message_id);
+         const lookedUpContactId = requestIdToContactIdMap.get(receivedMsg.message_id);
+         console.log('Result of map lookup:', lookedUpContactId);
 
+         const contactId = lookedUpContactId; // Use the looked-up value
+         const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
+ 
          if (!contactId || !key) {
            console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
            continue;
