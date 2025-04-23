@@ -162,7 +162,8 @@ async fn get_messages_handler(
             let messages_partition =
                 keyspace.open_partition("messages", PartitionCreateOptions::default())?;
             // Use a read-only snapshot instead of a write transaction
-            let snapshot = keyspace.snapshot();
+            // Explicitly dereference the Arc to call the method on TransactionalKeyspace
+            let snapshot = (*keyspace).snapshot();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
