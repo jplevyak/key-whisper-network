@@ -112,7 +112,7 @@ export const useMessagePolling = ({
 
        const newlyReceivedMessages: Message[] = [];
        const messagesToAck: { message_id: string; timestamp: string }[] = [];
-       const processedInThisCycle = new Set<string>(); // To deduplicate within this fetch
+       // Removed: const processedInThisCycle = new Set<string>();
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
@@ -129,13 +129,7 @@ export const useMessagePolling = ({
            continue;
          }
 
-         // Deduplicate based on message_id and timestamp within this fetch cycle
-         const uniqueMsgIdentifier = `${receivedMsg.message_id}|${receivedMsg.timestamp}`;
-         if (processedInThisCycle.has(uniqueMsgIdentifier)) {
-            console.log(`Skipping duplicate message in this cycle: ${uniqueMsgIdentifier}`);
-            continue;
-         }
-         processedInThisCycle.add(uniqueMsgIdentifier);
+         // Removed: Deduplication within the fetch cycle
 
 
          try {
