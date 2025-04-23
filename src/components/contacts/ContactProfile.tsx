@@ -217,6 +217,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    </>
   );
 };
 
