@@ -320,7 +320,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         markAsRead,
       deleteMessage,
       clearHistory,
-      triggerFetch, // Expose fetch function from the hook
+      // triggerFetch, // Removed
     }}
   >
       {children}
