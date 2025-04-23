@@ -72,7 +72,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
       title: 'Chat History Cleared',
       description: 'All messages have been deleted.',
     });
- };
+ }
 
  return (
    <>
