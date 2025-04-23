@@ -158,20 +158,23 @@ async fn get_messages_handler(
         let mut found_messages_this_iteration = Vec::new();
         let mut keys_to_remove_this_iteration = Vec::new();
 
-        {
+        { // Scope for snapshot lifetime
             let messages_partition =
                 keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-            let write_tx = keyspace.write_tx();
+            // Use a read-only snapshot instead of a write transaction
+            let snapshot = keyspace.snapshot();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
                 let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None;
 
-                // Scope for the iterator borrow within the transaction
+                // Scope for the iterator borrow using the snapshot
                 {
-                    let mut iter = write_tx.prefix(&messages_partition, key_prefix);
+                    // Iterate using the snapshot
+                    let mut iter = snapshot.prefix(&messages_partition, key_prefix);
                     if let Some(result) = iter.next() {
                         match result {
+                            // Note: snapshot operations return references, clone value bytes if needed later, but here we deserialize immediately
                             Ok((key_slice, value_slice)) => {
                                 found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
                             }
@@ -217,9 +220,9 @@ async fn get_messages_handler(
             // }
             // --- END REMOVED DELETION LOGIC ---
 
-            // Commit the read-only transaction (releases lock)
-            write_tx.commit()?;
-        }
+            // No need to commit a snapshot, it's dropped automatically at scope end
+            // write_tx.commit()?; // Removed commit
+        } // Snapshot goes out of scope here
 
         if !found_messages_this_iteration.is_empty() {
             // We found messages. Return them. Frontend will ACK later.
