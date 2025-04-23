@@ -92,20 +92,23 @@ const IndexContent = () => {
             <DialogTrigger asChild>
               <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary h-8 w-8">
                 <Info className="h-5 w-5" />
-                <span className="sr-only">About Key Whisper Network</span>
+                <span className="sr-only">About CCred Network</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle>About Key Whisper Network</DialogTitle>
+                <DialogTitle>About CCred Network</DialogTitle>
                 <DialogDescription>
                   Secure, end-to-end encrypted messaging.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4 text-sm">
                 <p>
-                  Key Whisper Network provides a secure way to exchange messages using end-to-end encryption.
-                  Your messages are encrypted on your device and can only be decrypted by the intended recipient.
+                  CCred Network provides a secure way to exchange messages using end-to-end encryption.
+                </p>
+                <h4 className="font-semibold mt-2">Security:</h4>
+                <p>
+                  Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages.
                 </p>
                 <h4 className="font-semibold mt-2">How to Use:</h4>
                 <ul className="list-disc pl-5 space-y-1">
