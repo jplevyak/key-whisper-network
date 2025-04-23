@@ -13,10 +13,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages, Message } from '@/contexts/MessagesContext';
-import { Send, Fingerprint, Trash2 } from 'lucide-react'; // Import Trash2 icon
+import { Send, Fingerprint, Trash2, Info } from 'lucide-react'; // Import Info icon
 import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
@@ -29,8 +39,9 @@ const ChatInterface = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
-  // State for confirmation dialog
+  // State for confirmation dialogs
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false); // State for About dialog
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
@@ -159,6 +170,45 @@ const ChatInterface = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        {/* About Dialog Trigger */}
+        <Dialog open={isAboutDialogOpen} onOpenChange={setIsAboutDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+              <Info className="h-5 w-5" />
+              <span className="sr-only">About Key Whisper Network</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>About Key Whisper Network</DialogTitle>
+              <DialogDescription>
+                Secure, end-to-end encrypted messaging.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4 text-sm">
+              <p>
+                Key Whisper Network provides a secure way to exchange messages using end-to-end encryption.
+                Your messages are encrypted on your device and can only be decrypted by the intended recipient.
+              </p>
+              <h4 className="font-semibold mt-2">How to Use:</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Add contacts by scanning their QR code or generating your own for them to scan.</li>
+                <li>Select a contact to start a conversation.</li>
+                <li>Messages are automatically encrypted and decrypted.</li>
+                <li>Use the trash icon to clear the conversation history on your device.</li>
+                <li>Forward messages securely using the forward icon on a message bubble.</li>
+              </ul>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Remember: Keep your device secure. Lost access means lost messages.
+              </p>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button">Close</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
       
       {/* Scrollable Messages Area */}
