@@ -23,6 +23,7 @@ interface ContactsContextType {
   forwardingPath: Contact[];
   setForwardingPath: (path: Contact[]) => void;
   updateContact: (contactId: string, updates: Partial<Contact>) => void;
+  updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>; // Add new function
 }
 
 const ContactsContext = createContext<ContactsContextType | undefined>(undefined);
@@ -190,6 +191,44 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
+  // Update the key for an existing contact
+  const updateContactKey = async (contactId: string, newKeyData: string): Promise<boolean> => {
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) {
+      console.error(`Contact not found for ID: ${contactId}`);
+      toast({
+        title: 'Error',
+        description: 'Could not find the contact to update the key.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    try {
+      // Import the new key
+      const newKey = await importKey(newKeyData);
+
+      // Update the in-memory key map
+      setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
+
+      // Encrypt and store the new key data in IndexedDB
+      const encryptedNewKeyData = mockEncryptForStorage(newKeyData);
+      await db.set('keys', contact.keyId, encryptedNewKeyData);
+
+      console.log(`Key updated successfully for contact ${contactId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error updating key for contact ${contactId}:`, error);
+      toast({
+        title: 'Key Update Failed',
+        description: 'Could not import or save the new encryption key.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
+
   return (
     <ContactsContext.Provider
       value={{
@@ -203,6 +242,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         forwardingPath,
         setForwardingPath,
         updateContact,
+        updateContactKey, // Expose the new function
       }}
     >
       {children}
