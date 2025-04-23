@@ -107,34 +107,52 @@ async fn get_messages_handler(
     let mut write_tx = keyspace.write_tx();
     let mut results = Vec::new();
 
-    for message_id in &payload.message_ids {
-        match write_tx.prefix(&messages_partition, &message_id)? {
-            Some(value_ivec) => {
-                // Found: Deserialize (IVec derefs to &[u8])
-                match serde_json::from_slice::<MessageRecord>(&value_ivec) {
-                    Ok(record) => {
-                        results.push(FoundMessage {
-                            message_id: message_id.clone(),
-                            message: record.message,
-                            timestamp: record.timestamp,
-                        });
+    for message_id_str in &payload.message_ids {
+        // Get the first item matching the prefix
+        let mut iter = write_tx.prefix(&messages_partition, message_id_str.as_bytes());
+        if let Some(result) = iter.next() {
+            match result {
+                Ok((key_slice, value_slice)) => {
+                    // Found: Deserialize
+                    match serde_json::from_slice::<MessageRecord>(&value_slice) {
+                        Ok(record) => {
+                            results.push(FoundMessage {
+                                message_id: message_id_str.clone(), // Use the original requested ID
+                                message: record.message,
+                                timestamp: record.timestamp,
+                            });
 
-                        write_tx.remove(&messages_partition, message_id.clone());
-                    }
-                    Err(e) => {
-                        error!("Failed to deserialize record for key {}: {}", message_id, e);
-                        return Err(AppError::SerdeJson(e));
+                            // Remove using the *full key* found by the iterator
+                            write_tx.remove(&messages_partition, key_slice.to_vec())?;
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to deserialize record for key prefix {}: {}",
+                                message_id_str, e
+                            );
+                            // Decide how to handle deserialization errors, e.g., skip or fail transaction
+                            // For now, let's propagate the error, which will abort the transaction
+                            return Err(AppError::SerdeJson(e));
+                        }
                     }
                 }
+                Err(e) => {
+                    error!(
+                        "Database error while iterating prefix {}: {}",
+                        message_id_str, e
+                    );
+                    return Err(AppError::Fjall(e));
+                }
             }
-            None => {
-                // Key not found, do nothing
-            }
+            // Note: We only process the *first* item found by the prefix iterator.
+            // If multiple messages could exist for the same message_id (different timestamps),
+            // this logic only handles the first one encountered.
         }
+        // If iter.next() is None, the prefix wasn't found, so we do nothing for this message_id.
     }
 
     write_tx.commit()?;
-    // If all operations succeeded, return the collected messages from the closure
+    // If all operations succeeded, return the collected messages
     Ok(Json(GetMessagesResponse { results }))
 }
 
