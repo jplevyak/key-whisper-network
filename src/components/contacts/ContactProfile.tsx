@@ -75,7 +75,7 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
  };
 
  return (
-   <> {/* Add opening fragment tag */}
+   <>
      <Dialog open={isOpen} onOpenChange={() => onClose()}>
        <DialogContent className="sm:max-w-[425px]">
          <DialogHeader>
