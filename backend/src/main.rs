@@ -158,11 +158,12 @@ async fn get_messages_handler(
         let mut found_messages_this_iteration = Vec::new();
         let mut keys_to_remove_this_iteration = Vec::new();
 
-        { // Scope for snapshot lifetime
+        {
+            // Scope for snapshot lifetime
             let messages_partition =
                 keyspace.open_partition("messages", PartitionCreateOptions::default())?;
             // Use a write transaction, even for reads in this context
-            let mut write_tx = keyspace.write_tx();
+            let write_tx = keyspace.write_tx();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
@@ -211,12 +212,6 @@ async fn get_messages_handler(
                     }
                 }
             } // End loop through message_ids
-
-            // --- REMOVED DELETION LOGIC ---
-            // for key in &keys_to_remove_this_iteration {
-            //     write_tx.remove(&messages_partition, key);
-            // }
-            // --- END REMOVED DELETION LOGIC ---
 
             // Commit the (read-only) transaction to release locks/resources
             write_tx.commit()?;
