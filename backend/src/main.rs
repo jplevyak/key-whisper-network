@@ -109,70 +109,86 @@ async fn get_messages_handler(
     let check_interval = Duration::from_millis(500); // Check DB every 500ms
 
     loop {
-        // --- Transactional Read-then-Delete Logic ---
         let messages_partition =
             keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-        let mut write_tx = keyspace.write_tx();
-        let mut results = Vec::new();
-        let mut keys_to_remove: Vec<Vec<u8>> = Vec::new();
-        let mut found_messages_in_tx = false;
 
-        for message_id_str in &payload.message_ids {
-            let key_prefix = message_id_str.as_bytes();
-            let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None;
+        let mut found_messages_this_iteration = Vec::new();
+        let mut keys_to_remove_this_iteration = Vec::new();
+        let mut tx_committed_with_data = false;
 
-            // Scope for the iterator borrow
-            {
-                let mut iter = write_tx.prefix(&messages_partition, key_prefix);
-                if let Some(result) = iter.next() {
-                    match result {
-                        Ok((key_slice, value_slice)) => {
-                            found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
+        // --- Transaction Scope ---
+        {
+            let mut write_tx = keyspace.write_tx(); // Create transaction inside the scope
+            let mut found_in_tx = false;
+
+            for message_id_str in &payload.message_ids {
+                let key_prefix = message_id_str.as_bytes();
+                let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None;
+
+                // Scope for the iterator borrow within the transaction
+                {
+                    let mut iter = write_tx.prefix(&messages_partition, key_prefix);
+                    if let Some(result) = iter.next() {
+                        match result {
+                            Ok((key_slice, value_slice)) => {
+                                found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
+                            }
+                            Err(e) => {
+                                error!("Database error during prefix scan for {}: {}", message_id_str, e);
+                                // Error within transaction scope, return immediately
+                                return Err(AppError::Fjall(e));
+                            }
+                        }
+                        // Only process the first item found for this prefix in this check
+                    }
+                } // Iterator goes out of scope
+
+                if let Some((full_key, value_bytes)) = found_item {
+                    match serde_json::from_slice::<MessageRecord>(&value_bytes) {
+                        Ok(record) => {
+                            // Store results temporarily for this iteration
+                            found_messages_this_iteration.push(FoundMessage {
+                                message_id: message_id_str.clone(),
+                                message: record.message,
+                                timestamp: record.timestamp,
+                            });
+                            keys_to_remove_this_iteration.push(full_key);
+                            found_in_tx = true;
                         }
                         Err(e) => {
-                            error!("Database error during prefix scan for {}: {}", message_id_str, e);
-                            // Abort transaction immediately on DB error
-                            return Err(AppError::Fjall(e));
+                            error!("Failed to deserialize record for key prefix {}: {}", message_id_str, e);
+                            // Error within transaction scope, return immediately
+                            return Err(AppError::SerdeJson(e));
                         }
                     }
-                    // Only process the first item found for this prefix in this check
                 }
-            } // Iterator goes out of scope
+            } // End loop through message_ids
 
-            if let Some((full_key, value_bytes)) = found_item {
-                match serde_json::from_slice::<MessageRecord>(&value_bytes) {
-                    Ok(record) => {
-                        results.push(FoundMessage {
-                            message_id: message_id_str.clone(),
-                            message: record.message,
-                            timestamp: record.timestamp,
-                        });
-                        keys_to_remove.push(full_key);
-                        found_messages_in_tx = true;
-                    }
-                    Err(e) => {
-                        error!("Failed to deserialize record for key prefix {}: {}", message_id_str, e);
-                        // Abort transaction on deserialization error
-                        return Err(AppError::SerdeJson(e));
-                    }
+            // --- Commit or Rollback Transaction ---
+            if found_in_tx {
+                // Messages found, perform removals within the transaction
+                for key in &keys_to_remove_this_iteration {
+                    write_tx.remove(&messages_partition, key);
                 }
+                write_tx.commit()?; // Commit changes
+                tx_committed_with_data = true; // Mark that we found and committed data
+            } else {
+                // No messages found, commit the (effectively read-only) transaction
+                write_tx.commit()?;
+                tx_committed_with_data = false; // Mark that we committed without finding data
             }
+            // write_tx goes out of scope here, BEFORE any potential await
         }
+        // --- End Transaction Scope ---
 
-        // --- Decision Point ---
-        if found_messages_in_tx {
-            // Messages found, perform removals and commit
-            for key in keys_to_remove {
-                write_tx.remove(&messages_partition, key);
-            }
-            write_tx.commit()?;
-            tracing::debug!("Found {} messages, returning.", results.len());
-            return Ok(Json(GetMessagesResponse { results }));
+
+        // --- Decision Point (Post-Transaction) ---
+        if tx_committed_with_data {
+            // We found messages and successfully committed their removal. Return them.
+            tracing::debug!("Found {} messages, returning.", found_messages_this_iteration.len());
+            return Ok(Json(GetMessagesResponse { results: found_messages_this_iteration }));
         } else {
-            // No messages found in this check. Commit the (read-only) transaction.
-            write_tx.commit()?;
-
-            // Check if timeout exceeded
+            // No messages were found in this iteration. Check timeout and potentially sleep.
             let now = Instant::now();
             if now >= deadline {
                 tracing::debug!("Long poll timeout reached.");
@@ -183,16 +199,17 @@ async fn get_messages_handler(
             let remaining_time = deadline - now;
             let sleep_duration = std::cmp::min(check_interval, remaining_time);
 
-            // Sleep, but allow cancellation if the client disconnects
+            // Sleep (await point) - The WriteTransaction is no longer alive here.
             tokio::select! {
                 _ = sleep(sleep_duration) => {
                     // Continue to the next iteration of the loop
                     tracing::trace!("Slept for {:?}, checking again.", sleep_duration);
                 }
-                // If the request is cancelled (e.g., client disconnect), the task will be aborted here.
+                // If the request is cancelled (e.g., client disconnect), the task will be aborted here,
+                // and Axum will handle it appropriately.
             }
         }
-    }
+    } // End loop
 }
 
 // --- Main Application Setup (No changes from previous) ---
