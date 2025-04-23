@@ -168,7 +168,12 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     const newContactKeys = new Map(contactKeys);
     newContactKeys.delete(contact.keyId);
     setContactKeys(newContactKeys);
-    
+
+    // If the deleted contact was the active one, clear the active contact state
+    if (activeContact && activeContact.id === contactId) {
+      setActiveContact(null);
+    }
+
     try {
       await db.delete('keys', contact.keyId);
       toast({
