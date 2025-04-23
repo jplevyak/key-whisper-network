@@ -18,29 +18,31 @@ interface GetMessagesApiResponse {
 interface UseMessagePollingOptions {
   setMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>;
   initialFetchDelay?: number;
-  pollingInterval?: number;
+  longPollTimeoutMs?: number; // Timeout for a single long poll request
 }
 
 export const useMessagePolling = ({
   setMessages,
   initialFetchDelay = 500,
-  pollingInterval = 10000,
+  longPollTimeoutMs = 30000, // Default 30 seconds for long poll
 }: UseMessagePollingOptions) => {
   const { contacts, getContactKey } = useContacts();
   const { toast } = useToast();
-  const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isFetchingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true); // To prevent state updates after unmount
 
-  const fetchMessagesFromServer = useCallback(async () => {
-    if (isFetchingRef.current || contacts.length === 0) {
-      console.log('Skipping fetch: already fetching or no contacts.');
+  // Renamed to reflect it's a single long poll request cycle
+  const fetchMessagesFromServer = useCallback(async (signal: AbortSignal) => {
+    if (contacts.length === 0) {
+      console.log('Skipping long poll: no contacts.');
+      // Return or throw? Returning allows the loop to continue cleanly.
+      // Throwing might be better if no contacts is an error state. Let's return.
       return;
     }
-    isFetchingRef.current = true;
-    console.log('Starting message fetch...');
+    console.log('Starting long poll request...');
 
-    const requestIdsToSend: string[] = []; // Will hold the generated stable IDs
-    const requestIdToContactIdMap: Map<string, string> = new Map(); // Map stable ID back to contactId
+    const requestIdsToSend: string[] = [];
+    const requestIdToContactIdMap: Map<string, string> = new Map();
     const contactKeysMap: Map<string, CryptoKey> = new Map(); // Keep this for decryption
 
     try {
@@ -74,14 +76,24 @@ export const useMessagePolling = ({
         return;
       }
 
-      // Send the list of stable request IDs (hashes) to the backend
+      // Send the list of stable request IDs (hashes) and timeout to the backend
       const response = await fetch('/api/get-messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message_ids: requestIdsToSend }),
+        body: JSON.stringify({
+          message_ids: requestIdsToSend,
+          timeout_ms: longPollTimeoutMs, // Send timeout hint
+        }),
+        signal: signal, // Pass the abort signal
       });
 
       if (!response.ok) {
+        // Don't throw AbortError if the request was intentionally aborted
+        if (signal.aborted) {
+          console.log('Fetch aborted by client.');
+          // Throw a specific error or return null/undefined to signal abortion
+          throw new DOMException('Aborted', 'AbortError');
+        }
         const errorText = await response.text();
         throw new Error(`API error ${response.status}: ${errorText}`);
       }
@@ -155,57 +167,96 @@ export const useMessagePolling = ({
          toast({ title: "New Messages", description: "You have received new messages." });
        }
       } else {
-        console.log('No new messages received from server.');
+        // This is expected during long polling timeouts
+        console.log('Long poll timed out or no new messages.');
       }
     } catch (error) {
-      console.error('Failed to fetch messages from server:', error);
-    } finally {
-      isFetchingRef.current = false;
-      console.log('Message fetch finished.');
+      // Re-throw errors to be handled by the polling loop, except AbortError
+      if (error instanceof DOMException && error.name === 'AbortError') {
+         console.log('Fetch aborted during processing.');
+         throw error; // Re-throw AbortError specifically
+      }
+      console.error('Failed during message fetch/processing:', error);
+      throw error; // Re-throw other errors
     }
-  }, [contacts, getContactKey, setMessages, toast]); // Include all dependencies
+    // No finally block needed here, the loop handles continuation/stopping
+  }, [contacts, getContactKey, setMessages, toast, longPollTimeoutMs]); // Add longPollTimeoutMs dependency
 
   useEffect(() => {
-    // Initial fetch delay
-    const initialTimeout = setTimeout(() => fetchMessagesFromServer(), initialFetchDelay);
+    isMountedRef.current = true;
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    let initialTimeoutId: NodeJS.Timeout | null = null;
 
-    const setupPolling = () => {
-      if (fetchIntervalRef.current) clearInterval(fetchIntervalRef.current);
-      console.log(`Setting up polling interval (${pollingInterval}ms)`);
-      fetchIntervalRef.current = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          fetchMessagesFromServer();
-        } else {
-          console.log('Skipping background fetch: tab not visible.');
+    const longPoll = async () => {
+      console.log('Long poll loop started.');
+      while (isMountedRef.current) {
+        if (signal.aborted) {
+          console.log('Abort signal detected, stopping loop.');
+          break;
         }
-      }, pollingInterval);
-    };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Tab became visible, triggering fetch.');
-        fetchMessagesFromServer();
-        setupPolling();
-      } else {
-        console.log('Tab became hidden, stopping polling.');
-        if (fetchIntervalRef.current) {
-          clearInterval(fetchIntervalRef.current);
-          fetchIntervalRef.current = null;
+        try {
+          // Wait for the fetch to complete (or timeout)
+          await fetchMessagesFromServer(signal);
+          // If successful (got messages or timed out), loop immediately continues for the next poll
+          console.log('Long poll request finished, starting next.');
+        } catch (error: any) {
+          if (error.name === 'AbortError') {
+            console.log('Long poll fetch aborted.');
+            break; // Exit loop if aborted
+          }
+          console.error('Long poll fetch error:', error);
+          // Wait before retrying on error
+          if (isMountedRef.current && !signal.aborted) {
+            console.log('Waiting 5s before retrying due to error...');
+            try {
+              // Use a promise with setTimeout that respects the abort signal
+              await new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(resolve, 5000); // 5s backoff
+                signal.addEventListener('abort', () => {
+                  clearTimeout(timeoutId);
+                  reject(new DOMException('Aborted', 'AbortError'));
+                });
+              });
+            } catch (abortError) {
+               if ((abortError as DOMException).name === 'AbortError') {
+                 console.log('Retry wait aborted.');
+                 break; // Exit loop if aborted during wait
+               }
+            }
+          }
         }
       }
+      console.log('Long polling loop stopped.');
     };
 
-    setupPolling();
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Start the first poll after the initial delay
+    initialTimeoutId = setTimeout(() => {
+        if (isMountedRef.current && !signal.aborted) {
+            longPoll();
+        }
+    }, initialFetchDelay);
 
+    // Cleanup function
     return () => {
-      console.log('Cleaning up message polling hook');
-      clearTimeout(initialTimeout);
-      if (fetchIntervalRef.current) clearInterval(fetchIntervalRef.current);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      console.log('Cleaning up long polling hook...');
+      isMountedRef.current = false;
+      if (initialTimeoutId) {
+        clearTimeout(initialTimeoutId);
+      }
+      abortControllerRef.current?.abort();
     };
-  }, [fetchMessagesFromServer, initialFetchDelay, pollingInterval]); // Dependencies for setting up/tearing down listeners/intervals
+    // fetchMessagesFromServer is stable due to useCallback
+  }, [fetchMessagesFromServer, initialFetchDelay]);
 
-  // Return the manual trigger function
-  return fetchMessagesFromServer;
+  // Return a function to manually trigger a fetch if needed (optional)
+  // Note: This manual trigger might interfere with the long poll loop if not handled carefully.
+  // For now, let's not return a manual trigger as the loop handles fetching.
+  // If needed, it would require aborting the current poll and starting a new one.
+  // return () => {
+  //   abortControllerRef.current?.abort(); // Abort current poll
+  //   // Need to restart the loop or manually call fetchMessagesFromServer
+  //   // This requires more complex state management.
+  // };
 };

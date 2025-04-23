@@ -8,7 +8,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc, time::Duration as StdDuration}; // Renamed to avoid conflict
+use tokio::time::{sleep, Duration, Instant}; // Added tokio time imports
 use tracing::error;
 
 // --- Data Structures ---
@@ -22,6 +23,7 @@ struct PutMessageRequest {
 #[derive(Deserialize, Debug)]
 struct GetMessagesRequest {
     message_ids: Vec<String>, // List of base64 encoded message IDs
+    timeout_ms: Option<u64>,  // Optional timeout for long polling
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -101,77 +103,95 @@ async fn get_messages_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
 ) -> Result<Json<GetMessagesResponse>, AppError> {
-    let messages_partition =
-        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+    let requested_timeout_ms = payload.timeout_ms.unwrap_or(30000); // Default 30s
+    let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
+    let check_interval = Duration::from_millis(500); // Check DB every 500ms
 
-    let mut write_tx = keyspace.write_tx();
-    let mut results = Vec::new();
+    loop {
+        // --- Transactional Read-then-Delete Logic ---
+        let messages_partition =
+            keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+        let mut write_tx = keyspace.write_tx();
+        let mut results = Vec::new();
+        let mut keys_to_remove: Vec<Vec<u8>> = Vec::new();
+        let mut found_messages_in_tx = false;
 
-    // Store keys to remove after iterating
-    let mut keys_to_remove: Vec<Vec<u8>> = Vec::new();
+        for message_id_str in &payload.message_ids {
+            let key_prefix = message_id_str.as_bytes();
+            let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None;
 
-    for message_id_str in &payload.message_ids {
-        let key_prefix = message_id_str.as_bytes();
-        let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None; // To store (full_key, value_bytes)
+            // Scope for the iterator borrow
+            {
+                let mut iter = write_tx.prefix(&messages_partition, key_prefix);
+                if let Some(result) = iter.next() {
+                    match result {
+                        Ok((key_slice, value_slice)) => {
+                            found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
+                        }
+                        Err(e) => {
+                            error!("Database error during prefix scan for {}: {}", message_id_str, e);
+                            // Abort transaction immediately on DB error
+                            return Err(AppError::Fjall(e));
+                        }
+                    }
+                    // Only process the first item found for this prefix in this check
+                }
+            } // Iterator goes out of scope
 
-        // --- Scope for the iterator borrow ---
-        {
-            let mut iter = write_tx.prefix(&messages_partition, key_prefix);
-            if let Some(result) = iter.next() {
-                match result {
-                    Ok((key_slice, value_slice)) => {
-                        // Store the full key and value bytes to process after the iterator's borrow ends
-                        found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
+            if let Some((full_key, value_bytes)) = found_item {
+                match serde_json::from_slice::<MessageRecord>(&value_bytes) {
+                    Ok(record) => {
+                        results.push(FoundMessage {
+                            message_id: message_id_str.clone(),
+                            message: record.message,
+                            timestamp: record.timestamp,
+                        });
+                        keys_to_remove.push(full_key);
+                        found_messages_in_tx = true;
                     }
                     Err(e) => {
-                        error!(
-                            "Database error while iterating prefix {}: {}",
-                            message_id_str, e
-                        );
-                        // Abort the transaction on DB error
-                        return Err(AppError::Fjall(e));
+                        error!("Failed to deserialize record for key prefix {}: {}", message_id_str, e);
+                        // Abort transaction on deserialization error
+                        return Err(AppError::SerdeJson(e));
                     }
                 }
-                // Note: We only process the *first* item found by the prefix iterator.
-            }
-            // Iterator goes out of scope here, releasing the borrow on write_tx
-        }
-        // --- End of iterator borrow scope ---
-
-        // Now process the found item (if any) outside the iterator's borrow scope
-        if let Some((full_key, value_bytes)) = found_item {
-            match serde_json::from_slice::<MessageRecord>(&value_bytes) {
-                Ok(record) => {
-                    results.push(FoundMessage {
-                        message_id: message_id_str.clone(), // Use the original requested ID
-                        message: record.message,
-                        timestamp: record.timestamp,
-                    });
-                    // Mark this key for removal later
-                    keys_to_remove.push(full_key);
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to deserialize record for key prefix {}: {}",
-                        message_id_str, e
-                    );
-                    // Decide how to handle deserialization errors, e.g., skip or fail transaction
-                    // For now, let's propagate the error, which will abort the transaction
-                    return Err(AppError::SerdeJson(e));
-                }
             }
         }
-        // If found_item is None, the prefix wasn't found, so we do nothing for this message_id.
-    }
 
-    // Now perform all removals within the transaction
-    for key in keys_to_remove {
-        write_tx.remove(&messages_partition, key); // No '?' needed here
-    }
+        // --- Decision Point ---
+        if found_messages_in_tx {
+            // Messages found, perform removals and commit
+            for key in keys_to_remove {
+                write_tx.remove(&messages_partition, key);
+            }
+            write_tx.commit()?;
+            tracing::debug!("Found {} messages, returning.", results.len());
+            return Ok(Json(GetMessagesResponse { results }));
+        } else {
+            // No messages found in this check. Commit the (read-only) transaction.
+            write_tx.commit()?;
 
-    write_tx.commit()?;
-    // If all operations succeeded, return the collected messages
-    Ok(Json(GetMessagesResponse { results }))
+            // Check if timeout exceeded
+            let now = Instant::now();
+            if now >= deadline {
+                tracing::debug!("Long poll timeout reached.");
+                return Ok(Json(GetMessagesResponse { results: vec![] })); // Timeout, return empty
+            }
+
+            // Wait before the next check, respecting the deadline
+            let remaining_time = deadline - now;
+            let sleep_duration = std::cmp::min(check_interval, remaining_time);
+
+            // Sleep, but allow cancellation if the client disconnects
+            tokio::select! {
+                _ = sleep(sleep_duration) => {
+                    // Continue to the next iteration of the loop
+                    tracing::trace!("Slept for {:?}, checking again.", sleep_duration);
+                }
+                // If the request is cancelled (e.g., client disconnect), the task will be aborted here.
+            }
+        }
+    }
 }
 
 // --- Main Application Setup (No changes from previous) ---
