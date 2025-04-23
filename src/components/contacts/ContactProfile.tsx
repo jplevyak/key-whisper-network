@@ -71,12 +71,13 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
       title: 'Chat History Cleared',
       description: 'All messages have been deleted.',
     });
-  };
+ };
 
-  return (
-    <Dialog open={isOpen} onOpenChange={() => onClose()}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
+ return (
+   <> {/* Add opening fragment tag */}
+     <Dialog open={isOpen} onOpenChange={() => onClose()}>
+       <DialogContent className="sm:max-w-[425px]">
+         <DialogHeader>
           <DialogTitle>Contact Profile</DialogTitle>
         </DialogHeader>
 
