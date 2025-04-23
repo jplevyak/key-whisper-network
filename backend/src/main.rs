@@ -167,15 +167,39 @@ async fn get_messages_handler(
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
-                let mut found_item: Option<(Vec<u8>, Vec<u8>)> = None;
 
                 // Scope for the iterator borrow using the transaction
                 {
-                    let mut iter = write_tx.prefix(&messages_partition, key_prefix);
-                    if let Some(result) = iter.next() {
+                    let iter = write_tx.prefix(&messages_partition, key_prefix);
+
+                    // Iterate through ALL items matching the prefix
+                    for result in iter {
                         match result {
                             Ok((key_slice, value_slice)) => {
-                                found_item = Some((key_slice.to_vec(), value_slice.to_vec()));
+                                let full_key = key_slice.to_vec();
+                                let value_bytes = value_slice.to_vec();
+
+                                // Deserialize the found record
+                                match serde_json::from_slice::<MessageRecord>(&value_bytes) {
+                                    Ok(record) => {
+                                        // Store results temporarily for this iteration
+                                        found_messages_this_iteration.push(FoundMessage {
+                                            message_id: message_id_str.clone(),
+                                            message: record.message,
+                                            timestamp: record.timestamp,
+                                        });
+                                        // We don't remove keys here anymore, just collect results
+                                        // keys_to_remove_this_iteration.push(full_key); // Removed - Deletion happens on ACK
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to deserialize record for key prefix {}: {}",
+                                            message_id_str, e
+                                        );
+                                        // Error within transaction scope, return immediately
+                                        return Err(AppError::SerdeJson(e));
+                                    }
+                                }
                             }
                             Err(e) => {
                                 error!(
@@ -186,31 +210,8 @@ async fn get_messages_handler(
                                 return Err(AppError::Fjall(e));
                             }
                         }
-                        // Only process the first item found for this prefix in this check
-                    }
+                    } // End iteration for this prefix
                 } // Iterator goes out of scope
-
-                if let Some((full_key, value_bytes)) = found_item {
-                    match serde_json::from_slice::<MessageRecord>(&value_bytes) {
-                        Ok(record) => {
-                            // Store results temporarily for this iteration
-                            found_messages_this_iteration.push(FoundMessage {
-                                message_id: message_id_str.clone(),
-                                message: record.message,
-                                timestamp: record.timestamp,
-                            });
-                            keys_to_remove_this_iteration.push(full_key);
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to deserialize record for key prefix {}: {}",
-                                message_id_str, e
-                            );
-                            // Error within transaction scope, return immediately
-                            return Err(AppError::SerdeJson(e));
-                        }
-                    }
-                }
             } // End loop through message_ids
 
             // Commit the (read-only) transaction to release locks/resources
