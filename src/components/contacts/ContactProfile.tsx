@@ -75,7 +75,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
  }
 
  return (
-   <>
      <Dialog open={isOpen} onOpenChange={() => onClose()}>
        <DialogContent className="sm:max-w-[425px]">
          <DialogHeader>
@@ -228,7 +227,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-    </>
   );
 };
 
