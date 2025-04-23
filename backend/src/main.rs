@@ -5,12 +5,8 @@ use axum::{
     routing::post,
     Router,
 };
-use base64::{
-    engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE, // Import URL_SAFE_NO_PAD
-    Engine as _,
-};
 use chrono::{DateTime, Utc};
-use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace}; // Add TransactionalKeyspace
+use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
 use tracing::error;
@@ -19,25 +15,25 @@ use tracing::error;
 
 #[derive(Deserialize)]
 struct PutMessageRequest {
-    message_id: String, // Hex encoded SHA256
+    message_id: String, // Base64 encoded
     message: String,    // Base64 encoded
 }
 
 #[derive(Deserialize)]
 struct GetMessagesRequest {
-    message_ids: Vec<String>, // List of Hex encoded SHA256
+    message_ids: Vec<String>, // List of base64 encoded message IDs
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MessageRecord {
-    message_base64: String,
+    message: String,
     timestamp: DateTime<Utc>,
 }
 
 // Modified FoundMessage to include the timestamp
 #[derive(Serialize)]
 struct FoundMessage {
-    message_id: String,       // Hex encoded SHA256
+    message_id: String,       // Base64 encoded
     message: String,          // Base64 encoded
     timestamp: DateTime<Utc>, // Added timestamp
 }
@@ -58,12 +54,6 @@ enum AppError {
     Fjall(#[from] fjall::Error),
     #[error("JSON serialization/deserialization error: {0}")]
     SerdeJson(#[from] serde_json::Error),
-    #[error("Hex decoding error: {0}")]
-    Hex(#[from] hex::FromHexError),
-    #[error("Base64 decoding error: {0}")]
-    Base64(#[from] base64::DecodeError),
-    #[error("Invalid input: {0}")]
-    InvalidInput(String),
 }
 
 impl IntoResponse for AppError {
@@ -74,15 +64,6 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             ),
-            AppError::Hex(_) => (
-                StatusCode::BAD_REQUEST,
-                "Invalid message ID format".to_string(),
-            ),
-            AppError::Base64(_) => (
-                StatusCode::BAD_REQUEST,
-                "Invalid message base64 format".to_string(),
-            ),
-            AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
         };
         (status, message).into_response()
     }
@@ -95,27 +76,16 @@ async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    // Validate that the message content is valid URL-safe base64 (no padding)
-    if BASE64_URL_SAFE.decode(&payload.message).is_err() {
-        // Use URL_SAFE_NO_PAD engine
-        return Err(AppError::InvalidInput(
-            "Invalid base64 encoding for message".to_string(),
-        ));
-    }
-
-    // Use the received message_id string directly as the key (as bytes)
-    // No more hex decoding or length validation for message_id
-    let key_bytes = payload.message_id.as_bytes();
-
+    let timestamp = Utc::now();
     let record = MessageRecord {
-        message_base64: payload.message,
-        timestamp: Utc::now(),
+        message: payload.message,
+        timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-    // Insert using the message_id bytes as the key
-    messages_partition.insert(key_bytes, value_bytes)?;
+    let key_bytes: Vec = payload.message_id.as_bytes() + timestamp.timestamp_millis().to_le_bytes();
+    messages_partition.insert(key_bytes.into(), value_bytes)?;
     // Optionally persist explicitly
     // keyspace.persist(PersistMode::BufferAsync)?;
     Ok(StatusCode::CREATED)
@@ -126,42 +96,28 @@ async fn get_messages_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
 ) -> Result<Json<GetMessagesResponse>, AppError> {
-    // Open the partition handle needed for operations inside the transaction
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
 
-    // Perform the get-and-delete operations within a single transaction
-    // The transaction function takes a closure. If the closure returns Ok,
-    // the transaction is committed. If it returns Err, it's rolled back.
-    // Dereference the Arc<Keyspace> to call the method on Keyspace
     let mut write_tx = keyspace.write_tx();
     let mut results = Vec::new();
 
     for message_id in &payload.message_ids {
-        // Attempt to get the message within the transaction using the partition handle
-        match write_tx.get(&messages_partition, &message_id)? {
+        match write_tx.prefix(&messages_partition, &message_id)? {
             Some(value_ivec) => {
                 // Found: Deserialize (IVec derefs to &[u8])
                 match serde_json::from_slice::<MessageRecord>(&value_ivec) {
-                    // Pass IVec directly
                     Ok(record) => {
-                        // Add to results list
                         results.push(FoundMessage {
-                            message_id: message_id.clone(), // Clone hex string for result
-                            message: record.message_base64,
-                            timestamp: record.timestamp, // Include timestamp
+                            message_id: message_id.clone(),
+                            message: record.message,
+                            timestamp: record.timestamp,
                         });
 
-                        // Successfully retrieved and deserialized, now remove within the same transaction using the partition handle
-                        // Errors during remove will be caught by commit()
                         write_tx.remove(&messages_partition, message_id.clone());
                     }
                     Err(e) => {
-                        // Deserialization error - potentially corrupt data.
-                        // Fail the entire transaction to avoid inconsistent state.
                         error!("Failed to deserialize record for key {}: {}", message_id, e);
-                        // Return the specific SerdeJson error, wrapped in AppError.
-                        // This will cause the transaction closure to return Err, triggering a rollback.
                         return Err(AppError::SerdeJson(e));
                     }
                 }
