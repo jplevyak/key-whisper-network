@@ -3,9 +3,20 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages, Message } from '@/contexts/MessagesContext';
-import { Send, Fingerprint } from 'lucide-react';
+import { Send, Fingerprint, Trash2 } from 'lucide-react'; // Import Trash2 icon
 import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
@@ -13,10 +24,13 @@ import ContactProfile from '../contacts/ContactProfile';
 
 const ChatInterface = () => {
   const { activeContact } = useContacts();
-  const { messages, sendMessage, markAsRead } = useMessages(); // Removed triggerFetch
+  // Get clearHistory from useMessages
+  const { messages, sendMessage, markAsRead, clearHistory } = useMessages();
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  // State for confirmation dialog
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
@@ -82,6 +96,13 @@ const ChatInterface = () => {
     setSelectedMessage(message);
     setIsForwarding(true);
   };
+
+  const handleClearHistory = () => {
+    if (activeContact) {
+      clearHistory(activeContact.id);
+      setIsClearConfirmOpen(false); // Close the dialog after clearing
+    }
+  };
   
   // If no active contact, show empty state
   if (!activeContact) {
@@ -114,6 +135,30 @@ const ChatInterface = () => {
             <div className="font-medium">{activeContact?.name}</div>
           </div>
         </div>
+        {/* Clear History Button and Dialog */}
+        <AlertDialog open={isClearConfirmOpen} onOpenChange={setIsClearConfirmOpen}>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-5 w-5" />
+              <span className="sr-only">Clear Messages</span>
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete all messages
+                in this conversation from your device.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Clear Messages
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       
       {/* Scrollable Messages Area */}
