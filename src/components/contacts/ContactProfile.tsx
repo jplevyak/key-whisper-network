@@ -218,12 +218,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
                    variant: 'destructive',
                  });
               });
-            } else if (confirmActionType === 'generate') {
-              try {
-                const newKeyId = await generateContactKey(); // Call the actual generation function
-                 // Assuming generateContactKey updates the contact internally or returns data needed for update
-                 // If it just returns the key ID, you might need:
-                 // await updateContact(contact.id, { keyId: newKeyId });
             }
 
             // 3. Reset state
