@@ -28,7 +28,7 @@ interface MessagesContextType {
   markAsRead: (contactId: string, messageId: string) => void;
   deleteMessage: (contactId: string, messageId: string) => void;
   clearHistory: (contactId: string) => void;
-  triggerFetch: () => void; // Add function to trigger fetch manually
+  // triggerFetch: () => void; // Removed - long polling handles this
 }
 
 // Type for the response from /api/get-messages
@@ -82,8 +82,8 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
    });
  }, [messages]);
 
- // Use the message polling hook
- const triggerFetch = useMessagePolling({ setMessages });
+ // Use the message polling hook - it runs automatically
+ useMessagePolling({ setMessages });
 
 
  // Send a message to a contact
@@ -179,8 +179,8 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
        };
      });
 
-     // Trigger fetch after sending successfully (or even if backend failed, to sync state)
-     triggerFetch(); // Call the function returned by the hook
+     // No need to manually trigger fetch, long polling will handle it
+     // triggerFetch(); // Removed call
 
      return true;
    } catch (error) {
