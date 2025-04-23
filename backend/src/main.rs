@@ -8,7 +8,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc, time::Duration as StdDuration}; // Renamed to avoid conflict
+use std::{net::SocketAddr, path::Path, sync::Arc}; // Removed StdDuration import
 use tokio::time::{sleep, Duration, Instant}; // Added tokio time imports
 use tracing::error;
 
@@ -99,6 +99,7 @@ async fn put_message_handler(
 }
 
 // Modified get_messages_handler for transactional read-then-delete
+#[axum::debug_handler] // Add this attribute
 async fn get_messages_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
