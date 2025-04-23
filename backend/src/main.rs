@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
-use tokio::task::spawn_blocking; // Import spawn_blocking
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{error, instrument}; // Import instrument
 
@@ -57,7 +56,6 @@ struct AckMessageRequest {
 struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
-
 
 // --- Shared State Type ---
 // Define the type for the shared application state (the transactional keyspace)
@@ -112,7 +110,6 @@ async fn put_message_handler(
     Ok(StatusCode::CREATED)
 }
 
-
 // --- Handler for Acknowledging/Deleting Messages ---
 #[instrument(skip(keyspace, payload))]
 async fn ack_messages_handler(
@@ -146,7 +143,6 @@ async fn ack_messages_handler(
     Ok(StatusCode::OK)
 }
 
-
 // --- Modified get_messages_handler (Read-Only) ---
 #[instrument(skip(keyspace, payload))] // Add tracing instrumentation
 #[axum::debug_handler]
@@ -165,7 +161,7 @@ async fn get_messages_handler(
         {
             let messages_partition =
                 keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-            let mut write_tx = keyspace.write_tx();
+            let write_tx = keyspace.write_tx();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
