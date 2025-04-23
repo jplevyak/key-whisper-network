@@ -13,7 +13,7 @@ import ContactProfile from '../contacts/ContactProfile';
 
 const ChatInterface = () => {
   const { activeContact } = useContacts();
-  const { messages, sendMessage, markAsRead } = useMessages();
+  const { messages, sendMessage, markAsRead, triggerFetch } = useMessages();
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
