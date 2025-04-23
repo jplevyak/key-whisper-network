@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
-import { encryptMessage, decryptMessage } from '@/utils/encryption';
-import { Message, MessagesContextType } from '@/contexts/MessagesContext'; // Assuming types are exported or moved
+// Import generateStableRequestId and decryptMessage
+import { generateStableRequestId, decryptMessage } from '@/utils/encryption';
+import { Message } from '@/contexts/MessagesContext'; // Import only Message type if needed
 
 // Type for the response from /api/get-messages
+// --- IMPORTANT: Adjust this interface based on backend changes ---
+// Assumes backend now returns request_id (the stable hash)
 interface GetMessagesApiResponse {
   results: {
     message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
@@ -37,38 +40,46 @@ export const useMessagePolling = ({
     isFetchingRef.current = true;
     console.log('Starting message fetch...');
 
-    const requestIds: string[] = [];
-    const idToContactMap: Map<string, string> = new Map();
-    const contactKeysMap: Map<string, CryptoKey> = new Map();
+    const requestIdsToSend: string[] = []; // Will hold the generated stable IDs
+    const requestIdToContactIdMap: Map<string, string> = new Map(); // Map stable ID back to contactId
+    const contactKeysMap: Map<string, CryptoKey> = new Map(); // Keep this for decryption
 
     try {
+      // Prepare data needed for the request and response processing
       for (const contact of contacts) {
         const key = await getContactKey(contact.id);
         if (!key) {
           console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
           continue;
         }
+        // Store the key for decryption later, mapped by contact.id
         contactKeysMap.set(contact.id, key);
 
-        const requestPlainText = contact.userGeneratedKey
-          ? "sending to key generator"
-          : "sending to key receiver";
-
-        const encryptedRequestId = await encryptMessage(requestPlainText, key);
-        requestIds.push(encryptedRequestId);
-        idToContactMap.set(encryptedRequestId, contact.id);
+        // Generate the stable request ID using the new function
+        try {
+          const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
+          requestIdsToSend.push(requestId);
+          // Map the generated stable ID back to the contactId to process the response
+          requestIdToContactIdMap.set(requestId, contact.id);
+        } catch (error) {
+          console.error(`Failed to generate request ID for contact ${contact.id}:`, error);
+          // Optionally skip this contact or handle the error appropriately
+          continue;
+        }
       }
 
-      if (requestIds.length === 0) {
+
+      if (requestIdsToSend.length === 0) {
         console.log('No valid contacts/keys to fetch messages for.');
         isFetchingRef.current = false;
         return;
       }
 
+      // Send the list of stable request IDs (hashes) to the backend
       const response = await fetch('/api/get-messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message_ids: requestIds }),
+        body: JSON.stringify({ request_ids: requestIdsToSend }), // Use 'request_ids' or similar field name
       });
 
       if (!response.ok) {
@@ -86,11 +97,17 @@ export const useMessagePolling = ({
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
-         const contactId = idToContactMap.get(receivedMsg.message_id);
-         const key = contactId ? contactKeysMap.get(contactId) : null;
+         // --- IMPORTANT: Backend response structure assumption ---
+         // Assumes the backend now returns the `request_id` (the stable hash) for each message,
+         // allowing us to map it back to the correct contact.
+         // Ensure your backend implements this change.
+
+         // Use the request_id from the response to find the corresponding contactId
+         const contactId = requestIdToContactIdMap.get(receivedMsg.request_id); // Use request_id from response
+         const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
 
          if (!contactId || !key) {
-           console.warn(`Could not find contact or key for received message_id: ${receivedMsg.message_id}`);
+           console.warn(`Could not find contact or key for received request_id: ${receivedMsg.request_id}`); // Log uses request_id
            continue;
          }
 
