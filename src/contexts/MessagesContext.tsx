@@ -139,6 +139,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
          }),
        });
 
+       console.log(response);
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`API error ${response.status}: ${errorText}`);
