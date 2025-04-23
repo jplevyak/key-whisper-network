@@ -71,15 +71,6 @@ const MessageBubble = ({ message, onForward }: MessageBubbleProps) => {
           </div>
           
           <div className="flex items-center gap-2">
-            {isSent && (
-              <div className={`text-xs flex items-center gap-1 ${
-                isSent ? 'text-primary-foreground/70' : 'text-muted-foreground'
-              }`}>
-                <MessageSquare className="h-3 w-3" />
-                <span>Sent</span>
-              </div>
-            )}
-            
             <Button
               variant="ghost"
               size="sm"
