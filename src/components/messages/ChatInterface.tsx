@@ -13,7 +13,7 @@ import ContactProfile from '../contacts/ContactProfile';
 
 const ChatInterface = () => {
   const { activeContact } = useContacts();
-  const { messages, sendMessage, markAsRead, triggerFetch } = useMessages();
+  const { messages, sendMessage, markAsRead } = useMessages(); // Removed triggerFetch
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -33,12 +33,12 @@ const ChatInterface = () => {
          markAsRead(activeContact.id, msg.id);
        }); // <-- Added missing closing parenthesis and semicolon
    }
-   // Trigger fetch when active contact changes
-   if (activeContact) {
-     console.log(`Active contact changed to ${activeContact.name}, triggering fetch.`);
-     triggerFetch();
-   }
- }, [activeContact, activeMessages, markAsRead, triggerFetch]); // Add triggerFetch dependency
+   // Long polling handles fetching automatically now
+   // if (activeContact) {
+   //   console.log(`Active contact changed to ${activeContact.name}, triggering fetch.`);
+   //   triggerFetch(); // Removed call
+   // }
+ }, [activeContact, activeMessages, markAsRead]); // Removed triggerFetch dependency
 
 
  // Scroll to bottom when messages change
