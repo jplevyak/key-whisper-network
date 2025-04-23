@@ -156,7 +156,6 @@ async fn get_messages_handler(
 
     loop {
         let mut found_messages_this_iteration = Vec::new();
-        let mut keys_to_remove_this_iteration = Vec::new();
 
         {
             // Scope for snapshot lifetime
@@ -188,8 +187,7 @@ async fn get_messages_handler(
                                             message: record.message,
                                             timestamp: record.timestamp,
                                         });
-                                        // We don't remove keys here anymore, just collect results
-                                        // keys_to_remove_this_iteration.push(full_key); // Removed - Deletion happens on ACK
+                                        // Deletion happens on ACK
                                     }
                                     Err(e) => {
                                         error!(
