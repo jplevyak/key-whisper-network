@@ -123,7 +123,7 @@ async fn get_messages_handler(
                             });
 
                             // Remove using the *full key* found by the iterator
-                            write_tx.remove(&messages_partition, key_slice.to_vec())?;
+                            write_tx.remove(&messages_partition, key_slice.to_vec()); // No '?' needed here
                         }
                         Err(e) => {
                             error!(
