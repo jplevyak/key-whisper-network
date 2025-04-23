@@ -112,14 +112,11 @@ export const useMessagePolling = ({
 
        const newlyReceivedMessages: Message[] = [];
        const messagesToAck: { message_id: string; timestamp: string }[] = [];
-       // Removed: const processedInThisCycle = new Set<string>();
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
          // Log the ID being processed and the result of the map lookup
-         console.log('Processing receivedMsg.message_id:', receivedMsg.message_id);
          const lookedUpContactId = requestIdToContactIdMap.get(receivedMsg.message_id);
-         console.log('Result of map lookup:', lookedUpContactId);
 
          const contactId = lookedUpContactId; // Use the looked-up value
          const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
@@ -128,9 +125,6 @@ export const useMessagePolling = ({
            console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
-
-         // Removed: Deduplication within the fetch cycle
-
 
          try {
            // We could optionally try decrypting here to validate the message early.
