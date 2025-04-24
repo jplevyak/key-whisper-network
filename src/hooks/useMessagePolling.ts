@@ -20,7 +20,10 @@ interface UseMessagePollingOptions {
   setMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>;
   initialFetchDelay?: number;
   longPollTimeoutMs?: number; // Timeout for a single long poll request
+  minPollIntervalMs?: number; // Minimum time between the start of polls
 }
+
+const MIN_POLL_INTERVAL_MS = 1000; // Default minimum interval of 1 second
 
 export const useMessagePolling = ({
   setMessages,
