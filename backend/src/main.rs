@@ -89,7 +89,7 @@ async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    const MAX_MESSAGE_ID_BYTES: usize = 34;
+    const MAX_MESSAGE_ID_BYTES: usize = 100;
     const MAX_MESSAGE_BYTES: usize = 2048;
 
     if payload.message_id.len() > MAX_MESSAGE_ID_BYTES {
