@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
 import { generateStableRequestId, decryptMessage } from '@/utils/encryption';
@@ -28,6 +29,7 @@ export const useMessagePolling = ({
 }: UseMessagePollingOptions) => {
   const { contacts, getContactKey } = useContacts();
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth(); // Get authentication status
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true); // To prevent state updates after unmount
 
@@ -225,6 +227,17 @@ export const useMessagePolling = ({
 
   useEffect(() => {
     isMountedRef.current = true;
+
+    // --- Prevent polling if not authenticated ---
+    if (!isAuthenticated) {
+      console.log('User not authenticated, skipping message polling setup.');
+      // Ensure cleanup runs if the component unmounts while waiting for auth
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
+    // --- End modification ---
+
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
     let initialTimeoutId: NodeJS.Timeout | null = null;
@@ -272,9 +285,10 @@ export const useMessagePolling = ({
       console.log('Long polling loop stopped.');
     };
 
-    // Start the first poll after the initial delay
+    // Start the first poll after the initial delay ONLY if authenticated
     initialTimeoutId = setTimeout(() => {
-        if (isMountedRef.current && !signal.aborted) {
+        // Added isAuthenticated check here too for safety
+        if (isMountedRef.current && !signal.aborted && isAuthenticated) { 
             longPoll();
         }
     }, initialFetchDelay);
@@ -288,8 +302,8 @@ export const useMessagePolling = ({
       }
       abortControllerRef.current?.abort();
     };
-    // fetchMessagesFromServer is stable due to useCallback
-  }, [fetchMessagesFromServer, initialFetchDelay]);
+    // Add isAuthenticated to dependency array
+  }, [fetchMessagesFromServer, initialFetchDelay, isAuthenticated]);
 
   // Return a function to manually trigger a fetch if needed (optional)
   // Note: This manual trigger might interfere with the long poll loop if not handled carefully.
