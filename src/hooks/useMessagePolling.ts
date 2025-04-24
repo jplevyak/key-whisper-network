@@ -24,8 +24,9 @@ interface UseMessagePollingOptions {
 
 export const useMessagePolling = ({
   setMessages,
-  initialFetchDelay = 500,
-  longPollTimeoutMs = 30000, // Default 30 seconds for long poll
+  initialFetchDelay = 500, // Delay before the *first* poll starts
+  longPollTimeoutMs = 30000, // Timeout for a single long poll request
+  minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
 }: UseMessagePollingOptions) => {
   const { contacts, getContactKey } = useContacts();
   const { toast } = useToast();
@@ -244,18 +245,51 @@ export const useMessagePolling = ({
 
     const longPoll = async () => {
       console.log('Long poll loop started.');
+      let lastPollStartTime = 0; // Track the start time of the last poll
+
       while (isMountedRef.current) {
         if (signal.aborted) {
           console.log('Abort signal detected, stopping loop.');
           break;
         }
 
+        // --- Enforce minimum interval ---
+        const now = performance.now();
+        const timeSinceLastStart = now - lastPollStartTime;
+        if (lastPollStartTime > 0 && timeSinceLastStart < minPollIntervalMs) {
+          const delayNeeded = minPollIntervalMs - timeSinceLastStart;
+          console.log(`Minimum interval enforced. Waiting ${delayNeeded.toFixed(0)}ms...`);
+          try {
+            await new Promise((resolve, reject) => {
+              const timeoutId = setTimeout(resolve, delayNeeded);
+              signal.addEventListener('abort', () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException('Aborted', 'AbortError'));
+              });
+            });
+          } catch (abortError) {
+            if ((abortError as DOMException).name === 'AbortError') {
+              console.log('Minimum interval wait aborted.');
+              break; // Exit loop if aborted during wait
+            }
+          }
+          // Check abort signal again after waiting
+          if (signal.aborted) {
+            console.log('Abort signal detected after minimum interval wait.');
+            break;
+          }
+        }
+        // --- End minimum interval enforcement ---
+
+        lastPollStartTime = performance.now(); // Record start time *before* the await
+
         try {
           // Wait for the fetch to complete (or timeout)
           await fetchMessagesFromServer(signal);
-          // If successful (got messages or timed out), loop immediately continues for the next poll
-          console.log('Long poll request finished, starting next.');
+          // If successful (got messages or timed out), loop continues. Delay handled above.
+          console.log('Long poll request finished successfully or timed out.');
         } catch (error: any) {
+          lastPollStartTime = 0; // Reset start time on error to avoid immediate retry delay issue
           if (error.name === 'AbortError') {
             console.log('Long poll fetch aborted.');
             break; // Exit loop if aborted
@@ -302,8 +336,8 @@ export const useMessagePolling = ({
       }
       abortControllerRef.current?.abort();
     };
-    // Add isAuthenticated to dependency array
-  }, [fetchMessagesFromServer, initialFetchDelay, isAuthenticated]);
+    // Add isAuthenticated and minPollIntervalMs to dependency array
+  }, [fetchMessagesFromServer, initialFetchDelay, isAuthenticated, minPollIntervalMs]);
 
   // Return a function to manually trigger a fetch if needed (optional)
   // Note: This manual trigger might interfere with the long poll loop if not handled carefully.
