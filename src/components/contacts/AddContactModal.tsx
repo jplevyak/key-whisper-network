@@ -16,7 +16,9 @@ interface AddContactModalProps {
 
 const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const haikunator = new Haikunator();
-  const [name, setName] = useState('');
+  const [name, setName] = useState(''); // The committed/saved name
+  const [isNameEditing, setIsNameEditing] = useState(false);
+  const [tempName, setTempName] = useState(''); // Temporary name while editing
   const [capturedImage, setCapturedImage] = useState<string>('');
   const [scannedKey, setScannedKey] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
@@ -24,15 +26,62 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Initialize name and tempName when dialog opens if name is empty
     if (isOpen && !name) {
-      setName(haikunator.haikunate());
+      const initialHaiku = haikunator.haikunate();
+      setName(initialHaiku);
+      setTempName(initialHaiku); // Also set tempName initially
+      setIsNameEditing(false); // Start in view mode
+    } else if (isOpen) {
+      // If reopening with an existing name, ensure tempName matches
+      setTempName(name);
+      setIsNameEditing(false);
     }
-  }, [isOpen]);
+  }, [isOpen]); // Rerun when isOpen changes
+
+  // --- Name Editing Handlers ---
+  const handleToggleNameEdit = () => {
+    if (!isNameEditing) {
+      // Entering edit mode: copy current saved name to tempName
+      setTempName(name);
+    }
+    // If leaving edit mode without saving, tempName is discarded implicitly
+    setIsNameEditing(!isNameEditing);
+  };
+
+  const handleSaveName = () => {
+    const trimmedName = tempName.trim();
+    if (trimmedName === '') {
+      toast({
+        title: 'Invalid Name',
+        description: 'Contact name cannot be empty.',
+        variant: 'destructive',
+      });
+      return false; // Indicate save failed
+    }
+    setName(trimmedName); // Commit the change
+    setIsNameEditing(false); // Exit editing mode
+    return true; // Indicate save succeeded
+  };
+  // --- End Name Editing Handlers ---
+
+  // Function to ensure name is saved before proceeding
+  const ensureNameIsSaved = (): boolean => {
+    if (isNameEditing) {
+      return handleSaveName(); // Attempt to save, return success/failure
+    }
+    return true; // Not editing, so proceed
+  };
+
 
   const handleCreateContact = async () => {
-    if (!name) {
+    // Ensure name is saved first
+    if (!ensureNameIsSaved()) return;
+
+    // Now use the potentially updated 'name' state
+    if (!name) { // Check the committed name state
       toast({
-        title: 'Required Field',
+        title: 'Required Field', // Should ideally not happen if ensureNameIsSaved worked
         description: 'Please enter a label for your contact',
         variant: 'destructive',
       });
@@ -62,12 +111,14 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
 
   const resetForm = () => {
     setName('');
+    setTempName(''); // Reset temp name
+    setIsNameEditing(false); // Reset editing state
     setScannedKey('');
     setGeneratedKey('');
     setCapturedImage('');
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) {
       resetForm();
     }
@@ -93,27 +144,35 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
             Exchange encryption keys securely via QR codes
           </DialogDescription>
         </DialogHeader>
-        
         <div className="space-y-4 py-4">
           <ContactNameEdit
-            initialName={name}
-            onUpdateName={setName}
+            name={isNameEditing ? tempName : name} // Show tempName if editing, else saved name
+            isEditing={isNameEditing}
+            onNameChange={setTempName} // Update tempName directly
+            onSave={handleSaveName}
+            onEditToggle={handleToggleNameEdit}
           />
-          
+
           <ContactImageUpload
             currentImage={capturedImage || '/placeholder.svg'}
             onImageCapture={setCapturedImage}
           />
-          
+
           <QRCodeActions
-            onScanSuccess={setScannedKey}
+            onScanSuccess={(keyData) => {
+              if (!ensureNameIsSaved()) return; // Save name first
+              setGeneratedKey(''); // Clear generated key if scanning
+              setScannedKey(keyData);
+            }}
             onGenerateKey={async () => {
+              if (!ensureNameIsSaved()) return ''; // Save name first, return empty on failure
               const key = await generateContactKey();
+              setScannedKey(''); // Clear scanned key if generating
               setGeneratedKey(key);
               return key;
             }}
           />
-          
+
           {(scannedKey || generatedKey) && (
             <div className="p-3 bg-success/20 text-success rounded-md text-sm">
               Key successfully {scannedKey ? 'scanned' : 'generated'}! Ready to create contact.
@@ -125,9 +184,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleCreateContact} 
-            disabled={!name || (!scannedKey && !generatedKey)}
+          <Button
+            onClick={handleCreateContact}
+            // Disable if editing name OR if name is empty OR if no key is set
+            disabled={isNameEditing || !name || (!scannedKey && !generatedKey)}
           >
             Create Contact
           </Button>
