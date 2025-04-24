@@ -68,6 +68,8 @@ enum AppError {
     Fjall(#[from] fjall::Error),
     #[error("JSON serialization/deserialization error: {0}")]
     SerdeJson(#[from] serde_json::Error),
+    #[error("Payload too large: {0}")]
+    PayloadTooLarge(String),
 }
 
 impl IntoResponse for AppError {
@@ -78,6 +80,7 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),
             ),
+            AppError::PayloadTooLarge(details) => (StatusCode::PAYLOAD_TOO_LARGE, details),
         };
         (status, message).into_response()
     }
@@ -90,9 +93,27 @@ async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
+    // --- Size Validation ---
+    const MAX_MESSAGE_ID_BYTES: usize = 34;
+    const MAX_MESSAGE_BYTES: usize = 2048;
+
+    if payload.message_id.len() > MAX_MESSAGE_ID_BYTES {
+        return Err(AppError::PayloadTooLarge(format!(
+            "message_id exceeds maximum size of {} bytes",
+            MAX_MESSAGE_ID_BYTES
+        )));
+    }
+    if payload.message.len() > MAX_MESSAGE_BYTES {
+        return Err(AppError::PayloadTooLarge(format!(
+            "message exceeds maximum size of {} bytes",
+            MAX_MESSAGE_BYTES
+        )));
+    }
+    // --- End Size Validation ---
+
     let timestamp = Utc::now();
     let record = MessageRecord {
-        message: payload.message,
+        message: payload.message, // Use the validated message
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
