@@ -7,28 +7,24 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
-use nonzero_ext::nonzero; // Required by tower-governor
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
 use tokio::time::{sleep, Duration, Instant};
-use tower::ServiceBuilder; // For applying layers
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tracing::{error, instrument}; // Import instrument
-
-// --- Data Structures ---
+use tracing::{error, instrument};
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
-    message_id: String, // Base64 encoded
-    message: String,    // Base64 encoded
+    message_id: String,
+    message: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct GetMessagesRequest {
-    message_ids: Vec<String>, // List of base64 encoded message IDs
-    timeout_ms: Option<u64>,  // Optional timeout for long polling
+    message_ids: Vec<String>,
+    timeout_ms: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,12 +33,11 @@ struct MessageRecord {
     timestamp: DateTime<Utc>,
 }
 
-// Modified FoundMessage to include the timestamp
 #[derive(Serialize, Debug)]
 struct FoundMessage {
-    message_id: String,       // Base64 encoded
-    message: String,          // Base64 encoded
-    timestamp: DateTime<Utc>, // Added timestamp
+    message_id: String,
+    message: String,
+    timestamp: DateTime<Utc>,
 }
 
 #[derive(Serialize, Debug)]
@@ -53,8 +48,8 @@ struct GetMessagesResponse {
 // --- Structs for Acknowledgment ---
 #[derive(Deserialize, Debug)]
 struct AckMessageRequest {
-    message_id: String,       // Base64 encoded stable request ID
-    timestamp: DateTime<Utc>, // Timestamp of the message to delete
+    message_id: String,
+    timestamp: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -62,7 +57,6 @@ struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
 
-// --- Shared State Type ---
 // Define the type for the shared application state (the transactional keyspace)
 type SharedState = Arc<TransactionalKeyspace>;
 
@@ -91,14 +85,10 @@ impl IntoResponse for AppError {
     }
 }
 
-// --- Axum Handlers ---
-
-// put_message_handler remains the same as before
 async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    // --- Size Validation ---
     const MAX_MESSAGE_ID_BYTES: usize = 34;
     const MAX_MESSAGE_BYTES: usize = 2048;
 
@@ -114,11 +104,10 @@ async fn put_message_handler(
             MAX_MESSAGE_BYTES
         )));
     }
-    // --- End Size Validation ---
 
     let timestamp = Utc::now();
     let record = MessageRecord {
-        message: payload.message, // Use the validated message
+        message: payload.message,
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
@@ -143,10 +132,9 @@ async fn ack_messages_handler(
     Json(payload): Json<AckMessagesPayload>,
 ) -> Result<StatusCode, AppError> {
     if payload.acks.is_empty() {
-        return Ok(StatusCode::OK); // Nothing to do
+        return Ok(StatusCode::OK);
     }
 
-    // Directly perform operations without spawn_blocking
     let messages_partition =
         keyspace.open_partition("messages", PartitionCreateOptions::default())?;
 
@@ -164,13 +152,12 @@ async fn ack_messages_handler(
         tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
     }
 
-    write_tx.commit()?; // Commit all removals, propagate error with '?'
+    write_tx.commit()?;
 
     Ok(StatusCode::OK)
 }
 
-// --- Modified get_messages_handler (Read-Only) ---
-#[instrument(skip(keyspace, payload))] // Add tracing instrumentation
+#[instrument(skip(keyspace, payload))]
 #[axum::debug_handler]
 async fn get_messages_handler(
     State(keyspace): State<SharedState>,
@@ -272,8 +259,6 @@ async fn get_messages_handler(
     } // End loop
 }
 
-// --- Main Application Setup (No changes from previous) ---
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -286,29 +271,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let shared_state = Arc::new(keyspace);
 
-    // --- Rate Limiting Setup ---
-    // Allow bursts of 200 requests per minute.
-    let governor_config = Box::new(
+    let governor_config = Arc::new(
         GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor) // Use SmartIpKeyExtractor for X-Real-IP
-            .per_minute(nonzero!(200u32))
-            .burst_size(nonzero!(200u32))
+            .per_second(5)
+            .burst_size(5)
             .finish()
             .unwrap(),
     );
 
-    let governor_layer = ServiceBuilder::new().layer(GovernorLayer {
-        // leak the config to allow it to live static
-        config: Box::leak(governor_config),
+    let governor_limiter = governor_config.limiter().clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(60));
+        tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+        governor_limiter.retain_recent();
     });
-    // --- End Rate Limiting Setup ---
 
     let app = Router::new()
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
-        .route("/api/ack-messages", post(ack_messages_handler)) // Add the new route
+        .route("/api/ack-messages", post(ack_messages_handler))
         .with_state(shared_state)
-        .layer(governor_layer); // Apply the rate limiting layer
+        .layer(GovernorLayer {
+            config: governor_config,
+        });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Listening on {}", addr);

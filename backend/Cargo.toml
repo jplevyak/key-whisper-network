@@ -12,9 +12,7 @@ fjall = "2.9"
 hex = "0.4"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
-nonzero-ext = "0.3" # Required by tower-governor
 thiserror = "1"
-tower = "0.4" # Required for ServiceBuilder
-tower-governor = { version = "0.4", features = ["axum"] }
+tower_governor = { version = "0.7", features = ["axum"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
