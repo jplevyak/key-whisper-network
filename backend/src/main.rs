@@ -7,9 +7,14 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
+use nonzero_ext::nonzero; // Required by tower-governor
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
 use tokio::time::{sleep, Duration, Instant};
+use tower::ServiceBuilder; // For applying layers
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
+};
 use tracing::{error, instrument}; // Import instrument
 
 // --- Data Structures ---
@@ -281,11 +286,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let shared_state = Arc::new(keyspace);
 
+    // --- Rate Limiting Setup ---
+    // Allow bursts of 200 requests per minute.
+    let governor_config = Box::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor) // Use SmartIpKeyExtractor for X-Real-IP
+            .per_minute(nonzero!(200u32))
+            .burst_size(nonzero!(200u32))
+            .finish()
+            .unwrap(),
+    );
+
+    let governor_layer = ServiceBuilder::new().layer(GovernorLayer {
+        // leak the config to allow it to live static
+        config: Box::leak(governor_config),
+    });
+    // --- End Rate Limiting Setup ---
+
     let app = Router::new()
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
         .route("/api/ack-messages", post(ack_messages_handler)) // Add the new route
-        .with_state(shared_state);
+        .with_state(shared_state)
+        .layer(governor_layer); // Apply the rate limiting layer
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     tracing::info!("Listening on {}", addr);
