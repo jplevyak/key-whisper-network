@@ -43,6 +43,7 @@ const LoginForm = () => {
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
+              autoComplete="username webauthn"
               className="bg-muted/30 border-white/20 focus:ring-primary focus:border-primary"
             />
           </div>
