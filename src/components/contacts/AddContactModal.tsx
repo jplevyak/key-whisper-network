@@ -151,6 +151,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
             onNameChange={setTempName} // Update tempName directly
             onSave={handleSaveName}
             onEditToggle={handleToggleNameEdit}
+            onClear={() => setTempName('')} // Pass the clear handler
           />
 
           <ContactImageUpload
