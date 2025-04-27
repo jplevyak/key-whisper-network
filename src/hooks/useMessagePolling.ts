@@ -1,354 +1,279 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import React, { useEffect, useRef, useCallback, useState } from 'react'; // Added useState
+import { useAuth } from '@/contexts/AuthContext';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
 import { generateStableRequestId, decryptMessage } from '@/utils/encryption';
-import { Message } from '@/contexts/MessagesContext'; // Import only Message type if needed
+import { Message } from '@/contexts/MessagesContext';
 
-// Type for the response from /api/get-messages
-// --- IMPORTANT: Adjust this interface based on backend changes ---
-// Assumes backend now returns request_id (the stable hash)
-interface GetMessagesApiResponse {
-  results: {
-    message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
-    message: string;    // Base64 encoded encrypted message content
-    timestamp: string;  // ISO timestamp from backend
-  }[];
-}
+// Type for the data received in an SSE 'message' event
+// Based on the Rust SSE handler sending a JSON array of FoundMessage
+// Note: The 'data' field of an SSE message event is a string. We parse it as JSON.
+type SseMessageData = {
+  message_id: string; // This is the stable request ID hash
+  message: string;    // Base64 encoded encrypted message content
+  timestamp: string;  // ISO timestamp from backend
+}[]; // Expecting an array
 
-interface UseMessagePollingOptions {
+interface UseMessageEventsOptions { // Renamed options
   setMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>;
-  initialFetchDelay?: number;
-  longPollTimeoutMs?: number; // Timeout for a single long poll request
-  minPollIntervalMs?: number; // Minimum time between the start of polls
 }
-
-const MIN_POLL_INTERVAL_MS = 1000; // Default minimum interval of 1 second
 
 export const useMessagePolling = ({
   setMessages,
-  initialFetchDelay = 500, // Delay before the *first* poll starts
-  longPollTimeoutMs = 30000, // Timeout for a single long poll request
-  minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
-}: UseMessagePollingOptions) => {
+}: UseMessageEventsOptions) => {
   const { contacts, getContactKey } = useContacts();
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth(); // Get authentication status
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const isMountedRef = useRef(true); // To prevent state updates after unmount
+  const { isAuthenticated } = useAuth();
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const isMountedRef = useRef(true);
+  // Store contact keys and the request ID map in refs or state
+  // to make them accessible within event handlers without causing dependency loops.
+  // Using state ensures the effect re-runs if these derived values change.
+  const [derivedContactData, setDerivedContactData] = useState<{
+      requestIds: string[];
+      requestIdToContactIdMap: Map<string, string>;
+      contactKeysMap: Map<string, CryptoKey>;
+  } | null>(null);
 
-  // Renamed to reflect it's a single long poll request cycle
-  const fetchMessagesFromServer = useCallback(async (signal: AbortSignal) => {
-    if (contacts.length === 0) {
-      console.log('Skipping long poll: no contacts.');
-      // Return or throw? Returning allows the loop to continue cleanly.
-      // Throwing might be better if no contacts is an error state. Let's return.
-      return;
-    }
-    console.log('Starting long poll request...');
-
-    const requestIdsToSend: string[] = [];
-    const requestIdToContactIdMap: Map<string, string> = new Map();
-    const contactKeysMap: Map<string, CryptoKey> = new Map(); // Keep this for decryption
-
-    try {
-      // Prepare data needed for the request and response processing
-      for (const contact of contacts) {
-        const key = await getContactKey(contact.id);
-        if (!key) {
-          console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
-          continue;
-        }
-        // Store the key for decryption later, mapped by contact.id
-        contactKeysMap.set(contact.id, key);
-
-        // Generate the stable request ID using the new function
-        try {
-          const requestId = await generateStableRequestId(!contact.userGeneratedKey, key);
-          requestIdsToSend.push(requestId);
-          // Map the generated stable ID back to the contactId to process the response
-          requestIdToContactIdMap.set(requestId, contact.id);
-        } catch (error) {
-          console.error(`Failed to generate request ID for contact ${contact.id}:`, error);
-          // Optionally skip this contact or handle the error appropriately
-          continue;
-        }
-      }
-
-      // Log the populated map
-      console.log('Populated requestIdToContactIdMap:', requestIdToContactIdMap);
-
-
-      if (requestIdsToSend.length === 0) {
-        console.log('No valid contacts/keys to fetch messages for.');
-        // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
-        // isFetchingRef.current = false; 
-        return;
-      }
-
-      // Send the list of stable request IDs (hashes) and timeout to the backend
-      const response = await fetch('/api/get-messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message_ids: requestIdsToSend,
-          timeout_ms: longPollTimeoutMs, // Send timeout hint
-        }),
-        signal: signal, // Pass the abort signal
-      });
-
-      if (!response.ok) {
-        // Don't throw AbortError if the request was intentionally aborted
-        if (signal.aborted) {
-          console.log('Fetch aborted by client.');
-          // Throw a specific error or return null/undefined to signal abortion
-          throw new DOMException('Aborted', 'AbortError');
-        }
-        const errorText = await response.text();
-        throw new Error(`API error ${response.status}: ${errorText}`);
-      }
-
-      const data: GetMessagesApiResponse = await response.json();
-      // Log the received data
-      console.log('Received data.results:', data.results);
-
-      if (data.results.length > 0) {
-       console.log(`Received ${data.results.length} new messages.`);
-       let newMessagesAdded = false;
-
-       const newlyReceivedMessages: Message[] = [];
-       const messagesToAck: { message_id: string; timestamp: string }[] = [];
-
-       // Process messages asynchronously first
-       for (const receivedMsg of data.results) {
-         // Log the ID being processed and the result of the map lookup
-         const lookedUpContactId = requestIdToContactIdMap.get(receivedMsg.message_id);
-
-         const contactId = lookedUpContactId; // Use the looked-up value
-         const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
-
-         if (!contactId || !key) {
-           console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
-           continue;
-         }
-
-         try {
-           // We could optionally try decrypting here to validate the message early.
-           // Note: Decryption errors here don't prevent ACK, as we successfully received it.
-           await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
-         } catch (decryptError) {
-           console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
-           // Continue processing even if decryption fails here, store the encrypted message
-         }
-
-         const newMessage: Message = {
-           id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
-           contactId: contactId,
-           content: receivedMsg.message, // Store encrypted content
-           timestamp: receivedMsg.timestamp, // Use server timestamp
-           sent: false, // Mark as received
-           read: false, // Mark as unread initially
-           forwarded: false, // Assume not forwarded initially
-         };
-         newlyReceivedMessages.push(newMessage);
-         // Add to the list of messages to acknowledge
-         messagesToAck.push({
-            message_id: receivedMsg.message_id,
-            timestamp: receivedMsg.timestamp,
-         });
-       }
-
-       // Now update the state synchronously
-       if (newlyReceivedMessages.length > 0) {
-         setMessages(prevMessages => {
-           const updatedMessages = { ...prevMessages };
-           let changed = false;
-
-           for (const newMessage of newlyReceivedMessages) {
-             const contactId = newMessage.contactId;
-             const contactMessages = updatedMessages[contactId] || [];
-             // Check for duplicates based on content and timestamp before adding
-             const exists = contactMessages.some(
-               m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
-             );
-
-             if (!exists) {
-               updatedMessages[contactId] = [...contactMessages, newMessage].sort(
-                 (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-               );
-               changed = true;
-               newMessagesAdded = true; // Track if any messages were actually added
-             }
-           }
-           // Only return a new object if changes were actually made
-           return changed ? updatedMessages : prevMessages;
-         });
-       }
-
-       // --- Send Acknowledgment ---
-       if (messagesToAck.length > 0) {
-         console.log(`Acknowledging ${messagesToAck.length} messages...`);
-         try {
-           const ackResponse = await fetch('/api/ack-messages', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ acks: messagesToAck }),
-             // Don't use the main abort signal here, ACK should try to complete
-           });
-           if (!ackResponse.ok) {
-             const errorText = await ackResponse.text();
-             console.error(`Failed to acknowledge messages: ${ackResponse.status} ${errorText}`);
-             // Decide on retry logic? For now, just log the error.
-             // Messages are already saved locally, so loss isn't immediate.
-           } else {
-             console.log('Messages acknowledged successfully.');
-           }
-         } catch (ackError) {
-           console.error('Error sending message acknowledgments:', ackError);
-         }
-       }
-       // --- End Send Acknowledgment ---
-
-
-       if (newMessagesAdded) {
-         toast({ title: "New Messages", description: "You have received new messages." });
-       }
-      } else {
-        // This is expected during long polling timeouts
-        console.log('Long poll timed out or no new messages.');
-      }
-    } catch (error) {
-      // Re-throw errors to be handled by the polling loop, except AbortError
-      if (error instanceof DOMException && error.name === 'AbortError') {
-         console.log('Fetch aborted during processing.');
-         throw error; // Re-throw AbortError specifically
-      }
-      console.error('Failed during message fetch/processing:', error);
-      throw error; // Re-throw other errors
-    }
-    // No finally block needed here, the loop handles continuation/stopping
-  }, [contacts, getContactKey, setMessages, toast, longPollTimeoutMs]); // Add longPollTimeoutMs dependency
-
+  // --- Effect to prepare contact data for SSE connection ---
   useEffect(() => {
-    isMountedRef.current = true;
+    let isStillMounted = true;
+    const prepareData = async () => {
+      if (!isAuthenticated || contacts.length === 0) {
+          if (isStillMounted) setDerivedContactData(null); // Clear data if not authenticated or no contacts
+          return;
+      }
 
-    // --- Prevent polling if not authenticated ---
-    if (!isAuthenticated) {
-      console.log('User not authenticated, skipping message polling setup.');
-      // Ensure cleanup runs if the component unmounts while waiting for auth
-      return () => {
-        isMountedRef.current = false;
+      console.log('Preparing contact data for SSE connection...');
+      const requestIdsToSend: string[] = [];
+      const requestIdToContactIdMap = new Map<string, string>();
+      const contactKeysMap = new Map<string, CryptoKey>();
+
+      try {
+        for (const contact of contacts) {
+          const key = await getContactKey(contact.id);
+          if (!key) {
+            console.warn(`Skipping contact ${contact.id} for SSE: key not found.`);
+            continue;
+          }
+          contactKeysMap.set(contact.id, key); // Store key for decryption
+
+          try {
+            const requestId = await generateStableRequestId(!contact.userGeneratedKey, key);
+            requestIdsToSend.push(requestId);
+            requestIdToContactIdMap.set(requestId, contact.id); // Map request ID to contact ID
+          } catch (error) {
+            console.error(`Failed to generate request ID for contact ${contact.id}:`, error);
+            continue;
+          }
+        }
+
+        if (isStillMounted) {
+            if (requestIdsToSend.length > 0) {
+                 console.log('SSE Contact Data Prepared:', { count: requestIdsToSend.length, map: requestIdToContactIdMap });
+                 setDerivedContactData({
+                    requestIds: requestIdsToSend,
+                    requestIdToContactIdMap,
+                    contactKeysMap,
+                 });
+            } else {
+                console.log('No valid contacts/keys to establish SSE connection for.');
+                setDerivedContactData(null); // Clear data if no valid contacts
+            }
+        }
+
+      } catch (error) {
+        console.error("Error preparing contact data for SSE:", error);
+         if (isStillMounted) setDerivedContactData(null);
+      }
+    };
+
+    prepareData();
+
+    return () => {
+        isStillMounted = false;
+    }
+  }, [contacts, getContactKey, isAuthenticated]); // Re-prepare when contacts or auth status change
+
+  // --- Effect to manage the EventSource connection ---
+  useEffect(() => {
+    isMountedRef.current = true; // Track mount status for async operations
+
+    // Don't connect if not authenticated, no contacts, or data preparation failed
+    if (!isAuthenticated || !derivedContactData || derivedContactData.requestIds.length === 0) {
+      console.log('Skipping SSE connection: Not authenticated or no valid contacts/keys.');
+      // Ensure any existing connection is closed if auth/contacts change results in invalid state
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+      return () => { // Cleanup function for this effect instance
+         isMountedRef.current = false;
       };
     }
-    // --- End modification ---
 
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-    let initialTimeoutId: NodeJS.Timeout | null = null;
+    // Close existing connection if derived data changes requiring a new URL
+    if (eventSourceRef.current) {
+        console.log("Derived contact data changed, closing existing SSE connection.");
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+    }
 
-    const longPoll = async () => {
-      console.log('Long poll loop started.');
-      let lastPollStartTime = 0; // Track the start time of the last poll
+    const { requestIds, requestIdToContactIdMap, contactKeysMap } = derivedContactData;
 
-      while (isMountedRef.current) {
-        if (signal.aborted) {
-          console.log('Abort signal detected, stopping loop.');
-          break;
-        }
+    // Construct the URL with message_ids query parameter
+    const messageIdsParam = encodeURIComponent(requestIds.join(','));
+    const url = `/api/get-messages-sse?message_ids=${messageIdsParam}`;
+    console.log('Establishing SSE connection to:', url);
 
-        // --- Enforce minimum interval ---
-        const now = performance.now();
-        const timeSinceLastStart = now - lastPollStartTime;
-        if (lastPollStartTime > 0 && timeSinceLastStart < minPollIntervalMs) {
-          const delayNeeded = minPollIntervalMs - timeSinceLastStart;
-          console.log(`Minimum interval enforced. Waiting ${delayNeeded.toFixed(0)}ms...`);
-          try {
-            await new Promise((resolve, reject) => {
-              const timeoutId = setTimeout(resolve, delayNeeded);
-              signal.addEventListener('abort', () => {
-                clearTimeout(timeoutId);
-                reject(new DOMException('Aborted', 'AbortError'));
-              });
-            });
-          } catch (abortError) {
-            if ((abortError as DOMException).name === 'AbortError') {
-              console.log('Minimum interval wait aborted.');
-              break; // Exit loop if aborted during wait
+    // Create EventSource instance
+    const eventSource = new EventSource(url);
+    eventSourceRef.current = eventSource; // Store ref
+
+    eventSource.onopen = () => {
+      console.log('SSE connection opened.');
+    };
+
+    // Handle incoming messages (server pushes data)
+    // *** Corrected: Marked the function as async ***
+    eventSource.onmessage = async (event) => { // <<< Added async here
+      console.log('SSE message received:', event.data);
+      if (!isMountedRef.current) return; // Prevent updates if unmounted
+
+      try {
+        // The Rust server sends a JSON array string in the 'data' field
+        const receivedMessages: SseMessageData = JSON.parse(event.data);
+
+        if (receivedMessages.length > 0) {
+          console.log(`Processing ${receivedMessages.length} new messages from SSE.`);
+          let newMessagesAdded = false;
+          const newlyProcessedMessages: Message[] = [];
+          const messagesToAck: { message_id: string; timestamp: string }[] = [];
+
+          // Process messages (similar logic to long poll, using derivedContactData)
+          // *** This loop now runs correctly within an async function ***
+          for (const receivedMsg of receivedMessages) {
+             const contactId = requestIdToContactIdMap.get(receivedMsg.message_id);
+             const key = contactId ? contactKeysMap.get(contactId) : null;
+
+            if (!contactId || !key) {
+              console.warn(`Could not find contact or key for received SSE message_id: ${JSON.stringify(receivedMsg)}`);
+              continue;
             }
-          }
-          // Check abort signal again after waiting
-          if (signal.aborted) {
-            console.log('Abort signal detected after minimum interval wait.');
-            break;
-          }
-        }
-        // --- End minimum interval enforcement ---
 
-        lastPollStartTime = performance.now(); // Record start time *before* the await
-
-        try {
-          // Wait for the fetch to complete (or timeout)
-          await fetchMessagesFromServer(signal);
-          // If successful (got messages or timed out), loop continues. Delay handled above.
-          console.log('Long poll request finished successfully or timed out.');
-        } catch (error: any) {
-          lastPollStartTime = 0; // Reset start time on error to avoid immediate retry delay issue
-          if (error.name === 'AbortError') {
-            console.log('Long poll fetch aborted.');
-            break; // Exit loop if aborted
-          }
-          console.error('Long poll fetch error:', error);
-          // Wait before retrying on error
-          if (isMountedRef.current && !signal.aborted) {
-            console.log('Waiting 5s before retrying due to error...');
+             // Try decrypting here to validate, but store anyway for later retry if needed
             try {
-              // Use a promise with setTimeout that respects the abort signal
-              await new Promise((resolve, reject) => {
-                const timeoutId = setTimeout(resolve, 5000); // 5s backoff
-                signal.addEventListener('abort', () => {
-                  clearTimeout(timeoutId);
-                  reject(new DOMException('Aborted', 'AbortError'));
-                });
-              });
-            } catch (abortError) {
-               if ((abortError as DOMException).name === 'AbortError') {
-                 console.log('Retry wait aborted.');
-                 break; // Exit loop if aborted during wait
-               }
+                 // *** await is now valid here ***
+                await decryptMessage(receivedMsg.message, key);
+            } catch (decryptError) {
+                console.error(`(SSE) Failed initial decrypt for contact ${contactId} (storing encrypted):`, decryptError);
             }
+
+            const newMessage: Message = {
+              id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received-sse`,
+              contactId: contactId,
+              content: receivedMsg.message, // Store encrypted content
+              timestamp: receivedMsg.timestamp, // Use server timestamp
+              sent: false,
+              read: false,
+              forwarded: false,
+            };
+            newlyProcessedMessages.push(newMessage);
+            messagesToAck.push({
+              message_id: receivedMsg.message_id,
+              timestamp: receivedMsg.timestamp,
+            });
+          } // End processing loop
+
+          // Update state if messages were processed
+          if (newlyProcessedMessages.length > 0) {
+            setMessages(prevMessages => {
+              // ... (state update logic remains the same)
+              const updatedMessages = { ...prevMessages };
+              let changed = false;
+              for (const newMessage of newlyProcessedMessages) {
+                const contactId = newMessage.contactId;
+                const contactMessages = updatedMessages[contactId] || [];
+                const exists = contactMessages.some(
+                  m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
+                );
+                if (!exists) {
+                  updatedMessages[contactId] = [...contactMessages, newMessage].sort(
+                    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                  );
+                  changed = true;
+                  newMessagesAdded = true;
+                }
+              }
+              return changed ? updatedMessages : prevMessages;
+            });
           }
-        }
+
+          // Send Acknowledgment (same as before, but triggered by SSE message)
+          if (messagesToAck.length > 0) {
+            console.log(`(SSE) Acknowledging ${messagesToAck.length} messages...`);
+            // *** Note: This fetch call is async but doesn't need to be awaited
+            // unless subsequent logic depends on its completion immediately. ***
+            fetch('/api/ack-messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ acks: messagesToAck }),
+            })
+            .then(async ackResponse => { // Using .then for ack response handling
+              if (!ackResponse.ok) {
+                const errorText = await ackResponse.text(); // await is ok in this async .then callback
+                console.error(`(SSE) Failed to acknowledge messages: ${ackResponse.status} ${errorText}`);
+              } else {
+                console.log('(SSE) Messages acknowledged successfully.');
+              }
+            })
+            .catch(ackError => {
+              console.error('(SSE) Error sending message acknowledgments:', ackError);
+            });
+          } // End ACK
+
+          if (newMessagesAdded) {
+            toast({ title: "New Messages", description: "You have received new messages." });
+          }
+        } // End if receivedMessages.length > 0
+
+      } catch (error) {
+        console.error('Error processing SSE message data:', error);
+        // Handle JSON parsing error, etc.
       }
-      console.log('Long polling loop stopped.');
-    };
+    }; // End onmessage handler
 
-    // Start the first poll after the initial delay ONLY if authenticated
-    initialTimeoutId = setTimeout(() => {
-        // Added isAuthenticated check here too for safety
-        if (isMountedRef.current && !signal.aborted && isAuthenticated) { 
-            longPoll();
-        }
-    }, initialFetchDelay);
+    // Handle errors (connection closed, etc.)
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      // EventSource attempts reconnection automatically based on browser/server retry logic.
+      // You might want custom logic here if automatic reconnection fails persistently.
+      // Close the connection formally if the error is terminal or if unmounted.
+      if (!isMountedRef.current) {
+          eventSource.close();
+          eventSourceRef.current = null;
+          console.log("SSE connection closed due to error while unmounted.");
+      } else {
+          // Optional: Add logic for handling persistent errors while mounted,
+          // e.g., show a toast after several failed reconnect attempts.
+          // The browser's default backoff usually handles temporary network issues.
+          // If the server returns a non-2xx status on connect, onerror is triggered,
+          // and it usually won't reconnect automatically in that case.
+           if (eventSource.readyState === EventSource.CLOSED) {
+               console.warn("SSE connection closed permanently by error. Check server logs or network.");
+                // Consider notifying the user or attempting a manual reconnect later.
+                eventSourceRef.current = null; // Clear ref as connection is closed
+           }
+      }
+    }; // End onerror handler
 
-    // Cleanup function
+    // Cleanup function: Close the connection when component unmounts or dependencies change
     return () => {
-      console.log('Cleaning up long polling hook...');
+      console.log('Cleaning up SSE connection...');
       isMountedRef.current = false;
-      if (initialTimeoutId) {
-        clearTimeout(initialTimeoutId);
-      }
-      abortControllerRef.current?.abort();
+      eventSource.close();
+      eventSourceRef.current = null;
     };
-    // Add isAuthenticated and minPollIntervalMs to dependency array
-  }, [fetchMessagesFromServer, initialFetchDelay, isAuthenticated, minPollIntervalMs]);
+  // Re-run effect if authentication status changes OR if the prepared contact data changes
+  }, [isAuthenticated, derivedContactData, setMessages, toast]);
 
-  // Return a function to manually trigger a fetch if needed (optional)
-  // Note: This manual trigger might interfere with the long poll loop if not handled carefully.
-  // For now, let's not return a manual trigger as the loop handles fetching.
-  // If needed, it would require aborting the current poll and starting a new one.
-  // return () => {
-  //   abortControllerRef.current?.abort(); // Abort current poll
-  //   // Need to restart the loop or manually call fetchMessagesFromServer
-  //   // This requires more complex state management.
-  // };
+  // The hook doesn't need to return anything unless you want to expose manual controls (uncommon for SSE)
 };

@@ -1,19 +1,25 @@
 use axum::{
-    extract::{Json, State},
+    extract::{Query, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::post,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+        Response,
+    },
+    routing::{get, post},
     Router,
+    Json,
 };
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
+use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc};
-use tokio::time::{sleep, Duration, Instant};
+use std::{convert::Infallible, net::SocketAddr, path::Path, sync::Arc, time::Duration};
+use tokio::time::interval;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tracing::{error, instrument};
+use tracing::{debug, error, info, instrument, trace};
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
@@ -22,30 +28,26 @@ struct PutMessageRequest {
 }
 
 #[derive(Deserialize, Debug)]
-struct GetMessagesRequest {
-    message_ids: Vec<String>,
-    timeout_ms: Option<u64>,
+struct GetMessagesParams {
+    // Expect comma-separated string like "id1,id2,id3"
+    message_ids: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct MessageRecord {
     message: String,
     timestamp: DateTime<Utc>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct FoundMessage {
     message_id: String,
     message: String,
     timestamp: DateTime<Utc>,
 }
 
-#[derive(Serialize, Debug)]
-struct GetMessagesResponse {
-    results: Vec<FoundMessage>,
-}
+// GetMessagesResponse is no longer needed for the SSE handler
 
-// --- Structs for Acknowledgment ---
 #[derive(Deserialize, Debug)]
 struct AckMessageRequest {
     message_id: String,
@@ -57,10 +59,8 @@ struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
 
-// Define the type for the shared application state (the transactional keyspace)
 type SharedState = Arc<TransactionalKeyspace>;
 
-// --- Error Handling ---
 #[derive(Debug, thiserror::Error)]
 enum AppError {
     #[error("Fjall DB error: {0}")]
@@ -73,7 +73,7 @@ enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        error!("Error processing request: {:?}", self);
+        error!("Error: {:?}", self); // Log the error regardless
         let (status, message) = match self {
             AppError::Fjall(_) | AppError::SerdeJson(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -85,6 +85,7 @@ impl IntoResponse for AppError {
     }
 }
 
+#[instrument(skip(keyspace, payload))]
 async fn put_message_handler(
     State(keyspace): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
@@ -111,21 +112,17 @@ async fn put_message_handler(
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
-    let messages_partition =
-        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+    let messages_partition = keyspace
+        .open_partition("messages", PartitionCreateOptions::default())?;
 
-    // Create the key by concatenating message_id bytes and timestamp bytes (big-endian)
     let mut key_bytes = Vec::new();
     key_bytes.extend_from_slice(payload.message_id.as_bytes());
     key_bytes.extend_from_slice(&timestamp.timestamp_millis().to_be_bytes());
 
     messages_partition.insert(key_bytes, value_bytes)?;
-    // Optionally persist explicitly
-    // keyspace.persist(PersistMode::BufferAsync)?;
     Ok(StatusCode::CREATED)
 }
 
-// --- Handler for Acknowledging/Deleting Messages ---
 #[instrument(skip(keyspace, payload))]
 async fn ack_messages_handler(
     State(keyspace): State<SharedState>,
@@ -135,128 +132,123 @@ async fn ack_messages_handler(
         return Ok(StatusCode::OK);
     }
 
-    let messages_partition =
-        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-
-    // Use a transaction for batch deletion efficiency
+    let messages_partition = keyspace
+        .open_partition("messages", PartitionCreateOptions::default())?;
     let mut write_tx = keyspace.write_tx();
 
     for ack in payload.acks {
-        // Reconstruct the key used in put_message_handler
         let mut key_bytes = Vec::new();
         key_bytes.extend_from_slice(ack.message_id.as_bytes());
         key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
-
-        // Remove the message by its reconstructed key
         write_tx.remove(&messages_partition, key_bytes);
-        tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
+        debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
     }
-
     write_tx.commit()?;
-
     Ok(StatusCode::OK)
 }
 
-#[instrument(skip(keyspace, payload))]
+#[instrument(skip(keyspace, params))]
 #[axum::debug_handler]
-async fn get_messages_handler(
+async fn get_messages_sse_handler(
     State(keyspace): State<SharedState>,
-    Json(payload): Json<GetMessagesRequest>,
-) -> Result<Json<GetMessagesResponse>, AppError> {
-    let requested_timeout_ms = payload.timeout_ms.unwrap_or(30000); // Default 30s
-    let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
-    let check_interval = Duration::from_millis(500); // Check DB every 500ms
+    Query(params): Query<GetMessagesParams>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
+{
+    let message_ids: Vec<String> = params
+        .message_ids
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    loop {
-        let mut found_messages_this_iteration = Vec::new();
+    info!(?message_ids, "SSE connection established for message IDs");
 
-        {
-            // Scope for snapshot lifetime
-            let messages_partition =
-                keyspace.open_partition("messages", PartitionCreateOptions::default())?;
-            // Use a write transaction, even for reads in this context
-            let write_tx = keyspace.write_tx();
+    // Create a stream that checks for messages periodically
+    let stream = stream::unfold(
+        (keyspace, message_ids), // Initial state: keyspace and the IDs to watch
+        move |(keyspace, ids)| async move {
+            // Wait for the next interval tick. Check every 1 second. Adjust as needed.
+            // Use a local interval; it restarts if the stream logic takes longer.
+            let mut interval = interval(Duration::from_secs(1));
+            interval.tick().await; // Wait for the first tick
 
-            for message_id_str in &payload.message_ids {
-                let key_prefix = message_id_str.as_bytes();
+            let mut found_messages_this_cycle = Vec::new();
 
-                // Scope for the iterator borrow using the transaction
-                {
-                    let iter = write_tx.prefix(&messages_partition, key_prefix);
+            // --- Database Check Logic (similar to original, but adapted) ---
+            match keyspace.open_partition("messages", PartitionCreateOptions::default()) {
+                Ok(messages_partition) => {
+                    let read_tx = keyspace.read_tx();
+                    for message_id_str in &ids {
+                        let key_prefix = message_id_str.as_bytes();
+                        trace!(message_id = %message_id_str, "Scanning prefix");
 
-                    // Iterate through ALL items matching the prefix
-                    for result in iter {
-                        match result {
-                            Ok((_key_slice, value_slice)) => {
-                                let value_bytes = value_slice.to_vec();
-
-                                // Deserialize the found record
-                                match serde_json::from_slice::<MessageRecord>(&value_bytes) {
-                                    Ok(record) => {
-                                        // Store results temporarily for this iteration
-                                        found_messages_this_iteration.push(FoundMessage {
-                                            message_id: message_id_str.clone(),
-                                            message: record.message,
-                                            timestamp: record.timestamp,
-                                        });
-                                        // Deletion happens on ACK
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "Failed to deserialize record for key prefix {}: {}",
-                                            message_id_str, e
-                                        );
-                                        // Error within transaction scope, return immediately
-                                        return Err(AppError::SerdeJson(e));
+                        // Iterate directly, handle errors inline
+                        let iter = read_tx.prefix(&messages_partition, key_prefix);
+                        for result in iter {
+                             match result {
+                                Ok((_key, value_slice)) => {
+                                    match serde_json::from_slice::<MessageRecord>(&value_slice) {
+                                        Ok(record) => {
+                                            found_messages_this_cycle.push(FoundMessage {
+                                                message_id: message_id_str.clone(),
+                                                message: record.message,
+                                                timestamp: record.timestamp,
+                                            });
+                                        }
+                                        Err(e) => {
+                                            // *** Corrected: Log serde error, don't use fjall::Error::Corruption ***
+                                            error!(message_id = %message_id_str, error = %e, "Failed to deserialize record, skipping.");
+                                        }
                                     }
                                 }
+                                Err(e) => {
+                                    error!(message_id = %message_id_str, error = %e, "Database error during prefix scan");
+                                    // Break inner loop for this ID on DB error? Or continue? Logged for now.
+                                }
                             }
-                            Err(e) => {
-                                error!(
-                                    "Database error during prefix scan for {}: {}",
-                                    message_id_str, e
-                                );
-                                // Error within transaction scope, return immediately
-                                return Err(AppError::Fjall(e));
-                            }
-                        }
-                    } // End iteration for this prefix
-                } // Iterator goes out of scope
-            } // End loop through message_ids
+                        } // End iteration for one message_id
+                    } // End loop through all message_ids
 
-            // Commit the (read-only) transaction to release locks/resources
-            write_tx.commit()?;
-        } // Transaction goes out of scope here
-
-        if !found_messages_this_iteration.is_empty() {
-            // We found messages. Return them. Frontend will ACK later.
-            tracing::debug!(
-                "Found {} messages, returning (no deletion).",
-                found_messages_this_iteration.len()
-            );
-            return Ok(Json(GetMessagesResponse {
-                results: found_messages_this_iteration,
-            }));
-        } else {
-            // No messages were found in this iteration. Check timeout and potentially sleep.
-            let now = Instant::now();
-            if now >= deadline {
-                tracing::debug!("Long poll timeout reached.");
-                return Ok(Json(GetMessagesResponse { results: vec![] })); // Timeout, return empty
-            }
-
-            // Wait before the next check, respecting the deadline
-            let remaining_time = deadline - now;
-            let sleep_duration = std::cmp::min(check_interval, remaining_time);
-
-            // Sleep (await point) - The WriteTransaction is no longer alive here.
-            tokio::select! {
-                _ = sleep(sleep_duration) => {
-                    tracing::trace!("Slept for {:?}, checking again.", sleep_duration);
                 }
-            }
+                Err(e) => {
+                    error!(error = %e, "Failed to open messages partition");
+                    // If partition fails, serious issue. Maybe stop the stream?
+                    // For now, we'll just log and the stream will continue trying.
+                }
+            } // read_tx goes out of scope here
+            // --- End Database Check Logic ---
+
+            // --- Event Creation Logic (Yields Option<Event>) ---
+            let event_option: Option<Event> = if !found_messages_this_cycle.is_empty() {
+                debug!(count = found_messages_this_cycle.len(), "Found messages to send via SSE");
+                match serde_json::to_string(&found_messages_this_cycle) {
+                    Ok(json_data) => {
+                        Some(Event::default().data(json_data).event("message"))
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Failed to serialize found messages for SSE");
+                        None // Don't send event if serialization fails
+                    }
+                }
+            } else {
+                trace!("No new messages found in this interval.");
+                None // No messages found
+            };
+
+            // Yield Option<Event> and the state for the next iteration
+            Some((event_option, (keyspace, ids)))
         }
-    } // End loop
+    )
+    // *** Corrected: Filter out None values using filter_map ***
+    .filter_map(|item| async { item }); // item is Option<Event>, filter_map unwraps Some and discards None
+
+    // *** Corrected: Wrap the resulting Event in Ok<_, Infallible> ***
+    Sse::new(stream.map(Ok)) // stream now yields Event, map it to Result<Event, Infallible>
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive-text"),
+        )
 }
 
 #[tokio::main]
@@ -271,25 +263,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let shared_state = Arc::new(keyspace);
 
+    // --- Governor setup (unchanged) ---
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor) // Use SmartIpKeyExtractor for X-Real-IP
+            .key_extractor(SmartIpKeyExtractor)
             .per_second(5)
             .burst_size(5)
             .finish()
             .unwrap(),
     );
-
     let governor_limiter = governor_config.limiter().clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(60));
-        tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+        info!("rate limiting storage size: {}", governor_limiter.len());
         governor_limiter.retain_recent();
     });
 
     let app = Router::new()
         .route("/api/put-message", post(put_message_handler))
-        .route("/api/get-messages", post(get_messages_handler))
+        // --- Use GET for SSE endpoint and new handler ---
+        .route("/api/get-messages-sse", get(get_messages_sse_handler)) // Changed route and method
         .route("/api/ack-messages", post(ack_messages_handler))
         .with_state(shared_state)
         .layer(GovernorLayer {
@@ -297,7 +290,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    tracing::info!("Listening on {}", addr);
+    info!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app.into_make_service()).await?;
