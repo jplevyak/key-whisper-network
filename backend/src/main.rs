@@ -19,7 +19,10 @@ use tokio::time::interval;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace, warn};
+use std::collections::HashMap;
+use tokio::sync::{Mutex, Notify};
+use futures::future;
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
@@ -59,7 +62,12 @@ struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
 
-type SharedState = Arc<TransactionalKeyspace>;
+#[derive(Clone)]
+struct AppState {
+    keyspace: Arc<TransactionalKeyspace>,
+    notifier_map: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+}
+
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -85,9 +93,9 @@ impl IntoResponse for AppError {
     }
 }
 
-#[instrument(skip(keyspace, payload))]
+#[instrument(skip(state, payload))]
 async fn put_message_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<AppState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
     const MAX_MESSAGE_ID_BYTES: usize = 100;
@@ -112,7 +120,7 @@ async fn put_message_handler(
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
-    let messages_partition = keyspace
+    let messages_partition = state.keyspace
         .open_partition("messages", PartitionCreateOptions::default())?;
 
     let mut key_bytes = Vec::new();
@@ -120,21 +128,27 @@ async fn put_message_handler(
     key_bytes.extend_from_slice(&timestamp.timestamp_millis().to_be_bytes());
 
     messages_partition.insert(key_bytes, value_bytes)?;
+    let message_id_prefix = payload.message_id.clone();
+    let notifiers = state.notifier_map.lock().await;
+    if let Some(notifier) = notifiers.get(&message_id_prefix) {
+        debug!(message_id = %message_id_prefix, "Notifying waiters");
+        notifier.notify_waiters();
+    }
     Ok(StatusCode::CREATED)
 }
 
-#[instrument(skip(keyspace, payload))]
+#[instrument(skip(state, payload))]
 async fn ack_messages_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<AppState>,
     Json(payload): Json<AckMessagesPayload>,
 ) -> Result<StatusCode, AppError> {
     if payload.acks.is_empty() {
         return Ok(StatusCode::OK);
     }
 
-    let messages_partition = keyspace
+    let messages_partition = state.keyspace
         .open_partition("messages", PartitionCreateOptions::default())?;
-    let mut write_tx = keyspace.write_tx();
+    let mut write_tx = state.keyspace.write_tx();
 
     for ack in payload.acks {
         let mut key_bytes = Vec::new();
@@ -147,10 +161,10 @@ async fn ack_messages_handler(
     Ok(StatusCode::OK)
 }
 
-#[instrument(skip(keyspace, params))]
+#[instrument(skip(state, params))]
 #[axum::debug_handler]
 async fn get_messages_sse_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<AppState>,
     Query(params): Query<GetMessagesParams>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
 {
@@ -163,10 +177,34 @@ async fn get_messages_sse_handler(
 
     info!(?message_ids, "SSE connection established for message IDs");
 
+    let mut notifiers = Vec::new();
+    { // Scope for the map lock
+        let mut map_guard = state.notifier_map.lock().await;
+        for id in &message_ids {
+            let notifier = map_guard
+                .entry(id.clone())
+                .or_insert_with(|| Arc::new(Notify::new())) // Create notifier if it doesn't exist
+                .clone(); // Clone the Arc<Notify>
+            notifiers.push(notifier);
+        }
+    } // Mutex guard dropped here
+
     // Create a stream that checks for messages periodically
     let stream = stream::unfold(
-        (keyspace, message_ids), // Initial state: keyspace and the IDs to watch
-        move |(keyspace, ids)| async move {
+        (state.keyspace, message_ids), // Initial state: keyspace and the IDs to watch
+        move |(keyspace, ids)| {
+            let notifiers_clone = notifiers.clone();
+            async move {
+            let notification_futures = notifiers_clone
+                .iter()
+                .map(|notifier| Box::pin(notifier.notified())); // Pin futures
+            if !notifiers_clone.is_empty() {
+                 debug!("Waiting for notifications on {} IDs", ids.len());
+                 future::select_all(notification_futures).await;
+                 debug!("Received notification, checking for new messages...");
+            } else {
+                 warn!("SSE handler started with no message IDs requested.");
+            }
             // Wait for the next interval tick. Check every 1 second. Adjust as needed.
             // Use a local interval; it restarts if the stream logic takes longer.
             let mut interval = interval(Duration::from_secs(1));
@@ -238,6 +276,7 @@ async fn get_messages_sse_handler(
             // Yield Option<Event> and the state for the next iteration
             Some((event_option, (keyspace, ids)))
         }
+        }
     )
     // *** Corrected: Filter out None values using filter_map ***
     .filter_map(|item| async { item }); // item is Option<Event>, filter_map unwraps Some and discards None
@@ -259,9 +298,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db_path = Path::new("./message_db");
     std::fs::create_dir_all(db_path)?;
-    let keyspace = Config::new(db_path).open_transactional()?;
-
-    let shared_state = Arc::new(keyspace);
+    let keyspace = Arc::new(Config::new(db_path).open_transactional()?);
+    let state = AppState {
+        keyspace: keyspace.clone(),
+        notifier_map: Arc::new(Mutex::new(HashMap::new())),
+    };
 
     // --- Governor setup (unchanged) ---
     let governor_config = Arc::new(
@@ -284,7 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // --- Use GET for SSE endpoint and new handler ---
         .route("/api/get-messages-sse", get(get_messages_sse_handler)) // Changed route and method
         .route("/api/ack-messages", post(ack_messages_handler))
-        .with_state(shared_state)
+        .with_state(state)
         .layer(GovernorLayer {
             config: governor_config,
         });
