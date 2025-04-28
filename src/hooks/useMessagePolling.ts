@@ -26,6 +26,7 @@ export const useMessagePolling = ({
   const { isAuthenticated } = useAuth();
   const eventSourceRef = useRef<EventSource | null>(null);
   const isMountedRef = useRef(true);
+  const previousRequestIdsKeyRef = useRef<string | null>(null); // Ref to store the last used key
   // Store contact keys and the request ID map in refs or state
   // to make them accessible within event handlers without causing dependency loops.
   // Using state ensures the effect re-runs if these derived values change.
@@ -97,30 +98,66 @@ export const useMessagePolling = ({
 
   // --- Effect to manage the EventSource connection ---
   useEffect(() => {
-    isMountedRef.current = true; // Track mount status for async operations
+    isMountedRef.current = true; // Track mount status
 
-    // Don't connect if not authenticated, no contacts, or data preparation failed
-    if (!isAuthenticated || !derivedContactData || derivedContactData.requestIds.length === 0) {
-      console.log('Skipping SSE connection: Not authenticated or no valid contacts/keys.');
-      // Ensure any existing connection is closed if auth/contacts change results in invalid state
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-      return () => { // Cleanup function for this effect instance
-         isMountedRef.current = false;
-      };
-    }
-
-    // Close existing connection if derived data changes requiring a new URL
-    if (eventSourceRef.current) {
-        console.log("Derived contact data changed, closing existing SSE connection.");
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+    // --- Start: Pre-connection checks ---
+    // Don't connect if not authenticated or data preparation failed/pending
+    if (!isAuthenticated || !derivedContactData) {
+      console.log('Skipping SSE connection: Not authenticated or contact data not ready.');
+      // Ensure cleanup if state transitions to invalid
+      if (eventSourceRef.current) {
+          console.log("Closing SSE connection due to auth/data invalidation.");
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+          previousRequestIdsKeyRef.current = null; // Reset key tracking
+      }
+      return () => { isMountedRef.current = false; };
     }
 
     const { requestIds, requestIdToContactIdMap, contactKeysMap } = derivedContactData;
 
-    // Construct the URL with message_ids query parameter
-    const messageIdsParam = encodeURIComponent(requestIds.join(','));
+    // Don't connect if no valid request IDs
+    if (requestIds.length === 0) {
+        console.log('Skipping SSE connection: No valid request IDs derived.');
+        if (eventSourceRef.current) {
+            console.log("Closing SSE connection as no request IDs are valid.");
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+            previousRequestIdsKeyRef.current = null; // Reset key tracking
+        }
+        return () => { isMountedRef.current = false; };
+    }
+    // --- End: Pre-connection checks ---
+
+
+    // --- Start: Check if reconnection is necessary ---
+    // Generate the stable key for comparison
+    const currentRequestIdsKey = requestIds.join(',');
+
+    // Check if the key has actually changed since the last connection attempt
+    if (eventSourceRef.current && currentRequestIdsKey === previousRequestIdsKeyRef.current) {
+        console.log('SSE connection already active with the same request IDs. Skipping reconnection.');
+        // Still need a cleanup function for unmount even if we skip reconnection logic
+        return () => { isMountedRef.current = false; };
+    }
+    // --- End: Check if reconnection is necessary ---
+
+
+    // --- Proceed with connection/reconnection ---
+    console.log(`Proceeding with SSE connection/reconnection. Key changed: ${currentRequestIdsKey !== previousRequestIdsKeyRef.current}, No existing connection: ${!eventSourceRef.current}`);
+
+    // Close existing connection if we decided to reconnect
+    if (eventSourceRef.current) {
+        console.log("Closing existing SSE connection before reconnecting.");
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+    }
+
+    // Store the new key *before* creating the new connection
+    previousRequestIdsKeyRef.current = currentRequestIdsKey;
+
+    // Construct the URL
+    const messageIdsParam = encodeURIComponent(currentRequestIdsKey); // Use the current key
     const url = `/api/get-messages-sse?message_ids=${messageIdsParam}`;
     console.log('Establishing SSE connection to:', url);
 
@@ -131,6 +168,8 @@ export const useMessagePolling = ({
     eventSource.onopen = () => {
       console.log('SSE connection opened.');
     };
+
+    // --- Handlers remain the same, using maps from derivedContactData ---
 
     // Handle incoming messages (server pushes data)
     // *** Corrected: Marked the function as async ***
@@ -265,15 +304,36 @@ export const useMessagePolling = ({
       }
     }; // End onerror handler
 
-    // Cleanup function: Close the connection when component unmounts or dependencies change
+    // Cleanup function: Close the connection associated with this specific effect run
     return () => {
-      console.log('Cleaning up SSE connection...');
+      console.log('Cleaning up SSE connection (effect cleanup)...');
       isMountedRef.current = false;
-      eventSource.close();
-      eventSourceRef.current = null;
+      // Check the ref before closing. If a new connection was established rapidly,
+      // the ref might point to the *new* connection. We only want to close the one
+      // created in *this* effect instance ('eventSource').
+      // Also, check if the current ref matches the one we created, to avoid closing
+      // a connection established by a *subsequent* effect run if cleanup is delayed.
+      if (eventSourceRef.current === eventSource) {
+          console.log(`Closing SSE connection to ${url}`);
+          eventSource.close();
+          eventSourceRef.current = null;
+          // We don't reset previousRequestIdsKeyRef here, because if the component
+          // re-renders without this effect re-running, we want the comparison to still work.
+          // It gets reset/updated only when connection logic runs.
+      } else {
+          console.log(`Skipping close for SSE connection to ${url} - ref changed or already closed.`);
+          // It's possible eventSource was already closed by onerror or another effect run
+          // or eventSourceRef.current points to a newer connection.
+          // Ensure our specific eventSource instance is closed if it wasn't the ref anymore.
+          if (eventSource.readyState !== EventSource.CLOSED) {
+              console.log(`Force closing orphaned SSE connection instance to ${url}`);
+              eventSource.close();
+          }
+      }
     };
-  // Re-run effect if authentication status changes OR if the prepared contact data changes
+  // Dependencies: Re-run if auth status changes, derived data changes (to get new maps/ids),
+  // or if setMessages/toast references change (though unlikely).
   }, [isAuthenticated, derivedContactData, setMessages, toast]);
 
-  // The hook doesn't need to return anything unless you want to expose manual controls (uncommon for SSE)
+  // The hook doesn't need to return anything
 };
