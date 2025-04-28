@@ -3,26 +3,24 @@ use axum::{
     http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse,
-        Response,
+        IntoResponse, Response,
     },
     routing::{get, post},
-    Router,
-    Json,
+    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
+use futures::future;
 use futures::stream::{self, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{convert::Infallible, net::SocketAddr, path::Path, sync::Arc, time::Duration};
+use tokio::sync::{Mutex, Notify};
 use tokio::time::interval;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
 use tracing::{debug, error, info, instrument, trace, warn};
-use std::collections::HashMap;
-use tokio::sync::{Mutex, Notify};
-use futures::future;
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
@@ -67,7 +65,6 @@ struct AppState {
     keyspace: Arc<TransactionalKeyspace>,
     notifier_map: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
 }
-
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -120,7 +117,8 @@ async fn put_message_handler(
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
-    let messages_partition = state.keyspace
+    let messages_partition = state
+        .keyspace
         .open_partition("messages", PartitionCreateOptions::default())?;
 
     let mut key_bytes = Vec::new();
@@ -146,7 +144,8 @@ async fn ack_messages_handler(
         return Ok(StatusCode::OK);
     }
 
-    let messages_partition = state.keyspace
+    let messages_partition = state
+        .keyspace
         .open_partition("messages", PartitionCreateOptions::default())?;
     let mut write_tx = state.keyspace.write_tx();
 
@@ -166,8 +165,7 @@ async fn ack_messages_handler(
 async fn get_messages_sse_handler(
     State(state): State<AppState>,
     Query(params): Query<GetMessagesParams>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
-{
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let message_ids: Vec<String> = params
         .message_ids
         .split(',')
@@ -178,7 +176,8 @@ async fn get_messages_sse_handler(
     info!(?message_ids, "SSE connection established for message IDs");
 
     let mut notifiers = Vec::new();
-    { // Scope for the map lock
+    {
+        // Scope for the map lock
         let mut map_guard = state.notifier_map.lock().await;
         for id in &message_ids {
             let notifier = map_guard
