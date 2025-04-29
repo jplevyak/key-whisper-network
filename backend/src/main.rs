@@ -16,11 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::{convert::Infallible, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, Notify};
-use tokio::time::interval;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, instrument, trace};
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
@@ -46,8 +45,6 @@ struct FoundMessage {
     message: String,
     timestamp: DateTime<Utc>,
 }
-
-// GetMessagesResponse is no longer needed for the SSE handler
 
 #[derive(Deserialize, Debug)]
 struct AckMessageRequest {
@@ -95,6 +92,7 @@ async fn put_message_handler(
     State(state): State<AppState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
+    println!("put_message_handler {:?}", payload);
     const MAX_MESSAGE_ID_BYTES: usize = 100;
     const MAX_MESSAGE_BYTES: usize = 2048;
 
@@ -130,6 +128,7 @@ async fn put_message_handler(
     let notifiers = state.notifier_map.lock().await;
     if let Some(notifier) = notifiers.get(&message_id_prefix) {
         debug!(message_id = %message_id_prefix, "Notifying waiters");
+        println!("Notifying waiters for message_id: {}", message_id_prefix);
         notifier.notify_waiters();
     }
     Ok(StatusCode::CREATED)
@@ -160,133 +159,195 @@ async fn ack_messages_handler(
     Ok(StatusCode::OK)
 }
 
+#[instrument(skip(keyspace, message_ids_to_check))]
+async fn fetch_messages_since(
+    keyspace: &TransactionalKeyspace, // Borrow keyspace
+    message_ids_to_check: &[String],  // Borrow slice of IDs
+    since: Option<DateTime<Utc>>,     // Optional timestamp for filtering
+) -> Vec<FoundMessage> // Return Vec directly, handle errors internally by logging
+{
+    let mut found_messages = Vec::new();
+    let fetch_description = if since.is_some() {
+        "Notified"
+    } else {
+        "Initial"
+    };
+
+    match keyspace.open_partition("messages", PartitionCreateOptions::default()) {
+        Ok(messages_partition) => {
+            let read_tx = keyspace.read_tx();
+            for message_id_str in message_ids_to_check {
+                let key_prefix = message_id_str.as_bytes();
+                trace!(message_id = %message_id_str, kind = fetch_description, "Scanning prefix");
+
+                let iter = read_tx.prefix(&messages_partition, key_prefix);
+                for result in iter {
+                    match result {
+                        Ok((_key, value_slice)) => {
+                            match serde_json::from_slice::<MessageRecord>(&value_slice) {
+                                Ok(record) => {
+                                    // Apply time filter only if 'since' is Some
+                                    if since.map_or(true, |t| record.timestamp > t) {
+                                        found_messages.push(FoundMessage {
+                                            message_id: message_id_str.clone(),
+                                            message: record.message,
+                                            timestamp: record.timestamp,
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(message_id = %message_id_str, kind = fetch_description, error = %e, "Deserialize failed, skipping.")
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(message_id = %message_id_str, kind = fetch_description, error = %e, "DB prefix scan error")
+                        }
+                    }
+                } // End iter results
+            } // End loop message_ids
+        } // read_tx drop
+        Err(e) => error!(kind = fetch_description, error = %e, "Failed to open messages partition"),
+    }
+    found_messages // Return messages found, even if some errors occurred
+}
+
 #[instrument(skip(state, params))]
 #[axum::debug_handler]
 async fn get_messages_sse_handler(
     State(state): State<AppState>,
     Query(params): Query<GetMessagesParams>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let message_ids: Vec<String> = params
+    let requested_message_ids: Vec<String> = params
         .message_ids
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
 
-    info!(?message_ids, "SSE connection established for message IDs");
+    info!(?requested_message_ids, "SSE connection established");
+    println!("SSE connection established {:?}", requested_message_ids);
 
-    let mut notifiers = Vec::new();
+    // --- 1. Perform Initial Fetch using Helper ---
+    // If requested_message_ids is empty, this will correctly do nothing/return empty Vec
+    let initial_messages = fetch_messages_since(
+        &state.keyspace,
+        &requested_message_ids, // Pass potentially empty Vec
+        None,
+    )
+    .await;
+    let connection_time = Utc::now();
+
+    // --- 2. Register interest and get Notifier Arcs ---
+    // If requested_message_ids is empty, this loop won't run, notifier_clones will be empty
+    let mut notifier_clones = Vec::new();
     {
-        // Scope for the map lock
         let mut map_guard = state.notifier_map.lock().await;
-        for id in &message_ids {
+        for id in &requested_message_ids {
             let notifier = map_guard
                 .entry(id.clone())
-                .or_insert_with(|| Arc::new(Notify::new())) // Create notifier if it doesn't exist
-                .clone(); // Clone the Arc<Notify>
-            notifiers.push(notifier);
+                .or_insert_with(|| Arc::new(Notify::new()))
+                .clone();
+            notifier_clones.push(notifier);
         }
-    } // Mutex guard dropped here
+    }
 
-    // Create a stream that checks for messages periodically
-    let stream = stream::unfold(
-        (state.keyspace, message_ids), // Initial state: keyspace and the IDs to watch
-        move |(keyspace, ids)| {
-            let notifiers_clone = notifiers.clone();
-            async move {
-            let notification_futures = notifiers_clone
-                .iter()
-                .map(|notifier| Box::pin(notifier.notified())); // Pin futures
-            if !notifiers_clone.is_empty() {
-                 debug!("Waiting for notifications on {} IDs", ids.len());
-                 future::select_all(notification_futures).await;
-                 debug!("Received notification, checking for new messages...");
-            } else {
-                 warn!("SSE handler started with no message IDs requested.");
+    // --- 3. Create the Stream ---
+    // Initial event logic handles empty initial_messages correctly
+    let initial_event: Option<Result<Event, Infallible>> = if !initial_messages.is_empty() {
+        debug!(
+            count = initial_messages.len(),
+            "Sending initial messages via SSE"
+        );
+        match serde_json::to_string(&initial_messages) {
+            Ok(json_data) => Some(Ok(Event::default().data(json_data).event("message"))),
+            Err(e) => {
+                error!(error = %e, "Failed to serialize initial messages for SSE");
+                None
             }
-            // Wait for the next interval tick. Check every 1 second. Adjust as needed.
-            // Use a local interval; it restarts if the stream logic takes longer.
-            let mut interval = interval(Duration::from_secs(1));
-            interval.tick().await; // Wait for the first tick
+        }
+    } else {
+        None
+    };
 
-            let mut found_messages_this_cycle = Vec::new();
+    // The notification stream using unfold
+    let notification_stream = stream::unfold(
+        // Initial state uses connection_time
+        (
+            state.clone(),
+            requested_message_ids.clone(),
+            notifier_clones,
+            connection_time,
+        ),
+        move |(state, ids, notifiers, mut last_check_time)| async move {
+            // --- Wait for notification ---
+            let notification_futures = notifiers
+                .iter()
+                .map(|notifier| Box::pin(notifier.notified()));
 
-            // --- Database Check Logic (similar to original, but adapted) ---
-            match keyspace.open_partition("messages", PartitionCreateOptions::default()) {
-                Ok(messages_partition) => {
-                    let read_tx = keyspace.read_tx();
-                    for message_id_str in &ids {
-                        let key_prefix = message_id_str.as_bytes();
-                        trace!(message_id = %message_id_str, "Scanning prefix");
-
-                        // Iterate directly, handle errors inline
-                        let iter = read_tx.prefix(&messages_partition, key_prefix);
-                        for result in iter {
-                             match result {
-                                Ok((_key, value_slice)) => {
-                                    match serde_json::from_slice::<MessageRecord>(&value_slice) {
-                                        Ok(record) => {
-                                            found_messages_this_cycle.push(FoundMessage {
-                                                message_id: message_id_str.clone(),
-                                                message: record.message,
-                                                timestamp: record.timestamp,
-                                            });
-                                        }
-                                        Err(e) => {
-                                            // *** Corrected: Log serde error, don't use fjall::Error::Corruption ***
-                                            error!(message_id = %message_id_str, error = %e, "Failed to deserialize record, skipping.");
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(message_id = %message_id_str, error = %e, "Database error during prefix scan");
-                                    // Break inner loop for this ID on DB error? Or continue? Logged for now.
-                                }
-                            }
-                        } // End iteration for one message_id
-                    } // End loop through all message_ids
-
-                }
-                Err(e) => {
-                    error!(error = %e, "Failed to open messages partition");
-                    // If partition fails, serious issue. Maybe stop the stream?
-                    // For now, we'll just log and the stream will continue trying.
-                }
-            } // read_tx goes out of scope here
-            // --- End Database Check Logic ---
-
-            // --- Event Creation Logic (Yields Option<Event>) ---
-            let event_option: Option<Event> = if !found_messages_this_cycle.is_empty() {
-                debug!(count = found_messages_this_cycle.len(), "Found messages to send via SSE");
-                match serde_json::to_string(&found_messages_this_cycle) {
-                    Ok(json_data) => {
-                        Some(Event::default().data(json_data).event("message"))
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Failed to serialize found messages for SSE");
-                        None // Don't send event if serialization fails
-                    }
-                }
+            // *** Modified Handling for Empty Notifiers ***
+            if notifiers.is_empty() {
+                // If no IDs were requested, notifier_clones (and thus notifiers) will be empty.
+                // Instead of returning early or ending the stream, we wait indefinitely.
+                // The keep-alive mechanism will keep the SSE connection open.
+                // We yield `None` for the event, so filter_map removes it.
+                debug!("No message IDs requested, SSE stream active but idle.");
+                // A long sleep or pending future prevents a busy loop. `pending()` is cleaner.
+                std::future::pending::<()>().await;
+                Some((None, (state, ids, notifiers, last_check_time)))
             } else {
-                trace!("No new messages found in this interval.");
-                None // No messages found
-            };
+                debug!("Waiting for notifications on {} IDs", ids.len());
+                println!("Waiting for notifications on {:?} IDs", ids);
+                future::select_all(notification_futures).await;
+                println!("Received notification, checking for new messages...");
+                debug!("Received notification, checking for new messages...");
 
-            // Yield Option<Event> and the state for the next iteration
-            Some((event_option, (keyspace, ids)))
-        }
-        }
+                // --- Check Database on Notification using Helper ---
+                let current_check_time = Utc::now();
+                let found_messages = fetch_messages_since(
+                    &state.keyspace,
+                    &ids,
+                    Some(last_check_time), // Fetch incrementally
+                )
+                .await;
+                last_check_time = current_check_time; // Update last check time
+
+                // --- Event Creation Logic ---
+                let event_option: Option<Event> = if !found_messages.is_empty() {
+                    debug!(
+                        count = found_messages.len(),
+                        "Found new messages to send via SSE"
+                    );
+                    match serde_json::to_string(&found_messages) {
+                        Ok(json_data) => Some(Event::default().data(json_data).event("message")),
+                        Err(e) => {
+                            error!(error = %e, "Failed to serialize notified messages for SSE");
+                            None
+                        }
+                    }
+                } else {
+                    trace!("No new messages found since last notification check.");
+                    None
+                };
+
+                // Yield Option<Event> and the state for the next iteration
+                Some((event_option, (state, ids, notifiers, last_check_time)))
+            }
+        },
     )
-    // *** Corrected: Filter out None values using filter_map ***
-    .filter_map(|item| async { item }); // item is Option<Event>, filter_map unwraps Some and discards None
+    .filter_map(|item| async { item }) // Filter out None values (including the one yielded in the idle case)
+    .map(Ok); // Map Event to Result<Event, Infallible>
 
-    // *** Corrected: Wrap the resulting Event in Ok<_, Infallible> ***
-    Sse::new(stream.map(Ok)) // stream now yields Event, map it to Result<Event, Infallible>
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(15))
-                .text("keep-alive-text"),
-        )
+    // Combine the initial event (if any) with the notification stream
+    let final_stream = stream::iter(initial_event).chain(notification_stream);
+
+    // --- 4. Configure SSE Response ---
+    // This now always returns the same *kind* of stream structure
+    Sse::new(final_stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive-text"),
+    )
 }
 
 #[tokio::main]
@@ -321,8 +382,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/api/put-message", post(put_message_handler))
-        // --- Use GET for SSE endpoint and new handler ---
-        .route("/api/get-messages-sse", get(get_messages_sse_handler)) // Changed route and method
+        .route("/api/get-messages-sse", get(get_messages_sse_handler))
         .route("/api/ack-messages", post(ack_messages_handler))
         .with_state(state)
         .layer(GovernorLayer {
