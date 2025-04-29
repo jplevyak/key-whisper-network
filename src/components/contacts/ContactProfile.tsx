@@ -39,6 +39,16 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   const [confirmActionType, setConfirmActionType] = useState<'scan' | 'generate' | null>(null);
   const [pendingScanData, setPendingScanData] = useState<string | null>(null);
 
+  // State for name editing
+  const [isNameEditing, setIsNameEditing] = useState(false);
+  const [tempName, setTempName] = useState(contact.name); // Initialize with current name
+
+  // Reset tempName if contact changes or modal reopens
+  React.useEffect(() => {
+    setTempName(contact.name);
+    setIsNameEditing(false); // Ensure editing is off when contact changes
+  }, [contact.id, contact.name, isOpen]);
+
 
   const contactMessages = messages[contact.id] || [];
   const sentMessages = contactMessages.filter(m => m.sent).length;
@@ -89,8 +99,12 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
           />
 
           <ContactNameEdit
-            initialName={contact.name}
-            onUpdateName={handleUpdateName}
+            name={isNameEditing ? tempName : contact.name} // Show tempName if editing, else saved name
+            isEditing={isNameEditing}
+            onNameChange={setTempName} // Update tempName directly
+            onSave={handleSaveName}
+            onEditToggle={handleToggleNameEdit}
+            onClear={() => setTempName('')} // Pass the clear handler
           />
 
           <div className="grid grid-cols-2 gap-4 bg-muted p-4 rounded-lg">
