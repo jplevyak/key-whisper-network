@@ -195,7 +195,7 @@ async fn get_messages_handler(
     State(state): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
 ) -> Result<Json<GetMessagesResponse>, AppError> {
-    let requested_timeout_ms = payload.timeout_ms.unwrap_or(30000); // Default 30s
+    let requested_timeout_ms = payload.timeout_ms.unwrap_or(300_000); // Default 5 minutes
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
     let check_interval = Duration::from_millis(1000); // Check DB every 1s (can be longer now)
 
