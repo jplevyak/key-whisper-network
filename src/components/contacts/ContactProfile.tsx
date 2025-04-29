@@ -55,13 +55,37 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   const receivedMessages = contactMessages.filter(m => !m.sent).length;
   const unreadMessages = contactMessages.filter(m => !m.sent && !m.read).length;
 
-  const handleUpdateName = (newName: string) => {
-    updateContact(contact.id, { name: newName });
-    toast({
-      title: 'Contact Updated',
-      description: 'The contact name has been updated.',
-    });
+  // --- Name Editing Handlers ---
+  const handleToggleNameEdit = () => {
+    if (!isNameEditing) {
+      // Entering edit mode: copy current saved name to tempName
+      setTempName(contact.name);
+    }
+    // If leaving edit mode without saving, tempName is discarded implicitly
+    setIsNameEditing(!isNameEditing);
   };
+
+  const handleSaveName = () => {
+    const trimmedName = tempName.trim();
+    if (trimmedName === '') {
+      toast({
+        title: 'Invalid Name',
+        description: 'Contact name cannot be empty.',
+        variant: 'destructive',
+      });
+      return; // Don't save empty name
+    }
+    if (trimmedName !== contact.name) {
+      updateContact(contact.id, { name: trimmedName });
+      toast({
+        title: 'Contact Updated',
+        description: 'The contact name has been updated.',
+      });
+    }
+    setIsNameEditing(false); // Exit editing mode
+  };
+  // --- End Name Editing Handlers ---
+
 
   const handleUpdateImage = (image: string) => {
     updateContact(contact.id, { avatar: image });
