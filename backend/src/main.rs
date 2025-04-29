@@ -197,7 +197,7 @@ async fn get_messages_handler(
 ) -> Result<Json<GetMessagesResponse>, AppError> {
     let requested_timeout_ms = payload.timeout_ms.unwrap_or(300_000); // Default 5 minutes
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
-    let check_interval = Duration::from_millis(1000); // Check DB every 1s (can be longer now)
+    let check_interval = Duration::from_millis(300_000); // Check DB every 5 minutes
 
     // Get or create notifiers for the requested message IDs, handling Weak pointers
     let mut notifiers: Vec<Arc<Notify>> = Vec::with_capacity(payload.message_ids.len());
