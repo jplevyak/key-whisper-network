@@ -10,7 +10,11 @@ use dashmap::DashMap;
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use futures::future::select_all;
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::{
+    net::SocketAddr,
+    path::Path,
+    sync::{Arc, Weak}, // Import Weak
+};
 use tokio::sync::Notify;
 use tokio::time::{sleep, Duration, Instant};
 use tower_governor::{
@@ -63,7 +67,7 @@ struct AckMessagesPayload {
 // Structure for the shared application state
 struct AppState {
     keyspace: TransactionalKeyspace,
-    notifier_map: DashMap<String, Arc<Notify>>,
+    notifier_map: DashMap<String, Weak<Notify>>, // Store Weak pointers
 }
 
 // Define the type for the shared application state
@@ -134,10 +138,17 @@ async fn put_message_handler(
     messages_partition.insert(key_bytes, value_bytes)?;
 
     // Notify any waiting getters
-    if let Some(notifier_entry) = state.notifier_map.get(&message_id_clone) {
-        let notifier = notifier_entry.value();
-        tracing::debug!(message_id = %message_id_clone, "Notifying waiters");
-        notifier.notify_waiters();
+    if let Some(weak_notifier_entry) = state.notifier_map.get(&message_id_clone) {
+        // Attempt to upgrade the Weak pointer
+        if let Some(notifier) = weak_notifier_entry.value().upgrade() {
+            tracing::debug!(message_id = %message_id_clone, "Notifying waiters");
+            notifier.notify_waiters();
+        } else {
+            // The Arc was dropped, no one is waiting.
+            // Optionally remove the stale Weak ref here, though get_messages will handle it.
+            // state.notifier_map.remove(&message_id_clone);
+            tracing::trace!(message_id = %message_id_clone, "Notifier existed but was stale (no waiters).");
+        }
     }
 
     // Optionally persist explicitly
@@ -188,19 +199,35 @@ async fn get_messages_handler(
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
     let check_interval = Duration::from_millis(1000); // Check DB every 1s (can be longer now)
 
-    // Get or create notifiers for the requested message IDs
-    let notifiers: Vec<Arc<Notify>> = payload
-        .message_ids
-        .iter()
-        .map(|id| {
-            state
-                .notifier_map
-                .entry(id.clone())
-                .or_insert_with(|| Arc::new(Notify::new()))
-                .value()
-                .clone()
-        })
-        .collect();
+    // Get or create notifiers for the requested message IDs, handling Weak pointers
+    let mut notifiers: Vec<Arc<Notify>> = Vec::with_capacity(payload.message_ids.len());
+    for id in &payload.message_ids {
+        let notifier_arc = loop {
+            // Use entry API for atomic operations
+            let entry = state.notifier_map.entry(id.clone());
+            match entry {
+                dashmap::mapref::entry::Entry::Occupied(o) => {
+                    if let Some(arc) = o.get().upgrade() {
+                        // Successfully upgraded Weak to Arc
+                        break arc;
+                    } else {
+                        // Stale Weak pointer found, remove it and retry loop to insert new
+                        tracing::trace!(message_id = %id, "Removing stale notifier entry.");
+                        o.remove();
+                        continue; // Retry loop to insert new entry
+                    }
+                }
+                dashmap::mapref::entry::Entry::Vacant(v) => {
+                    // No entry exists, create new Arc and insert Weak
+                    let new_arc = Arc::new(Notify::new());
+                    v.insert(Arc::downgrade(&new_arc));
+                    tracing::trace!(message_id = %id, "Created new notifier entry.");
+                    break new_arc;
+                }
+            }
+        };
+        notifiers.push(notifier_arc);
+    }
 
     loop {
         let mut found_messages_this_iteration = Vec::new();
