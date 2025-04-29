@@ -57,7 +57,7 @@ const ContactNameEdit = ({
       ) : (
         <div className="flex items-center justify-between">
           {/* Display the saved name */}
-          <span className="text-lg font-medium">{name || <span className="text-muted-foreground italic">Click pencil to edit...</span>}</span>
+          <span className="text-lg font-medium">{name}</span> {/* Always display the name */}
           <Button
             size="icon"
             variant="ghost"
