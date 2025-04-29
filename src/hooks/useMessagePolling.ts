@@ -28,7 +28,7 @@ const MIN_POLL_INTERVAL_MS = 1000; // Default minimum interval of 1 second
 export const useMessagePolling = ({
   setMessages,
   initialFetchDelay = 500, // Delay before the *first* poll starts
-  longPollTimeoutMs = 30000, // Timeout for a single long poll request
+  longPollTimeoutMs = 300000, // Timeout for a single long poll request (5 minutes)
   minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
 }: UseMessagePollingOptions) => {
   const { contacts, getContactKey } = useContacts();
