@@ -6,9 +6,12 @@ use axum::{
     Router,
 };
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
+use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, path::Path, sync::Arc};
+use tokio::sync::Notify;
 use tokio::time::{sleep, Duration, Instant};
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
@@ -57,8 +60,14 @@ struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
 
-// Define the type for the shared application state (the transactional keyspace)
-type SharedState = Arc<TransactionalKeyspace>;
+// Structure for the shared application state
+struct AppState {
+    keyspace: TransactionalKeyspace,
+    notifier_map: DashMap<String, Arc<Notify>>,
+}
+
+// Define the type for the shared application state
+type SharedState = Arc<AppState>;
 
 // --- Error Handling ---
 #[derive(Debug, thiserror::Error)]
@@ -85,8 +94,9 @@ impl IntoResponse for AppError {
     }
 }
 
+#[instrument(skip(state, payload))]
 async fn put_message_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
     const MAX_MESSAGE_ID_BYTES: usize = 100;
@@ -111,35 +121,46 @@ async fn put_message_handler(
         timestamp,
     };
     let value_bytes = serde_json::to_vec(&record)?;
-    let messages_partition =
-        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+    let messages_partition = state
+        .keyspace
+        .open_partition("messages", PartitionCreateOptions::default())?;
 
     // Create the key by concatenating message_id bytes and timestamp bytes (big-endian)
+    let message_id_clone = payload.message_id.clone(); // Clone for notifier map key
     let mut key_bytes = Vec::new();
     key_bytes.extend_from_slice(payload.message_id.as_bytes());
     key_bytes.extend_from_slice(&timestamp.timestamp_millis().to_be_bytes());
 
     messages_partition.insert(key_bytes, value_bytes)?;
+
+    // Notify any waiting getters
+    if let Some(notifier_entry) = state.notifier_map.get(&message_id_clone) {
+        let notifier = notifier_entry.value();
+        tracing::debug!(message_id = %message_id_clone, "Notifying waiters");
+        notifier.notify_waiters();
+    }
+
     // Optionally persist explicitly
-    // keyspace.persist(PersistMode::BufferAsync)?;
+    // state.keyspace.persist(PersistMode::BufferAsync)?;
     Ok(StatusCode::CREATED)
 }
 
 // --- Handler for Acknowledging/Deleting Messages ---
-#[instrument(skip(keyspace, payload))]
+#[instrument(skip(state, payload))]
 async fn ack_messages_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<SharedState>,
     Json(payload): Json<AckMessagesPayload>,
 ) -> Result<StatusCode, AppError> {
     if payload.acks.is_empty() {
         return Ok(StatusCode::OK);
     }
 
-    let messages_partition =
-        keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+    let messages_partition = state
+        .keyspace
+        .open_partition("messages", PartitionCreateOptions::default())?;
 
     // Use a transaction for batch deletion efficiency
-    let mut write_tx = keyspace.write_tx();
+    let mut write_tx = state.keyspace.write_tx();
 
     for ack in payload.acks {
         // Reconstruct the key used in put_message_handler
@@ -157,25 +178,40 @@ async fn ack_messages_handler(
     Ok(StatusCode::OK)
 }
 
-#[instrument(skip(keyspace, payload))]
+#[instrument(skip(state, payload))]
 #[axum::debug_handler]
 async fn get_messages_handler(
-    State(keyspace): State<SharedState>,
+    State(state): State<SharedState>,
     Json(payload): Json<GetMessagesRequest>,
 ) -> Result<Json<GetMessagesResponse>, AppError> {
     let requested_timeout_ms = payload.timeout_ms.unwrap_or(30000); // Default 30s
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
-    let check_interval = Duration::from_millis(500); // Check DB every 500ms
+    let check_interval = Duration::from_millis(1000); // Check DB every 1s (can be longer now)
+
+    // Get or create notifiers for the requested message IDs
+    let notifiers: Vec<Arc<Notify>> = payload
+        .message_ids
+        .iter()
+        .map(|id| {
+            state
+                .notifier_map
+                .entry(id.clone())
+                .or_insert_with(|| Arc::new(Notify::new()))
+                .value()
+                .clone()
+        })
+        .collect();
 
     loop {
         let mut found_messages_this_iteration = Vec::new();
 
         {
-            // Scope for snapshot lifetime
-            let messages_partition =
-                keyspace.open_partition("messages", PartitionCreateOptions::default())?;
+            // Scope for transaction lifetime
+            let messages_partition = state
+                .keyspace
+                .open_partition("messages", PartitionCreateOptions::default())?;
             // Use a write transaction, even for reads in this context
-            let write_tx = keyspace.write_tx();
+            let write_tx = state.keyspace.write_tx();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
@@ -249,10 +285,25 @@ async fn get_messages_handler(
             let remaining_time = deadline - now;
             let sleep_duration = std::cmp::min(check_interval, remaining_time);
 
-            // Sleep (await point) - The WriteTransaction is no longer alive here.
+            // Prepare notified futures
+            let notified_futures = notifiers.iter().map(|n| Box::pin(n.notified()));
+
+            tracing::trace!(
+                "No messages found, waiting for notification or timeout ({:?})...",
+                sleep_duration
+            );
+
+            // Wait for notification or sleep timeout
             tokio::select! {
+                // Wait for any of the notifiers to trigger
+                _ = select_all(notified_futures) => {
+                    tracing::trace!("Notification received, re-checking for messages.");
+                    // No sleep, loop immediately to check DB
+                }
+                // Wait for the calculated sleep duration
                 _ = sleep(sleep_duration) => {
-                    tracing::trace!("Slept for {:?}, checking again.", sleep_duration);
+                     tracing::trace!("Slept for {:?}, checking again.", sleep_duration);
+                     // Continue loop, will check deadline at the top
                 }
             }
         }
@@ -267,9 +318,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db_path = Path::new("./message_db");
     std::fs::create_dir_all(db_path)?;
-    let keyspace = Config::new(db_path).open_transactional()?;
 
-    let shared_state = Arc::new(keyspace);
+    // Initialize AppState
+    let app_state = Arc::new(AppState {
+        keyspace: Config::new(db_path).open_transactional()?,
+        notifier_map: DashMap::new(),
+    });
 
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
@@ -291,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
         .route("/api/ack-messages", post(ack_messages_handler))
-        .with_state(shared_state)
+        .with_state(app_state) // Use the new AppState
         .layer(GovernorLayer {
             config: governor_config,
         });
