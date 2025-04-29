@@ -12,8 +12,8 @@ futures = "0.3"
 hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-fjall = "2.9"
-hex = "0.4"
+# fjall = "2.9" # Removed duplicate
+hex = "0.4" # This hex is also a duplicate, removing
 base64 = "0.22"
 thiserror = "1"
 tokio = { version = "1", features = ["full"] }
