@@ -22,8 +22,8 @@ use tower_governor::{
 };
 use tracing::{error, info, instrument, warn};
 use web_push::{
-    ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushClient, WebPushError,
-    WebPushMessageBuilder,
+    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, VapidSignatureBuilder, WebPushClient,
+    WebPushError, WebPushMessageBuilder,
 };
 
 #[derive(Deserialize, Debug)]
@@ -374,7 +374,8 @@ async fn get_messages_handler(
 async fn save_subscription_handler(
     State(state): State<SharedState>,          // Extract shared state
     Json(payload): Json<PushSubscriptionInfo>, // Extract JSON payload
-) -> Result<StatusCode, AppError> { // <-- Changed return type
+) -> Result<StatusCode, AppError> {
+    // <-- Changed return type
     info!("Received subscription request: {:?}", payload.endpoint);
 
     // In a real app:
@@ -412,7 +413,7 @@ pub async fn send_notification_handler(
     State(state): State<SharedState>, // Extract shared state
                                       // Optionally, take a payload from the request body:
                                       // Json(payload): Json<NotificationPayload>,
-) -> impl IntoResponse {
+) -> Result<StatusCode, AppError> {
     info!("Received request to send push notification.");
 
     // --- Prepare Notification Content ---
@@ -428,11 +429,7 @@ pub async fn send_notification_handler(
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to serialize notification payload: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create notification payload.",
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
         }
     };
 
@@ -470,40 +467,51 @@ pub async fn send_notification_handler(
     // Load these securely from environment variables or config files!
     // NEVER hardcode private keys.
     let vapid_private_key = "YOUR_PRIVATE_VAPID_KEY_HERE_FROM_ENV"; // Placeholder
-    let vapid_subject = "mailto:your_email@example.com"; // Placeholder
 
     // Build VAPID signature using `?` for error handling
-    let signature = VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
-        .map_err(|e| {
-            error!("Failed to create VAPID signature builder (check private key format?): {}", e);
-            // Return an AppError or similar if you define one for VAPID issues
-            (StatusCode::INTERNAL_SERVER_ERROR, "VAPID configuration error.")
-        })?
-        .with_subject(vapid_subject) // Set subject here
-        .build()
-        .map_err(|e| {
-            error!("Failed to build VAPID signature: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "VAPID signature build error.")
-        })?;
-
+    let signature =
+        VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
+            .map_err(|e| {
+                error!(
+                    "Failed to create VAPID signature builder (check private key format?): {}",
+                    e
+                );
+                // Return an AppError or similar if you define one for VAPID issues
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "VAPID configuration error.",
+                )
+            })?
+            .build()
+            .map_err(|e| {
+                error!("Failed to build VAPID signature: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "VAPID signature build error.",
+                )
+            })?;
 
     // Build the message
-    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info)
-        .map_err(|e| {
-            error!("Failed to create message builder: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed preparing push message.")
-        })?; // Use ? for concise error handling within the handler
+    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info).map_err(|e| {
+        error!("Failed to create message builder: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed preparing push message.",
+        )
+    })?; // Use ? for concise error handling within the handler
 
     message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload_json_bytes);
     message_builder.set_vapid_signature(signature);
     message_builder.set_ttl(Duration::from_secs(3600 * 12).as_secs() as u32); // e.g., 12 hours Time To Live
 
     // 3. Send the message using the web_push client
-    let client = WebPushClient::new()
-        .map_err(|e| {
-            error!("Failed to create web push client: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed creating push client.")
-        })?; // Apply map_err to the Result of new()
+    let client = IsahcWebPushClient::new().map_err(|e| {
+        error!("Failed to create web push client: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed creating push client.",
+        )
+    })?; // Apply map_err to the Result of new()
 
     info!("Sending actual push message...");
     match client
@@ -556,22 +564,22 @@ pub async fn send_notification_handler(
                         format!("Failed to send push: {}", e),
                     )
                         .into_response();
-                }
-            // The match arms now return, so this part is unreachable if the match executes.
-            // If you intend for the simulation code to run *after* a successful send,
-            // it should be placed inside the Ok arm before the `return`.
-            // If the simulation is meant as a fallback or alternative path,
-            // the logic needs restructuring.
-            // Removing the simulation code for now as the `match` handles all cases.
-            // info!(
-            //     "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
-            //     subscription_info.endpoint, vapid_subject
-            // );
-            // info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
-            // (StatusCode::OK, "Notification sending simulated.").into_response()
+                } // The match arms now return, so this part is unreachable if the match executes.
+                  // If you intend for the simulation code to run *after* a successful send,
+                  // it should be placed inside the Ok arm before the `return`.
+                  // If the simulation is meant as a fallback or alternative path,
+                  // the logic needs restructuring.
+                  // Removing the simulation code for now as the `match` handles all cases.
+                  // info!(
+                  //     "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
+                  //     subscription_info.endpoint, vapid_subject
+                  // );
+                  // info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
+                  // (StatusCode::OK, "Notification sending simulated.").into_response()
             } // Closes inner `match e`
         } // Closes `Err(e)` arm
     } // Closes outer `match client.send(...).await`
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
