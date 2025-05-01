@@ -182,7 +182,14 @@ async fn put_message_handler(
         }
     }
 
-    send_notification(axum::extract::State(state), payload.message_id.clone()).await?;
+    // Spawn notification sending into a separate task
+    let state_clone = state.clone();
+    let message_id_for_notification = payload.message_id.clone();
+    tokio::spawn(async move {
+        if let Err(e) = send_notification(axum::extract::State(state_clone), message_id_for_notification).await {
+            error!("Failed to send notification in background task: {:?}", e);
+        }
+    });
 
     // Optionally persist explicitly
     // state.keyspace.persist(PersistMode::BufferAsync)?;
@@ -199,27 +206,44 @@ async fn ack_messages_handler(
         return Ok(StatusCode::OK);
     }
 
-    let messages_partition = state
-        .keyspace
-        .open_partition("messages", PartitionCreateOptions::default())?;
+    let keyspace = state.keyspace.clone();
+    let acks = payload.acks; // Move acks into the blocking task
 
-    // Use a transaction for batch deletion efficiency
-    let mut write_tx = state.keyspace.write_tx();
+    // Execute blocking transaction commit in a dedicated thread pool
+    let result = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let messages_partition = keyspace
+            .open_partition("messages", PartitionCreateOptions::default())
+            .map_err(AppError::Fjall)?;
 
-    for ack in payload.acks {
-        // Reconstruct the key used in put_message_handler
-        let mut key_bytes = Vec::new();
-        key_bytes.extend_from_slice(ack.message_id.as_bytes());
-        key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
+        // Use a transaction for batch deletion efficiency
+        let mut write_tx = keyspace.write_tx();
 
-        // Remove the message by its reconstructed key
-        write_tx.remove(&messages_partition, key_bytes);
-        tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion");
+        for ack in acks {
+            // Reconstruct the key used in put_message_handler
+            let mut key_bytes = Vec::new();
+            key_bytes.extend_from_slice(ack.message_id.as_bytes());
+            key_bytes.extend_from_slice(&ack.timestamp.timestamp_millis().to_be_bytes());
+
+            // Remove the message by its reconstructed key
+            write_tx.remove(&messages_partition, key_bytes);
+            // Note: Tracing inside spawn_blocking might be less ideal, but okay for now.
+            // Consider passing results back if detailed tracing per ack is needed outside.
+            tracing::debug!(message_id = %ack.message_id, timestamp = %ack.timestamp, "Acknowledged and marked message for deletion in transaction");
+        }
+
+        write_tx.commit().map_err(AppError::Fjall)?; // Commit the transaction
+        Ok(())
+    }).await;
+
+    match result {
+        Ok(Ok(())) => Ok(StatusCode::OK),
+        Ok(Err(app_error)) => Err(app_error),
+        Err(join_error) => {
+            error!("Failed to execute ack_messages task: {}", join_error);
+            // Use a more generic error type or reuse WebPush temporarily if needed
+            Err(AppError::WebPush(format!("Task join error during ack: {}", join_error)))
+        }
     }
-
-    write_tx.commit()?;
-
-    Ok(StatusCode::OK)
 }
 
 #[instrument(skip(state, payload))]
@@ -232,19 +256,19 @@ async fn get_messages_handler(
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
     let check_interval = Duration::from_millis(300_000); // Check DB every 5 minutes
 
-    match payload.push_subscription {
-        Some(push_subscription) => {
-            save_subscription_handler(
-                axum::extract::State(state.clone()),
-                payload.message_ids.clone(),
-                push_subscription,
-            )
-            .await?;
-        }
-        None => {
+    // Handle subscription saving asynchronously if provided
+    if let Some(push_subscription) = payload.push_subscription {
+        // Clone necessary data for the async call
+        let state_clone = state.clone();
+        let message_ids_clone = payload.message_ids.clone();
+        save_subscription_handler(
+            axum::extract::State(state_clone),
+            message_ids_clone,
+            push_subscription,
+        ).await?; // Await the result of the potentially blocking operation
+    } else {
             // No subscription provided, ignore
         }
-    }
 
     // Get or create notifiers for the requested message IDs, handling Weak pointers
     let mut notifiers: Vec<Arc<Notify>> = Vec::with_capacity(payload.message_ids.len());
@@ -334,8 +358,23 @@ async fn get_messages_handler(
                 } // Iterator goes out of scope
             } // End loop through message_ids
 
-            // Commit the (read-only) transaction to release locks/resources
-            write_tx.commit()?;
+            // Commit the transaction using spawn_blocking
+            let commit_result = tokio::task::spawn_blocking(move || -> Result<(), fjall::Error> {
+                write_tx.commit()
+            }).await;
+
+            match commit_result {
+                Ok(Ok(())) => { /* Commit successful */ }
+                Ok(Err(fjall_error)) => {
+                    error!("Failed to commit read transaction: {}", fjall_error);
+                    return Err(AppError::Fjall(fjall_error));
+                }
+                Err(join_error) => {
+                    error!("Failed to execute transaction commit task: {}", join_error);
+                    // Use a more generic error type or reuse WebPush temporarily if needed
+                    return Err(AppError::WebPush(format!("Task join error during commit: {}", join_error)));
+                }
+            }
         } // Transaction goes out of scope here
 
         if !found_messages_this_iteration.is_empty() {
@@ -390,26 +429,44 @@ async fn save_subscription_handler(
     message_ids: Vec<String>,
     push_subscription: PushSubscriptionInfo,
 ) -> Result<StatusCode, AppError> {
+    let endpoint = push_subscription.endpoint.clone(); // Clone for logging outside blocking task
     info!(
         "Received subscription request: {:?}",
-        push_subscription.endpoint
+        endpoint
     );
 
-    let subscriptions = state
-        .keyspace
-        .open_partition("subscriptions", PartitionCreateOptions::default())?;
+    // Clone necessary data for the blocking task
+    let keyspace = state.keyspace.clone();
+    let push_subscription_bytes = serde_json::to_vec(&push_subscription)?; // Serialize outside blocking task
 
-    let push_subscription_bytes = serde_json::to_vec(&push_subscription)?;
-    for key in message_ids.iter() {
-        subscriptions.insert(key.as_bytes(), &push_subscription_bytes)?;
+    // Execute blocking database operations in a dedicated thread pool
+    let result = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let subscriptions = keyspace
+            .open_partition("subscriptions", PartitionCreateOptions::default())
+            .map_err(AppError::Fjall)?; // Convert fjall::Error to AppError
+
+        for key in message_ids.iter() {
+            subscriptions.insert(key.as_bytes(), &push_subscription_bytes)
+                .map_err(AppError::Fjall)?; // Convert fjall::Error to AppError
+        }
+        Ok(())
+    }).await;
+
+    match result {
+        Ok(Ok(())) => {
+            // Log success after blocking task completes
+            info!(
+                "Subscription stored successfully for endpoint: {}",
+                endpoint // Use the cloned endpoint
+            );
+            Ok(StatusCode::CREATED)
+        }
+        Ok(Err(app_error)) => Err(app_error), // Propagate AppError from blocking task
+        Err(join_error) => {
+            error!("Failed to execute save_subscription task: {}", join_error);
+            Err(AppError::WebPush(format!("Task join error: {}", join_error))) // Or a more generic internal error
+        }
     }
-
-    info!(
-        "Subscription stored successfully for endpoint: {}",
-        push_subscription.endpoint
-    );
-
-    Ok(StatusCode::CREATED)
 }
 
 pub async fn send_notification(
@@ -417,30 +474,45 @@ pub async fn send_notification(
     message_id: String,
 ) -> Result<StatusCode, AppError> {
     info!("Received request to send push notification.");
+    let keyspace = state.keyspace.clone();
+    let message_id_clone = message_id.clone(); // Clone for blocking task
 
-    let subscriptions = state
-        .keyspace
-        .open_partition("subscriptions", PartitionCreateOptions::default())?;
-    let key = message_id.as_bytes();
-    let subscription_info = match subscriptions.get(key).or_else(|e| {
-        error!("Database IO error for subscriptions partition.");
-        return Err(AppError::WebPush(
-            format!("Database IO Error {}", e).to_string(),
-        ));
-    })? {
-        Some(value) => {
-            // Deserialize the subscription info
-            match serde_json::from_slice::<PushSubscriptionInfo>(&value) {
-                Ok(sub_info) => sub_info,
-                Err(e) => {
-                    error!("Failed to deserialize subscription info: {}", e);
-                    return Err(AppError::SerdeJson(e));
+    // Execute blocking database read in a dedicated thread pool
+    let subscription_info_result = tokio::task::spawn_blocking(move || -> Result<Option<PushSubscriptionInfo>, AppError> {
+        let subscriptions = keyspace
+            .open_partition("subscriptions", PartitionCreateOptions::default())
+            .map_err(AppError::Fjall)?;
+        let key = message_id_clone.as_bytes();
+
+        match subscriptions.get(key) {
+            Ok(Some(value)) => {
+                // Deserialize the subscription info
+                match serde_json::from_slice::<PushSubscriptionInfo>(&value) {
+                    Ok(sub_info) => Ok(Some(sub_info)),
+                    Err(e) => {
+                        error!("Failed to deserialize subscription info: {}", e);
+                        Err(AppError::SerdeJson(e))
+                    }
                 }
             }
+            Ok(None) => Ok(None), // No subscription found
+            Err(e) => {
+                 error!("Database IO error reading subscription for {}: {}", message_id_clone, e);
+                 Err(AppError::Fjall(e))
+            }
         }
-        None => {
+    }).await;
+
+    let subscription_info = match subscription_info_result {
+        Ok(Ok(Some(info))) => info,
+        Ok(Ok(None)) => {
             info!("No subscription found for message ID: {}", message_id);
             return Ok(StatusCode::NOT_FOUND);
+        }
+        Ok(Err(app_error)) => return Err(app_error), // Propagate AppError from blocking task
+        Err(join_error) => {
+            error!("Failed to execute subscription read task: {}", join_error);
+            return Err(AppError::WebPush(format!("Task join error during read: {}", join_error)));
         }
     };
 
@@ -503,7 +575,27 @@ pub async fn send_notification(
     })?;
 
     info!("Sending push message.");
-    subscriptions.remove(key)?;
+
+    // Execute blocking database remove in a dedicated thread pool
+    let keyspace_remove = state.keyspace.clone();
+    let message_id_remove = message_id.clone(); // Clone for blocking task
+    let remove_result = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+         let subscriptions = keyspace_remove
+            .open_partition("subscriptions", PartitionCreateOptions::default())
+            .map_err(AppError::Fjall)?;
+         subscriptions.remove(message_id_remove.as_bytes()).map_err(AppError::Fjall)?;
+         Ok(())
+    }).await;
+
+    match remove_result {
+         Ok(Ok(())) => info!("Subscription removed for message ID: {}", message_id),
+         Ok(Err(app_error)) => return Err(app_error), // Propagate AppError from blocking task
+         Err(join_error) => {
+             error!("Failed to execute subscription removal task: {}", join_error);
+             return Err(AppError::WebPush(format!("Task join error during removal: {}", join_error)));
+         }
+    }
+
     match client
         .send(message_builder.build().map_err(|e| {
             error!("Failed to build web push message: {}", e);
