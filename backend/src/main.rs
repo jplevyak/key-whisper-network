@@ -413,7 +413,7 @@ async fn save_subscription_handler(
 // We'll use its types but comment out the actual sending part.
 
 /// Handler to trigger sending a push notification (simulation)
-pub async fn send_notification_handler(
+async fn send_notification_handler( // <-- Removed `pub`
     State(state): State<SharedState>, // Extract shared state
                                       // Optionally, take a payload from the request body:
                                       // Json(payload): Json<NotificationPayload>,
