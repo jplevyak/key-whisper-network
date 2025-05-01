@@ -1,26 +1,7 @@
-// Placeholder for your VAPID public key
-// Replace this with your actual VAPID public key generated on the server
-const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY'; 
+import { base64ToUint8Array } from './encryption.ts';
 
+const VAPID_PUBLIC_KEY = 'BBCfu1zbkYN8zMkWErBfuTfDzLZJ1-gd1hSgwydeCC3851L_7CiTy71oQtuAtx3aV3wDVk7FZVEgUMkT3ZY8RUk=';
 const SUBSCRIPTION_STORAGE_KEY = 'pushSubscription';
-
-/**
- * Converts a VAPID public key string to a Uint8Array.
- */
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
 
 /**
  * Registers the service worker.
@@ -100,13 +81,6 @@ export async function requestNotificationPermissionAndSubscribe(): Promise<void>
   // 4. If permission is granted, proceed with subscription
   if (permission === 'granted') {
     console.log('Notification permission granted. Proceeding with subscription...');
-
-    // Ensure VAPID key is set
-    if (VAPID_PUBLIC_KEY === 'YOUR_VAPID_PUBLIC_KEY') {
-        console.error("VAPID_PUBLIC_KEY is not set in src/utils/notifications.ts. Please replace the placeholder.");
-        // Optionally throw an error or return early
-        return; 
-    }
 
     // Check if already subscribed
     const existingSubscription = getStoredPushSubscription();
