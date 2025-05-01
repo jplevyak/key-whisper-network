@@ -355,8 +355,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let governor_config = Arc::new(
         GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor) // Use SmartIpKeyExtractor for X-Real-IP
-            .per_second(10)
-            .burst_size(10)
+            .per_second(100)
+            .burst_size(100)
             .finish()
             .unwrap(),
     );
