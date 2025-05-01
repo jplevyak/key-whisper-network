@@ -308,15 +308,15 @@ async fn get_messages_handler(
             let messages_partition = state
                 .keyspace
                 .open_partition("messages", PartitionCreateOptions::default())?;
-            // Use a write transaction, even for reads in this context
-            let write_tx = state.keyspace.write_tx();
+            // Use a read transaction for scanning prefixes
+            let read_tx = state.keyspace.read_tx();
 
             for message_id_str in &payload.message_ids {
                 let key_prefix = message_id_str.as_bytes();
 
-                // Scope for the iterator borrow using the transaction
+                // Scope for the iterator borrow using the read transaction
                 {
-                    let iter = write_tx.prefix(&messages_partition, key_prefix);
+                    let iter = read_tx.prefix(&messages_partition, key_prefix);
 
                     // Iterate through ALL items matching the prefix
                     for result in iter {
@@ -358,24 +358,10 @@ async fn get_messages_handler(
                 } // Iterator goes out of scope
             } // End loop through message_ids
 
-            // Commit the transaction using spawn_blocking
-            let commit_result = tokio::task::spawn_blocking(move || -> Result<(), fjall::Error> {
-                write_tx.commit()
-            }).await;
+            // Read transaction automatically closes when it goes out of scope.
+            // No explicit commit or spawn_blocking needed here.
 
-            match commit_result {
-                Ok(Ok(())) => { /* Commit successful */ }
-                Ok(Err(fjall_error)) => {
-                    error!("Failed to commit read transaction: {}", fjall_error);
-                    return Err(AppError::Fjall(fjall_error));
-                }
-                Err(join_error) => {
-                    error!("Failed to execute transaction commit task: {}", join_error);
-                    // Use a more generic error type or reuse WebPush temporarily if needed
-                    return Err(AppError::WebPush(format!("Task join error during commit: {}", join_error)));
-                }
-            }
-        } // Transaction goes out of scope here
+        } // Read transaction (`read_tx`) goes out of scope here
 
         if !found_messages_this_iteration.is_empty() {
             // We found messages. Return them. Frontend will ACK later.
