@@ -413,7 +413,7 @@ pub async fn send_notification_handler(
     State(state): State<SharedState>, // Extract shared state
                                       // Optionally, take a payload from the request body:
                                       // Json(payload): Json<NotificationPayload>,
-) -> Result<StatusCode, AppError> {
+) -> impl IntoResponse { // <-- Changed return type
     info!("Received request to send push notification.");
 
     // --- Prepare Notification Content ---
@@ -429,7 +429,12 @@ pub async fn send_notification_handler(
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to serialize notification payload: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+            // Return a Response directly, matching the new function signature
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to serialize notification payload.",
+            )
+                .into_response();
         }
     };
 
@@ -492,13 +497,8 @@ pub async fn send_notification_handler(
             })?;
 
     // Build the message
-    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info).map_err(|e| {
-        error!("Failed to create message builder: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed preparing push message.",
-        )
-    })?; // Use ? for concise error handling within the handler
+    // Remove the incorrect .map_err here. new() doesn't return Result.
+    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info);
 
     message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload_json_bytes);
     message_builder.set_vapid_signature(signature);
@@ -524,11 +524,9 @@ pub async fn send_notification_handler(
         })?)
         .await
     {
-        Ok(response) => {
-            info!(
-                "Push message sent successfully! Response: {:?}",
-                response.status()
-            );
+        Ok(()) => { // The success type is ()
+            // Remove the call to response.status() as response is ()
+            info!("Push message sent successfully!");
             // Return the success response directly
             return (StatusCode::OK, "Notification sent successfully.").into_response();
         }
