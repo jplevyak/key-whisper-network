@@ -20,7 +20,11 @@ use tokio::time::{sleep, Duration, Instant};
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tracing::{error, instrument};
+use tracing::{error, info, instrument, warn};
+use web_push::{
+    ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushClient, WebPushError,
+    WebPushMessageBuilder,
+};
 
 #[derive(Deserialize, Debug)]
 struct PutMessageRequest {
@@ -64,10 +68,37 @@ struct AckMessagesPayload {
     acks: Vec<AckMessageRequest>,
 }
 
+// Represents the 'keys' object within the PushSubscription
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubscriptionKeysInfo {
+    p256dh: String,
+    auth: String,
+}
+
+// Represents the main PushSubscription object received from the client
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PushSubscriptionInfo {
+    client_id: String,        // Unique identifier for the client
+    message_ids: Vec<String>, // Unique identifier for the message
+    endpoint: String,         // The push service URL
+    keys: SubscriptionKeysInfo,
+}
+
+// Example structure for the payload data we want to send in a notification
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NotificationPayload {
+    title: String,
+    body: String,
+    icon: Option<String>,
+    url: Option<String>, // URL to open on click
+                         // Add any other custom data you need
+}
+
 // Structure for the shared application state
 struct AppState {
     keyspace: TransactionalKeyspace,
     notifier_map: DashMap<String, Weak<Notify>>, // Store Weak pointers
+    subscription_store: tokio::sync::Mutex<Vec<PushSubscriptionInfo>>,
 }
 
 // Define the type for the shared application state
@@ -337,6 +368,218 @@ async fn get_messages_handler(
     } // End loop
 }
 
+/// Handler to receive and store a push subscription from the client
+#[instrument(skip(state, payload))]
+#[axum::debug_handler]
+async fn save_subscription_handler(
+    State(state): State<SharedState>,          // Extract shared state
+    Json(payload): Json<PushSubscriptionInfo>, // Extract JSON payload
+) -> Result<Json<GetMessagesResponse>, AppError> {
+    info!("Received subscription request: {:?}", payload.endpoint);
+
+    // In a real app:
+    // - Validate the subscription data further.
+    // - Associate it with the logged-in user ID.
+    // - Check if this exact subscription (endpoint) already exists for the user.
+    // - Store it persistently in a database.
+
+    let messages_partition = state
+        .keyspace
+        .open_partition("subscriptions", PartitionCreateOptions::default())?;
+
+    for key in payload.message_ids.iter() {
+        messages_partition.insert(key.as_bytes(), payload.as_bytes())?;
+    }
+
+    info!(
+        "Subscription stored successfully for endpoint: {}",
+        payload.endpoint
+    );
+
+    Ok(StatusCode::CREATED)
+}
+
+// Add this dependency to Cargo.toml for real implementation:
+// web-push = "0.10"
+// We'll use its types but comment out the actual sending part.
+
+/// Handler to trigger sending a push notification (simulation)
+pub async fn send_notification_handler(
+    State(state): State<SharedState>, // Extract shared state
+                                      // Optionally, take a payload from the request body:
+                                      // Json(payload): Json<NotificationPayload>,
+) -> impl IntoResponse {
+    info!("Received request to send push notification.");
+
+    // --- Prepare Notification Content ---
+    // In a real app, this content might come from the request body
+    // or be determined by backend logic/events.
+    let notification_payload = NotificationPayload {
+        title: "Server Push!".to_string(),
+        body: format!("Notification sent from Axum at {}", chrono::Utc::now()),
+        icon: Some("images/icon-192.png".to_string()), // Match service worker expectation
+        url: Some("/".to_string()),                    // URL to open on click
+    };
+    let payload_json_bytes = match serde_json::to_vec(&notification_payload) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!("Failed to serialize notification payload: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create notification payload.",
+            )
+                .into_response();
+        }
+    };
+
+    // --- Retrieve Subscription ---
+    let subscription_info: PushSubscriptionInfo; // Will hold the sub to send to
+
+    {
+        // Scoped lock
+        let store = state.subscription_store.lock().await;
+        // In a real app: Retrieve subscription(s) based on user ID, topic, etc.
+        // For sketch: Get the most recently added subscription.
+        if let Some(sub) = store.last() {
+            subscription_info = sub.clone(); // Clone to use after unlocking
+        } else {
+            warn!("No subscriptions found in store to send notification.");
+            return (StatusCode::NOT_FOUND, "No subscriptions available.").into_response();
+        }
+    } // Lock released here
+
+    // --- !!! Web Push Sending Logic (Simulation) !!! ---
+    info!(
+        "Attempting to send notification to: {}",
+        subscription_info.endpoint
+    );
+
+    // 1. Convert our stored info to the web_push crate's format
+    let push_crate_sub_info = SubscriptionInfo::new(
+        subscription_info.endpoint.clone(),
+        subscription_info.keys.p256dh.clone(),
+        subscription_info.keys.auth.clone(),
+    );
+
+    // 2. Prepare the message builder
+    // You need VAPID keys generated for your server (e.g., using web-push CLI or library)
+    // Load these securely from environment variables or config files!
+    // NEVER hardcode private keys.
+    let vapid_private_key = "YOUR_PRIVATE_VAPID_KEY_HERE_FROM_ENV"; // Placeholder
+    let vapid_subject = "mailto:your_email@example.com"; // Placeholder
+
+    // Build VAPID signature
+    // Handle potential errors loading/parsing keys in real code
+    let Ok(signature_builder) =
+        VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
+    else {
+        error!("Failed to create VAPID signature builder (check private key format?)");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "VAPID configuration error.",
+        )
+            .into_response();
+    };
+    let Ok(signature_builder) = signature_builder.with_subject(vapid_subject) else {
+        error!("Failed to set VAPID subject");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "VAPID configuration error.",
+        )
+            .into_response();
+    };
+    let Ok(signature) = signature_builder.build() else {
+        error!("Failed to build VAPID signature");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "VAPID configuration error.",
+        )
+            .into_response();
+    };
+
+    // Build the message
+    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info).map_err(|e| {
+        error!("Failed to create message builder: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed preparing push message.",
+        )
+    })?; // Use ? for concise error handling within the handler
+
+    message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload_json_bytes);
+    message_builder.set_vapid_signature(signature);
+    message_builder.set_ttl(Duration::from_secs(3600 * 12).as_secs() as u32); // e.g., 12 hours Time To Live
+
+    // 3. (Simulated) Send the message
+    // In real code, uncomment and use the web_push client:
+    let client = WebPushClient::new().map_err(|e| {
+        error!("Failed to create web push client: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed creating push client.",
+        )
+    })?;
+
+    info!("Sending actual push message...");
+    match client
+        .send(message_builder.build().map_err(|e| {
+            error!("Failed to build web push message: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed building push message.",
+            )
+        })?)
+        .await
+    {
+        Ok(response) => {
+            info!(
+                "Push message sent successfully! Response: {:?}",
+                response.status()
+            );
+            (StatusCode::OK, "Notification sent successfully.").into_response()
+        }
+        Err(e) => {
+            error!("Failed to send push message: {}", e);
+            match e {
+                WebPushError::EndpointNotValid | WebPushError::EndpointNotFound => {
+                    // Consider removing this invalid/expired subscription from your database
+                    warn!(
+                        "Subscription endpoint invalid or not found: {}",
+                        subscription_info.endpoint
+                    );
+                    (
+                        StatusCode::GONE,
+                        "Subscription endpoint is gone or invalid.",
+                    )
+                        .into_response()
+                }
+                WebPushError::Unauthorized => {
+                    error!("Push service authorization failed - check VAPID keys!");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "VAPID authorization failed.",
+                    )
+                        .into_response()
+                }
+                _ => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to send push: {}", e),
+                )
+                    .into_response(),
+            }
+        }
+    }
+
+    // For the sketch, just log the simulation:
+    info!(
+        "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
+        subscription_info.endpoint, vapid_subject
+    );
+    info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
+
+    (StatusCode::OK, "Notification sending simulated.").into_response()
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -350,6 +593,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = Arc::new(AppState {
         keyspace: Config::new(db_path).open_transactional()?,
         notifier_map: DashMap::new(),
+        subscription_store: tokio::sync::Mutex::new(Vec::new()),
     });
 
     let governor_config = Arc::new(
@@ -372,6 +616,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
         .route("/api/ack-messages", post(ack_messages_handler))
+        .route("/api/save-subscription", post(save_subscription_handler))
         .with_state(app_state) // Use the new AppState
         .layer(GovernorLayer {
             config: governor_config,
