@@ -374,7 +374,7 @@ async fn get_messages_handler(
 async fn save_subscription_handler(
     State(state): State<SharedState>,          // Extract shared state
     Json(payload): Json<PushSubscriptionInfo>, // Extract JSON payload
-) -> Result<Json<GetMessagesResponse>, AppError> {
+) -> Result<StatusCode, AppError> { // <-- Changed return type
     info!("Received subscription request: {:?}", payload.endpoint);
 
     // In a real app:
@@ -387,8 +387,12 @@ async fn save_subscription_handler(
         .keyspace
         .open_partition("subscriptions", PartitionCreateOptions::default())?;
 
+    // Serialize the subscription info to store it
+    let payload_bytes = serde_json::to_vec(&payload)?;
+
     for key in payload.message_ids.iter() {
-        messages_partition.insert(key.as_bytes(), payload.as_bytes())?;
+        // Store the serialized bytes
+        messages_partition.insert(key.as_bytes(), &payload_bytes)?;
     }
 
     info!(
@@ -468,57 +472,38 @@ pub async fn send_notification_handler(
     let vapid_private_key = "YOUR_PRIVATE_VAPID_KEY_HERE_FROM_ENV"; // Placeholder
     let vapid_subject = "mailto:your_email@example.com"; // Placeholder
 
-    // Build VAPID signature
-    // Handle potential errors loading/parsing keys in real code
-    let Ok(signature_builder) =
-        VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
-    else {
-        error!("Failed to create VAPID signature builder (check private key format?)");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "VAPID configuration error.",
-        )
-            .into_response();
-    };
-    let Ok(signature_builder) = signature_builder.with_subject(vapid_subject) else {
-        error!("Failed to set VAPID subject");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "VAPID configuration error.",
-        )
-            .into_response();
-    };
-    let Ok(signature) = signature_builder.build() else {
-        error!("Failed to build VAPID signature");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "VAPID configuration error.",
-        )
-            .into_response();
-    };
+    // Build VAPID signature using `?` for error handling
+    let signature = VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
+        .map_err(|e| {
+            error!("Failed to create VAPID signature builder (check private key format?): {}", e);
+            // Return an AppError or similar if you define one for VAPID issues
+            (StatusCode::INTERNAL_SERVER_ERROR, "VAPID configuration error.")
+        })?
+        .with_subject(vapid_subject) // Set subject here
+        .build()
+        .map_err(|e| {
+            error!("Failed to build VAPID signature: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "VAPID signature build error.")
+        })?;
+
 
     // Build the message
-    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info).map_err(|e| {
-        error!("Failed to create message builder: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed preparing push message.",
-        )
-    })?; // Use ? for concise error handling within the handler
+    let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info)
+        .map_err(|e| {
+            error!("Failed to create message builder: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed preparing push message.")
+        })?; // Use ? for concise error handling within the handler
 
     message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload_json_bytes);
     message_builder.set_vapid_signature(signature);
     message_builder.set_ttl(Duration::from_secs(3600 * 12).as_secs() as u32); // e.g., 12 hours Time To Live
 
-    // 3. (Simulated) Send the message
-    // In real code, uncomment and use the web_push client:
-    let client = WebPushClient::new().map_err(|e| {
-        error!("Failed to create web push client: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed creating push client.",
-        )
-    })?;
+    // 3. Send the message using the web_push client
+    let client = WebPushClient::new()
+        .map_err(|e| {
+            error!("Failed to create web push client: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed creating push client.")
+        })?; // Apply map_err to the Result of new()
 
     info!("Sending actual push message...");
     match client
@@ -536,48 +521,54 @@ pub async fn send_notification_handler(
                 "Push message sent successfully! Response: {:?}",
                 response.status()
             );
-            (StatusCode::OK, "Notification sent successfully.").into_response()
+            // Return the success response directly
+            return (StatusCode::OK, "Notification sent successfully.").into_response();
         }
         Err(e) => {
             error!("Failed to send push message: {}", e);
+            // Use return in each match arm
             match e {
-                WebPushError::EndpointNotValid | WebPushError::EndpointNotFound => {
+                // Use tuple variant pattern `Variant(_)`
+                WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_) => {
                     // Consider removing this invalid/expired subscription from your database
                     warn!(
                         "Subscription endpoint invalid or not found: {}",
-                        subscription_info.endpoint
+                        subscription_info.endpoint,
                     );
-                    (
+                    return (
                         StatusCode::GONE,
                         "Subscription endpoint is gone or invalid.",
                     )
-                        .into_response()
+                        .into_response();
                 }
-                WebPushError::Unauthorized => {
+                // Use tuple variant pattern `Variant(_)`
+                WebPushError::Unauthorized(_) => {
                     error!("Push service authorization failed - check VAPID keys!");
-                    (
+                    return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "VAPID authorization failed.",
                     )
-                        .into_response()
+                        .into_response();
                 }
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to send push: {}", e),
-                )
-                    .into_response(),
-            }
-        }
-    }
-
-    // For the sketch, just log the simulation:
-    info!(
-        "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
-        subscription_info.endpoint, vapid_subject
-    );
-    info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
-
-    (StatusCode::OK, "Notification sending simulated.").into_response()
+                _ => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to send push: {}", e),
+                    )
+                        .into_response();
+                }
+            // The match arms now return, so this part is unreachable if the match executes.
+            // If you intend for the simulation code to run *after* a successful send,
+            // it should be placed inside the Ok arm before the `return`.
+            // If the simulation is meant as a fallback or alternative path,
+            // the logic needs restructuring.
+            // Removing the simulation code for now as the `match` handles all cases.
+            // info!(
+            //     "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
+            //     subscription_info.endpoint, vapid_subject
+            // );
+            // info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
+            // (StatusCode::OK, "Notification sending simulated.").into_response()
 }
 
 #[tokio::main]
