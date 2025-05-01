@@ -19,21 +19,31 @@ import {
   DialogTrigger,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog"; // Import Dialog components
-import { Fingerprint, Info } from 'lucide-react';
+} from "@/components/ui/dialog";
+import { Fingerprint, Info, Bell, BellOff } from 'lucide-react'; // Import Bell icons
 import { useIsMobile } from '@/hooks/use-mobile';
-import { requestNotificationPermissionAndSubscribe, unsubscribeFromNotifications } from '@/utils/notifications'; // Import notification utils
+import { requestNotificationPermissionAndSubscribe, unsubscribeFromNotifications } from '@/utils/notifications';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Import Tooltip components
 
 const IndexContent = () => {
   const { isAuthenticated, isLoading, logout, username } = useAuth();
   const { activeContact } = useContacts();
   const [showAddContact, setShowAddContact] = useState(false);
-  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false); // Add state for About dialog
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const isMobile = useIsMobile();
-  const [showContacts, setShowContacts] = useState(true); // State for mobile view toggle
+  const [showContacts, setShowContacts] = useState(true);
+  const [notificationsSupported, setNotificationsSupported] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
-  // Set the header height variable for mobile layout calculations
+  // Check notification support and initial permission on mount
   useEffect(() => {
+    const isSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator;
+    setNotificationsSupported(isSupported);
+    if (isSupported) {
+      setNotificationPermission(Notification.permission);
+    }
+
+    // Set the header height variable for mobile layout calculations
     if (isMobile) {
       const headerHeight = '4rem'; // Matches the header height
       document.documentElement.style.setProperty('--header-height', headerHeight);
@@ -50,19 +60,43 @@ const IndexContent = () => {
 
   // Effect to request notification permission on successful authentication
   useEffect(() => {
-    if (isAuthenticated) {
-      console.log("User authenticated, requesting notification permission...");
-      requestNotificationPermissionAndSubscribe();
-    }
+    const requestPermission = async () => {
+      if (isAuthenticated && notificationsSupported) {
+        console.log("User authenticated, checking/requesting notification permission...");
+        // Only request if permission is 'default', otherwise just update state
+        if (Notification.permission === 'default') {
+            const currentPermission = await requestNotificationPermissionAndSubscribe();
+            setNotificationPermission(currentPermission);
+        } else {
+            // Update state if it changed somehow (e.g., user changed in browser settings)
+            setNotificationPermission(Notification.permission);
+        }
+      }
+    };
+    requestPermission();
     // We don't need a cleanup here to unsubscribe on logout,
     // as the subscription should persist. We'll handle unsubscription
     // explicitly in the logout function if needed.
-  }, [isAuthenticated]); // Run only when isAuthenticated changes
+  }, [isAuthenticated, notificationsSupported]); // Run when auth status or support changes
 
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
     // unsubscribeFromNotifications(); // Uncomment if you want to remove subscription on logout
     logout();
+  };
+
+  const handleNotificationIconClick = async () => {
+    if (!notificationsSupported) return;
+
+    console.log("Notification icon clicked, requesting permission...");
+    const currentPermission = await requestNotificationPermissionAndSubscribe();
+    setNotificationPermission(currentPermission);
+    // Optionally show a toast message based on the result
+    if (currentPermission === 'granted') {
+        // toast({ title: "Notifications Enabled", description: "Push notifications are now active." });
+    } else if (currentPermission === 'denied') {
+        // toast({ title: "Notifications Blocked", description: "Please enable notifications in browser settings.", variant: "destructive" });
+    }
   };
 
   if (isLoading) {
@@ -103,8 +137,42 @@ const IndexContent = () => {
           <Fingerprint className="h-6 w-6 text-primary" />
           <h1 className="font-bold text-xl">CCred</h1>
         </div>
-        
-        <div className="flex items-center space-x-2">
+
+        <div className="flex items-center space-x-1 sm:space-x-2"> {/* Adjusted spacing for smaller screens */}
+          {/* Notification Status/Toggle Button */}
+          {notificationsSupported && (
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-primary h-8 w-8"
+                    onClick={handleNotificationIconClick}
+                    aria-label={
+                      notificationPermission === 'granted'
+                        ? 'Notifications enabled'
+                        : 'Enable notifications'
+                    }
+                  >
+                    {notificationPermission === 'granted' ? (
+                      <Bell className="h-5 w-5" />
+                    ) : (
+                      <BellOff className="h-5 w-5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {notificationPermission === 'granted'
+                    ? 'Push notifications are enabled'
+                    : notificationPermission === 'denied'
+                    ? 'Notifications blocked (click to retry, may require browser settings change)'
+                    : 'Click to enable push notifications'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
           {/* About Dialog Trigger */}
           <Dialog open={isAboutDialogOpen} onOpenChange={setIsAboutDialogOpen}>
             <DialogTrigger asChild>

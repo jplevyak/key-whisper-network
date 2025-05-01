@@ -54,11 +54,15 @@ export function getStoredPushSubscription(): PushSubscription | null {
 /**
  * Requests notification permission and subscribes if granted.
  * Stores the subscription in localStorage.
+ * @returns {Promise<NotificationPermission>} The final notification permission status.
  */
-export async function requestNotificationPermissionAndSubscribe(): Promise<void> {
+export async function requestNotificationPermissionAndSubscribe(): Promise<NotificationPermission> {
   if (!('Notification' in window) || !('PushManager' in window) || !('serviceWorker' in navigator)) {
     console.warn('Push notifications or service workers are not supported in this browser.');
-    return;
+    // Return 'denied' or a specific status if not supported? Let's stick to browser standard.
+    // If 'Notification' isn't in window, Notification.permission is likely undefined.
+    // Return 'default' as a fallback status indicating it's not enabled.
+    return 'default';
   }
 
   // 1. Check existing permission
@@ -71,11 +75,10 @@ export async function requestNotificationPermissionAndSubscribe(): Promise<void>
     console.log('Notification permission result:', permission);
   }
 
-  // 3. If permission is denied, do nothing further
+  // 3. If permission is denied, return the status
   if (permission === 'denied') {
     console.warn('Notification permission was denied.');
-    // Maybe inform the user how to enable it later if they change their mind
-    return;
+    return permission; // Return 'denied'
   }
 
   // 4. If permission is granted, proceed with subscription
@@ -115,6 +118,9 @@ export async function requestNotificationPermissionAndSubscribe(): Promise<void>
       storePushSubscription(null); // Ensure no invalid subscription is stored
     }
   }
+
+  // Return the final permission status
+  return permission;
 }
 
 /**
