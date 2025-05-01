@@ -382,6 +382,7 @@ async fn get_messages_handler(
             }
         }
     } // End loop
+    println!("9");
 }
 
 /// Handler to receive and store a push subscription from the client

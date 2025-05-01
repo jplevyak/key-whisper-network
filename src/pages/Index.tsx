@@ -62,15 +62,15 @@ const IndexContent = () => {
   useEffect(() => {
     const requestPermission = async () => {
       if (isAuthenticated && notificationsSupported) {
-        console.log("User authenticated, checking/requesting notification permission...");
+        console.log("User authenticated, checking/requesting notification permission...", Notification.permission);
         // Only request if permission is 'default', otherwise just update state
-        if (Notification.permission === 'default') {
+        //if (Notification.permission === 'default') {
             const currentPermission = await requestNotificationPermissionAndSubscribe();
             setNotificationPermission(currentPermission);
-        } else {
+        //} else {
             // Update state if it changed somehow (e.g., user changed in browser settings)
-            setNotificationPermission(Notification.permission);
-        }
+        //    setNotificationPermission(Notification.permission);
+        //}
       }
     };
     requestPermission();

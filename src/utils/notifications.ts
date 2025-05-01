@@ -1,25 +1,7 @@
-import { base64ToUint8Array } from './encryption.ts';
+import { base64ToArrayBuffer } from './encryption';
 
 const VAPID_PUBLIC_KEY = 'BBCfu1zbkYN8zMkWErBfuTfDzLZJ1-gd1hSgwydeCC3851L_7CiTy71oQtuAtx3aV3wDVk7FZVEgUMkT3ZY8RUk=';
 const SUBSCRIPTION_STORAGE_KEY = 'pushSubscription';
-
-/**
- * Registers the service worker.
- */
-async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (!('serviceWorker' in navigator)) {
-    console.warn('Service workers are not supported in this browser.');
-    return null;
-  }
-  try {
-    const registration = await navigator.serviceWorker.register('/service-worker.js');
-    console.log('Service Worker registered successfully:', registration);
-    return registration;
-  } catch (error) {
-    console.error('Service Worker registration failed:', error);
-    return null;
-  }
-}
 
 /**
  * Stores the push subscription in localStorage.
@@ -93,22 +75,13 @@ export async function requestNotificationPermissionAndSubscribe(): Promise<Notif
       return;
     }
 
-    // Register service worker first
-    const registration = await registerServiceWorker();
-    if (!registration) {
-      console.error('Cannot subscribe without service worker registration.');
-      return;
-    }
-
-    // Wait for the service worker to become active
-    await navigator.serviceWorker.ready; 
-    console.log('Service worker is active.');
-
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
 
     try {
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true, // Required for push notifications
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: base64ToArrayBuffer(VAPID_PUBLIC_KEY),
       });
       console.log('Successfully subscribed to push notifications:', subscription);
       storePushSubscription(subscription);
