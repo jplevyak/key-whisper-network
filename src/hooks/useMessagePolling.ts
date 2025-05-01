@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/components/ui/use-toast';
 import { generateStableRequestId, decryptMessage } from '@/utils/encryption';
+import { getStoredPushSubscription } from '@/utils/notifications'; // Import notification util
 import { Message } from '@/contexts/MessagesContext'; // Import only Message type if needed
 
 // Type for the response from /api/get-messages
@@ -83,8 +84,13 @@ export const useMessagePolling = ({
         console.log('No valid contacts/keys to fetch messages for.');
         // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
         // isFetchingRef.current = false; 
+        // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
+        // isFetchingRef.current = false; 
         return;
       }
+
+      // Get stored push subscription
+      const pushSubscription = getStoredPushSubscription();
 
       // Send the list of stable request IDs (hashes) and timeout to the backend
       const response = await fetch('/api/get-messages', {
@@ -93,6 +99,8 @@ export const useMessagePolling = ({
         body: JSON.stringify({
           message_ids: requestIdsToSend,
           timeout_ms: longPollTimeoutMs, // Send timeout hint
+          // Include push subscription if available
+          ...(pushSubscription && { push_subscription: pushSubscription }), 
         }),
         signal: signal, // Pass the abort signal
       });

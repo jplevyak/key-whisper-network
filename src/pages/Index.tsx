@@ -20,8 +20,9 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog"; // Import Dialog components
-import { Fingerprint, Info } from 'lucide-react'; // Import Info icon
+import { Fingerprint, Info } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { requestNotificationPermissionAndSubscribe, unsubscribeFromNotifications } from '@/utils/notifications'; // Import notification utils
 
 const IndexContent = () => {
   const { isAuthenticated, isLoading, logout, username } = useAuth();
@@ -29,7 +30,7 @@ const IndexContent = () => {
   const [showAddContact, setShowAddContact] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false); // Add state for About dialog
   const isMobile = useIsMobile();
-  const [showContacts, setShowContacts] = useState(true);
+  const [showContacts, setShowContacts] = useState(true); // State for mobile view toggle
 
   // Set the header height variable for mobile layout calculations
   useEffect(() => {
@@ -46,6 +47,23 @@ const IndexContent = () => {
       setShowContacts(true);
     }
   }, [isMobile, activeContact]);
+
+  // Effect to request notification permission on successful authentication
+  useEffect(() => {
+    if (isAuthenticated) {
+      console.log("User authenticated, requesting notification permission...");
+      requestNotificationPermissionAndSubscribe();
+    }
+    // We don't need a cleanup here to unsubscribe on logout,
+    // as the subscription should persist. We'll handle unsubscription
+    // explicitly in the logout function if needed.
+  }, [isAuthenticated]); // Run only when isAuthenticated changes
+
+  const handleLogout = () => {
+    // Optional: Unsubscribe from push notifications on logout
+    // unsubscribeFromNotifications(); // Uncomment if you want to remove subscription on logout
+    logout();
+  };
 
   if (isLoading) {
     return (
@@ -131,7 +149,7 @@ const IndexContent = () => {
           </Dialog>
           {/* End About Dialog */}
           <span className="text-sm text-muted-foreground">{username}</span>
-          <Button variant="outline" size="sm" onClick={logout}>
+          <Button variant="outline" size="sm" onClick={handleLogout}> {/* Use handleLogout */}
             Logout
           </Button>
         </div>
