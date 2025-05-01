@@ -113,6 +113,8 @@ enum AppError {
     SerdeJson(#[from] serde_json::Error),
     #[error("Payload too large: {0}")]
     PayloadTooLarge(String),
+    #[error("Web Push error: {0}")]
+    WebPush(String), // New variant for web push errors
 }
 
 impl IntoResponse for AppError {
@@ -124,6 +126,8 @@ impl IntoResponse for AppError {
                 "Internal server error".to_string(),
             ),
             AppError::PayloadTooLarge(details) => (StatusCode::PAYLOAD_TOO_LARGE, details),
+            // Handle the new WebPush variant
+            AppError::WebPush(details) => (StatusCode::INTERNAL_SERVER_ERROR, details),
         };
         (status, message).into_response()
     }
@@ -413,7 +417,7 @@ pub async fn send_notification_handler(
     State(state): State<SharedState>, // Extract shared state
                                       // Optionally, take a payload from the request body:
                                       // Json(payload): Json<NotificationPayload>,
-) -> impl IntoResponse { // <-- Changed return type
+) -> Result<StatusCode, AppError> { // <-- Changed return type back
     info!("Received request to send push notification.");
 
     // --- Prepare Notification Content ---
@@ -429,12 +433,8 @@ pub async fn send_notification_handler(
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to serialize notification payload: {}", e);
-            // Return a Response directly, matching the new function signature
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to serialize notification payload.",
-            )
-                .into_response();
+            // Return an AppError
+            return Err(AppError::SerdeJson(e));
         }
     };
 
@@ -450,7 +450,10 @@ pub async fn send_notification_handler(
             subscription_info = sub.clone(); // Clone to use after unlocking
         } else {
             warn!("No subscriptions found in store to send notification.");
-            return (StatusCode::NOT_FOUND, "No subscriptions available.").into_response();
+            // Return an AppError (or Ok(StatusCode::NOT_FOUND) if preferred, but error seems better)
+            return Err(AppError::WebPush(
+                "No subscriptions available.".to_string(),
+            ));
         }
     } // Lock released here
 
@@ -481,19 +484,17 @@ pub async fn send_notification_handler(
                     "Failed to create VAPID signature builder (check private key format?): {}",
                     e
                 );
-                // Return an AppError or similar if you define one for VAPID issues
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "VAPID configuration error.",
-                )
+                // Return the new AppError variant
+                AppError::WebPush(format!(
+                    "Failed to create VAPID signature builder: {}",
+                    e
+                ))
             })?
             .build()
             .map_err(|e| {
                 error!("Failed to build VAPID signature: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "VAPID signature build error.",
-                )
+                // Return the new AppError variant
+                AppError::WebPush(format!("Failed to build VAPID signature: {}", e))
             })?;
 
     // Build the message
@@ -507,32 +508,28 @@ pub async fn send_notification_handler(
     // 3. Send the message using the web_push client
     let client = IsahcWebPushClient::new().map_err(|e| {
         error!("Failed to create web push client: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed creating push client.",
-        )
+        // Return the new AppError variant
+        AppError::WebPush(format!("Failed creating push client: {}", e))
     })?; // Apply map_err to the Result of new()
 
     info!("Sending actual push message...");
     match client
         .send(message_builder.build().map_err(|e| {
             error!("Failed to build web push message: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed building push message.",
-            )
+            // Return the new AppError variant
+            AppError::WebPush(format!("Failed building push message: {}", e))
         })?)
         .await
     {
         Ok(()) => { // The success type is ()
             // Remove the call to response.status() as response is ()
             info!("Push message sent successfully!");
-            // Return the success response directly
-            return (StatusCode::OK, "Notification sent successfully.").into_response();
+            // Return Ok status code
+            Ok(StatusCode::OK)
         }
         Err(e) => {
             error!("Failed to send push message: {}", e);
-            // Use return in each match arm
+            // Return appropriate AppError
             match e {
                 // Use tuple variant pattern `Variant(_)`
                 WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_) => {
@@ -541,29 +538,22 @@ pub async fn send_notification_handler(
                         "Subscription endpoint invalid or not found: {}",
                         subscription_info.endpoint,
                     );
-                    return (
-                        StatusCode::GONE,
-                        "Subscription endpoint is gone or invalid.",
-                    )
-                        .into_response();
+                    // Return an AppError, maybe with a specific message or status hint if needed
+                    Err(AppError::WebPush(
+                        "Subscription endpoint is gone or invalid.".to_string(),
+                    ))
+                    // If you *really* need to signal GONE specifically, you might need
+                    // a more complex AppError enum or handle it differently upstream.
                 }
                 // Use tuple variant pattern `Variant(_)`
                 WebPushError::Unauthorized(_) => {
                     error!("Push service authorization failed - check VAPID keys!");
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "VAPID authorization failed.",
-                    )
-                        .into_response();
+                    Err(AppError::WebPush(
+                        "VAPID authorization failed.".to_string(),
+                    ))
                 }
-                _ => {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Failed to send push: {}", e),
-                    )
-                        .into_response();
-                } // The match arms now return, so this part is unreachable if the match executes.
-                  // If you intend for the simulation code to run *after* a successful send,
+                _ => Err(AppError::WebPush(format!("Failed to send push: {}", e))), // The match arms now return, so this part is unreachable if the match executes.
+                 // If you intend for the simulation code to run *after* a successful send,
                   // it should be placed inside the Ok arm before the `return`.
                   // If the simulation is meant as a fallback or alternative path,
                   // the logic needs restructuring.
