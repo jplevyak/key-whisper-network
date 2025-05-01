@@ -18,3 +18,5 @@ tokio = { version = "1", features = ["full"] }
 tower_governor = { version = "0.7", features = ["axum"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+web-push = "0.11.0"
+dotenvy = "0.15.7"

@@ -7,13 +7,14 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use dotenvy::dotenv;
 use fjall::{Config, PartitionCreateOptions, TransactionalKeyspace};
 use futures::future::select_all;
 use serde::{Deserialize, Serialize};
 use std::{
     net::SocketAddr,
     path::Path,
-    sync::{Arc, Weak}, // Import Weak
+    sync::{Arc, Weak},
 };
 use tokio::sync::Notify;
 use tokio::time::{sleep, Duration, Instant};
@@ -32,10 +33,17 @@ struct PutMessageRequest {
     message: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PushSubscriptionInfo {
+    endpoint: String, // The push service URL
+    keys: SubscriptionKeysInfo,
+}
+
 #[derive(Deserialize, Debug)]
 struct GetMessagesRequest {
     message_ids: Vec<String>,
     timeout_ms: Option<u64>,
+    push_subscription: Option<PushSubscriptionInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,7 +64,6 @@ struct GetMessagesResponse {
     results: Vec<FoundMessage>,
 }
 
-// --- Structs for Acknowledgment ---
 #[derive(Deserialize, Debug)]
 struct AckMessageRequest {
     message_id: String,
@@ -75,15 +82,6 @@ pub struct SubscriptionKeysInfo {
     auth: String,
 }
 
-// Represents the main PushSubscription object received from the client
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PushSubscriptionInfo {
-    client_id: String,        // Unique identifier for the client
-    message_ids: Vec<String>, // Unique identifier for the message
-    endpoint: String,         // The push service URL
-    keys: SubscriptionKeysInfo,
-}
-
 // Example structure for the payload data we want to send in a notification
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NotificationPayload {
@@ -91,14 +89,12 @@ pub struct NotificationPayload {
     body: String,
     icon: Option<String>,
     url: Option<String>, // URL to open on click
-                         // Add any other custom data you need
 }
 
 // Structure for the shared application state
-struct AppState {
+pub struct AppState {
     keyspace: TransactionalKeyspace,
     notifier_map: DashMap<String, Weak<Notify>>, // Store Weak pointers
-    subscription_store: tokio::sync::Mutex<Vec<PushSubscriptionInfo>>,
 }
 
 // Define the type for the shared application state
@@ -106,7 +102,7 @@ type SharedState = Arc<AppState>;
 
 // --- Error Handling ---
 #[derive(Debug, thiserror::Error)]
-enum AppError {
+pub enum AppError {
     #[error("Fjall DB error: {0}")]
     Fjall(#[from] fjall::Error),
     #[error("JSON serialization/deserialization error: {0}")]
@@ -165,7 +161,7 @@ async fn put_message_handler(
         .open_partition("messages", PartitionCreateOptions::default())?;
 
     // Create the key by concatenating message_id bytes and timestamp bytes (big-endian)
-    let message_id_clone = payload.message_id.clone(); // Clone for notifier map key
+    let message_id_clone = payload.message_id.clone();
     let mut key_bytes = Vec::new();
     key_bytes.extend_from_slice(payload.message_id.as_bytes());
     key_bytes.extend_from_slice(&timestamp.timestamp_millis().to_be_bytes());
@@ -185,6 +181,8 @@ async fn put_message_handler(
             tracing::trace!(message_id = %message_id_clone, "Notifier existed but was stale (no waiters).");
         }
     }
+
+    send_notification(axum::extract::State(state), payload.message_id.clone()).await?;
 
     // Optionally persist explicitly
     // state.keyspace.persist(PersistMode::BufferAsync)?;
@@ -233,6 +231,20 @@ async fn get_messages_handler(
     let requested_timeout_ms = payload.timeout_ms.unwrap_or(300_000); // Default 5 minutes
     let deadline = Instant::now() + Duration::from_millis(requested_timeout_ms);
     let check_interval = Duration::from_millis(300_000); // Check DB every 5 minutes
+
+    match payload.push_subscription {
+        Some(push_subscription) => {
+            save_subscription_handler(
+                axum::extract::State(state.clone()),
+                payload.message_ids.clone(),
+                push_subscription,
+            )
+            .await?;
+        }
+        None => {
+            // No subscription provided, ignore
+        }
+    }
 
     // Get or create notifiers for the requested message IDs, handling Weak pointers
     let mut notifiers: Vec<Arc<Notify>> = Vec::with_capacity(payload.message_ids.len());
@@ -373,91 +385,79 @@ async fn get_messages_handler(
 }
 
 /// Handler to receive and store a push subscription from the client
-#[instrument(skip(state, payload))]
-#[axum::debug_handler]
 async fn save_subscription_handler(
-    State(state): State<SharedState>,          // Extract shared state
-    Json(payload): Json<PushSubscriptionInfo>, // Extract JSON payload
+    State(state): State<SharedState>, // Extract shared state
+    message_ids: Vec<String>,
+    push_subscription: PushSubscriptionInfo,
 ) -> Result<StatusCode, AppError> {
-    // <-- Changed return type
-    info!("Received subscription request: {:?}", payload.endpoint);
+    info!(
+        "Received subscription request: {:?}",
+        push_subscription.endpoint
+    );
 
-    // In a real app:
-    // - Validate the subscription data further.
-    // - Associate it with the logged-in user ID.
-    // - Check if this exact subscription (endpoint) already exists for the user.
-    // - Store it persistently in a database.
-
-    let messages_partition = state
+    let subscriptions = state
         .keyspace
         .open_partition("subscriptions", PartitionCreateOptions::default())?;
 
-    // Serialize the subscription info to store it
-    let payload_bytes = serde_json::to_vec(&payload)?;
-
-    for key in payload.message_ids.iter() {
-        // Store the serialized bytes
-        messages_partition.insert(key.as_bytes(), &payload_bytes)?;
+    let push_subscription_bytes = serde_json::to_vec(&push_subscription)?;
+    for key in message_ids.iter() {
+        subscriptions.insert(key.as_bytes(), &push_subscription_bytes)?;
     }
 
     info!(
         "Subscription stored successfully for endpoint: {}",
-        payload.endpoint
+        push_subscription.endpoint
     );
 
     Ok(StatusCode::CREATED)
 }
 
-// Add this dependency to Cargo.toml for real implementation:
-// web-push = "0.10"
-// We'll use its types but comment out the actual sending part.
-
-/// Handler to trigger sending a push notification (simulation)
-async fn send_notification_handler( // <-- Removed `pub`
-    State(state): State<SharedState>, // Extract shared state
-                                      // Optionally, take a payload from the request body:
-                                      // Json(payload): Json<NotificationPayload>,
-) -> Result<StatusCode, AppError> { // <-- Changed return type back
+pub async fn send_notification(
+    State(state): State<SharedState>,
+    message_id: String,
+) -> Result<StatusCode, AppError> {
     info!("Received request to send push notification.");
 
-    // --- Prepare Notification Content ---
-    // In a real app, this content might come from the request body
-    // or be determined by backend logic/events.
+    let subscriptions = state
+        .keyspace
+        .open_partition("subscriptions", PartitionCreateOptions::default())?;
+    let key = message_id.as_bytes();
+    let subscription_info = match subscriptions.get(key).or_else(|e| {
+        error!("Database IO error for subscriptions partition.");
+        return Err(AppError::WebPush(
+            format!("Database IO Error {}", e).to_string(),
+        ));
+    })? {
+        Some(value) => {
+            // Deserialize the subscription info
+            match serde_json::from_slice::<PushSubscriptionInfo>(&value) {
+                Ok(sub_info) => sub_info,
+                Err(e) => {
+                    error!("Failed to deserialize subscription info: {}", e);
+                    return Err(AppError::SerdeJson(e));
+                }
+            }
+        }
+        None => {
+            info!("No subscription found for message ID: {}", message_id);
+            return Ok(StatusCode::NOT_FOUND);
+        }
+    };
+
     let notification_payload = NotificationPayload {
         title: "Server Push!".to_string(),
-        body: format!("Notification sent from Axum at {}", chrono::Utc::now()),
-        icon: Some("images/icon-192.png".to_string()), // Match service worker expectation
-        url: Some("/".to_string()),                    // URL to open on click
+        body: format!("New message(s) at {}", chrono::Utc::now()),
+        icon: Some("android-chrome-192x192.png".to_string()), // Match service worker expectation
+        url: Some("/".to_string()),                           // URL to open on click
     };
     let payload_json_bytes = match serde_json::to_vec(&notification_payload) {
         Ok(bytes) => bytes,
         Err(e) => {
             error!("Failed to serialize notification payload: {}", e);
-            // Return an AppError
             return Err(AppError::SerdeJson(e));
         }
     };
 
-    // --- Retrieve Subscription ---
-    let subscription_info: PushSubscriptionInfo; // Will hold the sub to send to
-
-    {
-        // Scoped lock
-        let store = state.subscription_store.lock().await;
-        // In a real app: Retrieve subscription(s) based on user ID, topic, etc.
-        // For sketch: Get the most recently added subscription.
-        if let Some(sub) = store.last() {
-            subscription_info = sub.clone(); // Clone to use after unlocking
-        } else {
-            warn!("No subscriptions found in store to send notification.");
-            // Return an AppError (or Ok(StatusCode::NOT_FOUND) if preferred, but error seems better)
-            return Err(AppError::WebPush(
-                "No subscriptions available.".to_string(),
-            ));
-        }
-    } // Lock released here
-
-    // --- !!! Web Push Sending Logic (Simulation) !!! ---
     info!(
         "Attempting to send notification to: {}",
         subscription_info.endpoint
@@ -471,99 +471,67 @@ async fn send_notification_handler( // <-- Removed `pub`
     );
 
     // 2. Prepare the message builder
-    // You need VAPID keys generated for your server (e.g., using web-push CLI or library)
-    // Load these securely from environment variables or config files!
-    // NEVER hardcode private keys.
-    let vapid_private_key = "YOUR_PRIVATE_VAPID_KEY_HERE_FROM_ENV"; // Placeholder
+    let vapid_private_key = std::env::var("VAPID_PRIVATE_KEY").unwrap_or_else(|_| {
+        panic!("VAPID_PRIVATE_KEY environment variable not set");
+    });
 
-    // Build VAPID signature using `?` for error handling
-    let signature =
-        VapidSignatureBuilder::from_pem(vapid_private_key.as_bytes(), &push_crate_sub_info)
-            .map_err(|e| {
-                error!(
-                    "Failed to create VAPID signature builder (check private key format?): {}",
-                    e
-                );
-                // Return the new AppError variant
-                AppError::WebPush(format!(
-                    "Failed to create VAPID signature builder: {}",
-                    e
-                ))
-            })?
-            .build()
-            .map_err(|e| {
-                error!("Failed to build VAPID signature: {}", e);
-                // Return the new AppError variant
-                AppError::WebPush(format!("Failed to build VAPID signature: {}", e))
-            })?;
+    let signature = VapidSignatureBuilder::from_base64(&vapid_private_key, &push_crate_sub_info)
+        .map_err(|e| {
+            error!(
+                "Failed to create VAPID signature builder (check private key format?): {}",
+                e
+            );
+            AppError::WebPush(format!("Failed to create VAPID signature builder: {}", e))
+        })?
+        .build()
+        .map_err(|e| {
+            error!("Failed to build VAPID signature: {}", e);
+            AppError::WebPush(format!("Failed to build VAPID signature: {}", e))
+        })?;
 
     // Build the message
-    // Remove the incorrect .map_err here. new() doesn't return Result.
     let mut message_builder = WebPushMessageBuilder::new(&push_crate_sub_info);
 
     message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload_json_bytes);
     message_builder.set_vapid_signature(signature);
-    message_builder.set_ttl(Duration::from_secs(3600 * 12).as_secs() as u32); // e.g., 12 hours Time To Live
+    message_builder.set_ttl(Duration::from_secs(3600 * 48).as_secs() as u32);
 
     // 3. Send the message using the web_push client
     let client = IsahcWebPushClient::new().map_err(|e| {
         error!("Failed to create web push client: {}", e);
-        // Return the new AppError variant
         AppError::WebPush(format!("Failed creating push client: {}", e))
-    })?; // Apply map_err to the Result of new()
+    })?;
 
-    info!("Sending actual push message...");
+    info!("Sending push message.");
+    subscriptions.remove(key)?;
     match client
         .send(message_builder.build().map_err(|e| {
             error!("Failed to build web push message: {}", e);
-            // Return the new AppError variant
             AppError::WebPush(format!("Failed building push message: {}", e))
         })?)
         .await
     {
-        Ok(()) => { // The success type is ()
-            // Remove the call to response.status() as response is ()
+        Ok(()) => {
             info!("Push message sent successfully!");
-            // Return Ok status code
             Ok(StatusCode::OK)
         }
         Err(e) => {
             error!("Failed to send push message: {}", e);
-            // Return appropriate AppError
             match e {
-                // Use tuple variant pattern `Variant(_)`
                 WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_) => {
-                    // Consider removing this invalid/expired subscription from your database
                     warn!(
                         "Subscription endpoint invalid or not found: {}",
                         subscription_info.endpoint,
                     );
-                    // Return an AppError, maybe with a specific message or status hint if needed
                     Err(AppError::WebPush(
                         "Subscription endpoint is gone or invalid.".to_string(),
                     ))
-                    // If you *really* need to signal GONE specifically, you might need
-                    // a more complex AppError enum or handle it differently upstream.
                 }
-                // Use tuple variant pattern `Variant(_)`
                 WebPushError::Unauthorized(_) => {
                     error!("Push service authorization failed - check VAPID keys!");
-                    Err(AppError::WebPush(
-                        "VAPID authorization failed.".to_string(),
-                    ))
+                    Err(AppError::WebPush("VAPID authorization failed.".to_string()))
                 }
-                _ => Err(AppError::WebPush(format!("Failed to send push: {}", e))), // The match arms now return, so this part is unreachable if the match executes.
-                 // If you intend for the simulation code to run *after* a successful send,
-                  // it should be placed inside the Ok arm before the `return`.
-                  // If the simulation is meant as a fallback or alternative path,
-                  // the logic needs restructuring.
-                  // Removing the simulation code for now as the `match` handles all cases.
-                  // info!(
-                  //     "SIMULATED: Would send payload to endpoint: {} with VAPID subject: {}",
-                  //     subscription_info.endpoint, vapid_subject
-                  // );
-                  // info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
-                  // (StatusCode::OK, "Notification sending simulated.").into_response()
+                _ => Err(AppError::WebPush(format!("Failed to send push: {}", e))),
             } // Closes inner `match e`
         } // Closes `Err(e)` arm
     } // Closes outer `match client.send(...).await`
@@ -575,14 +543,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    dotenv().ok();
+
     let db_path = Path::new("./message_db");
     std::fs::create_dir_all(db_path)?;
 
-    // Initialize AppState
     let app_state = Arc::new(AppState {
         keyspace: Config::new(db_path).open_transactional()?,
         notifier_map: DashMap::new(),
-        subscription_store: tokio::sync::Mutex::new(Vec::new()),
     });
 
     let governor_config = Arc::new(
@@ -605,7 +573,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
         .route("/api/ack-messages", post(ack_messages_handler))
-        .route("/api/save-subscription", post(save_subscription_handler))
         .with_state(app_state) // Use the new AppState
         .layer(GovernorLayer {
             config: governor_config,
