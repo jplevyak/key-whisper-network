@@ -569,7 +569,9 @@ pub async fn send_notification_handler(
             // );
             // info!("SIMULATED: Payload bytes: {:?}", payload_json_bytes);
             // (StatusCode::OK, "Notification sending simulated.").into_response()
-}
+            } // Closes inner `match e`
+        } // Closes `Err(e)` arm
+    } // Closes outer `match client.send(...).await`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
