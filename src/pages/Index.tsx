@@ -40,6 +40,7 @@ const IndexContent = () => {
     const isSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator;
     setNotificationsSupported(isSupported);
     if (isSupported) {
+      // Set the initial permission state based on the browser's current value
       setNotificationPermission(Notification.permission);
     }
 
@@ -61,23 +62,23 @@ const IndexContent = () => {
   // Effect to request notification permission on successful authentication
   useEffect(() => {
     const requestPermission = async () => {
-      if (isAuthenticated && notificationsSupported) {
-        console.log("User authenticated, checking/requesting notification permission...");
-        // Only request if permission is 'default', otherwise just update state
-        if (Notification.permission === 'default') {
-            const currentPermission = await requestNotificationPermissionAndSubscribe();
-            setNotificationPermission(currentPermission);
-        } else {
-            // Update state if it changed somehow (e.g., user changed in browser settings)
-            setNotificationPermission(Notification.permission);
-        }
+      // Only proceed if authenticated, supported, AND permission state is currently 'default'
+      if (isAuthenticated && notificationsSupported && notificationPermission === 'default') {
+        console.log("User authenticated, permission is default, requesting notification permission...");
+        const currentPermission = await requestNotificationPermissionAndSubscribe();
+        setNotificationPermission(currentPermission); // Update state with the result
+      } else if (isAuthenticated && notificationsSupported && notificationPermission !== Notification.permission) {
+        // If authenticated and supported, but the state doesn't match the browser's current permission
+        // (e.g., user changed it in settings), update the state.
+        console.log("Notification permission mismatch detected, updating state.");
+        setNotificationPermission(Notification.permission);
       }
     };
     requestPermission();
     // We don't need a cleanup here to unsubscribe on logout,
     // as the subscription should persist. We'll handle unsubscription
     // explicitly in the logout function if needed.
-  }, [isAuthenticated, notificationsSupported]); // Run when auth status or support changes
+  }, [isAuthenticated, notificationsSupported, notificationPermission]); // Run when auth status, support, or permission state changes
 
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
