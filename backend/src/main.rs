@@ -186,7 +186,12 @@ async fn put_message_handler(
     let state_clone = state.clone();
     let message_id_for_notification = payload.message_id.clone();
     tokio::spawn(async move {
-        if let Err(e) = send_notification(axum::extract::State(state_clone), message_id_for_notification).await {
+        if let Err(e) = send_notification(
+            axum::extract::State(state_clone),
+            message_id_for_notification,
+        )
+        .await
+        {
             error!("Failed to send notification in background task: {:?}", e);
         }
     });
@@ -241,7 +246,10 @@ async fn ack_messages_handler(
         Err(join_error) => {
             error!("Failed to execute ack_messages task: {}", join_error);
             // Use a more generic error type or reuse WebPush temporarily if needed
-            Err(AppError::WebPush(format!("Task join error during ack: {}", join_error)))
+            Err(AppError::WebPush(format!(
+                "Task join error during ack: {}",
+                join_error
+            )))
         }
     }
 }
@@ -265,10 +273,11 @@ async fn get_messages_handler(
             axum::extract::State(state_clone),
             message_ids_clone,
             push_subscription,
-        ).await?; // Await the result of the potentially blocking operation
+        )
+        .await?; // Await the result of the potentially blocking operation
     } else {
-            // No subscription provided, ignore
-        }
+        // No subscription provided, ignore
+    }
 
     // Get or create notifiers for the requested message IDs, handling Weak pointers
     let mut notifiers: Vec<Arc<Notify>> = Vec::with_capacity(payload.message_ids.len());
@@ -360,7 +369,6 @@ async fn get_messages_handler(
 
             // Read transaction automatically closes when it goes out of scope.
             // No explicit commit or spawn_blocking needed here.
-
         } // Read transaction (`read_tx`) goes out of scope here
 
         if !found_messages_this_iteration.is_empty() {
@@ -407,7 +415,6 @@ async fn get_messages_handler(
             }
         }
     } // End loop
-    println!("9");
 }
 
 /// Handler to receive and store a push subscription from the client
@@ -417,10 +424,7 @@ async fn save_subscription_handler(
     push_subscription: PushSubscriptionInfo,
 ) -> Result<StatusCode, AppError> {
     let endpoint = push_subscription.endpoint.clone(); // Clone for logging outside blocking task
-    info!(
-        "Received subscription request: {:?}",
-        endpoint
-    );
+    info!("Received subscription request: {:?}", endpoint);
 
     // Clone necessary data for the blocking task
     let keyspace = state.keyspace.clone();
@@ -433,11 +437,13 @@ async fn save_subscription_handler(
             .map_err(AppError::Fjall)?; // Convert fjall::Error to AppError
 
         for key in message_ids.iter() {
-            subscriptions.insert(key.as_bytes(), &push_subscription_bytes)
+            subscriptions
+                .insert(key.as_bytes(), &push_subscription_bytes)
                 .map_err(AppError::Fjall)?; // Convert fjall::Error to AppError
         }
         Ok(())
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(Ok(())) => {
@@ -451,7 +457,10 @@ async fn save_subscription_handler(
         Ok(Err(app_error)) => Err(app_error), // Propagate AppError from blocking task
         Err(join_error) => {
             error!("Failed to execute save_subscription task: {}", join_error);
-            Err(AppError::WebPush(format!("Task join error: {}", join_error))) // Or a more generic internal error
+            Err(AppError::WebPush(format!(
+                "Task join error: {}",
+                join_error
+            ))) // Or a more generic internal error
         }
     }
 }
@@ -465,30 +474,35 @@ pub async fn send_notification(
     let message_id_clone = message_id.clone(); // Clone for blocking task
 
     // Execute blocking database read in a dedicated thread pool
-    let subscription_info_result = tokio::task::spawn_blocking(move || -> Result<Option<PushSubscriptionInfo>, AppError> {
-        let subscriptions = keyspace
-            .open_partition("subscriptions", PartitionCreateOptions::default())
-            .map_err(AppError::Fjall)?;
-        let key = message_id_clone.as_bytes();
+    let subscription_info_result =
+        tokio::task::spawn_blocking(move || -> Result<Option<PushSubscriptionInfo>, AppError> {
+            let subscriptions = keyspace
+                .open_partition("subscriptions", PartitionCreateOptions::default())
+                .map_err(AppError::Fjall)?;
+            let key = message_id_clone.as_bytes();
 
-        match subscriptions.get(key) {
-            Ok(Some(value)) => {
-                // Deserialize the subscription info
-                match serde_json::from_slice::<PushSubscriptionInfo>(&value) {
-                    Ok(sub_info) => Ok(Some(sub_info)),
-                    Err(e) => {
-                        error!("Failed to deserialize subscription info: {}", e);
-                        Err(AppError::SerdeJson(e))
+            match subscriptions.get(key) {
+                Ok(Some(value)) => {
+                    // Deserialize the subscription info
+                    match serde_json::from_slice::<PushSubscriptionInfo>(&value) {
+                        Ok(sub_info) => Ok(Some(sub_info)),
+                        Err(e) => {
+                            error!("Failed to deserialize subscription info: {}", e);
+                            Err(AppError::SerdeJson(e))
+                        }
                     }
                 }
+                Ok(None) => Ok(None), // No subscription found
+                Err(e) => {
+                    error!(
+                        "Database IO error reading subscription for {}: {}",
+                        message_id_clone, e
+                    );
+                    Err(AppError::Fjall(e))
+                }
             }
-            Ok(None) => Ok(None), // No subscription found
-            Err(e) => {
-                 error!("Database IO error reading subscription for {}: {}", message_id_clone, e);
-                 Err(AppError::Fjall(e))
-            }
-        }
-    }).await;
+        })
+        .await;
 
     let subscription_info = match subscription_info_result {
         Ok(Ok(Some(info))) => info,
@@ -499,7 +513,10 @@ pub async fn send_notification(
         Ok(Err(app_error)) => return Err(app_error), // Propagate AppError from blocking task
         Err(join_error) => {
             error!("Failed to execute subscription read task: {}", join_error);
-            return Err(AppError::WebPush(format!("Task join error during read: {}", join_error)));
+            return Err(AppError::WebPush(format!(
+                "Task join error during read: {}",
+                join_error
+            )));
         }
     };
 
@@ -567,20 +584,29 @@ pub async fn send_notification(
     let keyspace_remove = state.keyspace.clone();
     let message_id_remove = message_id.clone(); // Clone for blocking task
     let remove_result = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-         let subscriptions = keyspace_remove
+        let subscriptions = keyspace_remove
             .open_partition("subscriptions", PartitionCreateOptions::default())
             .map_err(AppError::Fjall)?;
-         subscriptions.remove(message_id_remove.as_bytes()).map_err(AppError::Fjall)?;
-         Ok(())
-    }).await;
+        subscriptions
+            .remove(message_id_remove.as_bytes())
+            .map_err(AppError::Fjall)?;
+        Ok(())
+    })
+    .await;
 
     match remove_result {
-         Ok(Ok(())) => info!("Subscription removed for message ID: {}", message_id),
-         Ok(Err(app_error)) => return Err(app_error), // Propagate AppError from blocking task
-         Err(join_error) => {
-             error!("Failed to execute subscription removal task: {}", join_error);
-             return Err(AppError::WebPush(format!("Task join error during removal: {}", join_error)));
-         }
+        Ok(Ok(())) => info!("Subscription removed for message ID: {}", message_id),
+        Ok(Err(app_error)) => return Err(app_error), // Propagate AppError from blocking task
+        Err(join_error) => {
+            error!(
+                "Failed to execute subscription removal task: {}",
+                join_error
+            );
+            return Err(AppError::WebPush(format!(
+                "Task join error during removal: {}",
+                join_error
+            )));
+        }
     }
 
     match client

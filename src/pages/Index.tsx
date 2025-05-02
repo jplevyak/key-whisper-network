@@ -41,6 +41,7 @@ const IndexContent = () => {
     setNotificationsSupported(isSupported);
     if (isSupported) {
       // Set the initial permission state based on the browser's current value
+      console.log('isSupported', Notification.permission);
       setNotificationPermission(Notification.permission);
     }
 
