@@ -28,16 +28,7 @@ interface ContactsContextType {
 
 const ContactsContext = createContext<ContactsContextType | undefined>(undefined);
 
-// Mock encryption for the local storage (in a real app, this would use the passkey-protected key)
-const mockEncryptForStorage = (data: string): string => {
-  // This is a placeholder. In a real app, encrypt with the passkey-protected key
-  return btoa(data);
-};
-
-const mockDecryptFromStorage = (encryptedData: string): string => {
-  // This is a placeholder. In a real app, decrypt with the passkey-protected key
-  return atob(encryptedData);
-};
+// Mock encryption functions removed as db.set/db.get handle secure encryption/decryption
 
 export const ContactsProvider = ({ children }: { children: React.ReactNode }) => {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -50,10 +41,12 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   useEffect(() => {
     const loadContacts = async () => {
       try {
-        const storedContacts = await db.get('contacts', 'all');
+        const storedContacts = await db.get('contacts', 'all'); // db.get handles decryption
         if (storedContacts) {
-          const decryptedData = mockDecryptFromStorage(storedContacts);
-          setContacts(JSON.parse(decryptedData));
+          // No need for mockDecryptFromStorage here
+          setContacts(JSON.parse(storedContacts));
+        } else {
+          setContacts([]); // Initialize as empty array if nothing is stored
         }
       } catch (error) {
         console.error('Error loading contacts:', error);
@@ -62,6 +55,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
           description: 'Could not load your contacts',
           variant: 'destructive',
         });
+        setContacts([]); // Initialize as empty on error too
       }
     };
 
@@ -70,14 +64,42 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
 
   // Save contacts to IndexedDB whenever they change
   useEffect(() => {
-    if (contacts.length > 0) {
-      const saveContacts = async () => {
-        const encryptedData = mockEncryptForStorage(JSON.stringify(contacts));
-        await db.set('contacts', 'all', encryptedData);
-      };
-      saveContacts();
-    }
-  }, [contacts]);
+    const saveContacts = async () => {
+      try {
+        // Consider removing the length check if you want to save empty lists
+        // if (contacts.length === 0) {
+        //    // Optionally handle saving an empty list explicitly if needed
+        //    // await db.set('contacts', 'all', ''); // Or delete the entry
+        //    console.log("Contacts list is empty, skipping save or handling explicitly.");
+        //    return;
+        // }
+
+        console.log("Attempting to save contacts to IndexedDB..."); // Add log
+        // Simplify: Remove mock encryption here
+        const contactsJson = JSON.stringify(contacts);
+        // Let db.set handle the real encryption
+        await db.set('contacts', 'all', contactsJson);
+        console.log("Contacts saved successfully."); // Add log
+      } catch (error) {
+        console.error('Failed to save contacts:', error);
+        toast({
+          title: 'Save Error',
+          description: 'Could not save contact changes to persistent storage.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    // Avoid running save immediately on initial load if contacts might still be loading
+    // You might need a flag to check if initial load is complete
+    // For now, let's assume it runs after initial load or changes
+    // Also, don't save if contacts is still the initial empty array before loading finishes
+    // A simple check might be to ensure it's not the *initial* empty array,
+    // but this requires careful state management. A dedicated "isLoaded" state might be better.
+    // For now, we'll save whenever contacts changes after the initial load.
+    saveContacts();
+
+  }, [contacts, toast]); // Add toast to dependency array
 
   // Generate a new AES-256 key for a new contact
   const generateContactKey = async (): Promise<string> => {
@@ -101,11 +123,10 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       const key = await importKey(keyData);
       const keyId = `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       setContactKeys(prev => new Map(prev).set(keyId, key));
-      
-      // Save encrypted key data in IndexedDB
-      const encryptedKeyData = mockEncryptForStorage(keyData);
-      await db.set('keys', keyId, encryptedKeyData);
-      
+
+      // Save key data in IndexedDB - db.set handles encryption
+      await db.set('keys', keyId, keyData);
+
       // Create the new contact
       const newContact: Contact = {
         id: `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -146,10 +167,10 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       
       const encryptedKeyData = await db.get('keys', contact.keyId);
       if (!encryptedKeyData) return null;
-      
-      const keyData = mockDecryptFromStorage(encryptedKeyData);
-      const key = await importKey(keyData);
-      
+
+      // keyData is already decrypted by db.get
+      const key = await importKey(encryptedKeyData);
+
       setContactKeys(prev => new Map(prev).set(contact.keyId, key));
       
       return key;
@@ -216,9 +237,8 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       // Update the in-memory key map
       setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
 
-      // Encrypt and store the new key data in IndexedDB
-      const encryptedNewKeyData = mockEncryptForStorage(newKeyData);
-      await db.set('keys', contact.keyId, encryptedNewKeyData);
+      // Store the new key data in IndexedDB - db.set handles encryption
+      await db.set('keys', contact.keyId, newKeyData);
 
       console.log(`Key updated successfully for contact ${contactId}`);
       return true;
