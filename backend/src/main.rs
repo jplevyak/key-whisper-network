@@ -521,7 +521,7 @@ pub async fn send_notification(
     };
 
     let notification_payload = NotificationPayload {
-        title: "Server Push!".to_string(),
+        title: "New Message(s)".to_string(),
         body: format!("New message(s) at {}", chrono::Utc::now()),
         icon: Some("android-chrome-192x192.png".to_string()), // Match service worker expectation
         url: Some("/".to_string()),                           // URL to open on click

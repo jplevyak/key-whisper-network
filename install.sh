@@ -1,4 +1,6 @@
 #!/bin/bash
+. "$HOME/.cargo/env"
+cargo build --release
 sudo systemctl stop simple-message-backend.service
 sudo cp target/release/simple-message-backend /opt/simple-message-backend/
 sudo systemctl start simple-message-backend.service
