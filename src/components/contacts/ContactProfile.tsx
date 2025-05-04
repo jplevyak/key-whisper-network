@@ -1,11 +1,10 @@
 
-import React, { useState } from 'react'; // Import useState
+import React, { useState } from 'react';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages } from '@/contexts/MessagesContext';
 import { Contact } from '@/contexts/ContactsContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-// Import AlertDialog components
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +28,6 @@ interface ContactProfileProps {
 }
 
 const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
-  // Added updateContactKey
   const { deleteContact, generateContactKey, updateContact, updateContactKey } = useContacts();
   const { messages, clearHistory } = useMessages();
   const { toast } = useToast();
