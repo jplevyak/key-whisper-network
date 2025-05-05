@@ -56,13 +56,8 @@ const ChatInterface = () => {
        .filter(msg => !msg.sent && !msg.read)
        .forEach(msg => {
          markAsRead(activeContact.id, msg.id);
-       }); // <-- Added missing closing parenthesis and semicolon
+       }); 
    }
-   // Long polling handles fetching automatically now
-   // if (activeContact) {
-   //   console.log(`Active contact changed to ${activeContact.name}, triggering fetch.`);
-   //   triggerFetch(); // Removed call
-   // }
  }, [activeContact, activeMessages, markAsRead]); // Removed triggerFetch dependency
 
 

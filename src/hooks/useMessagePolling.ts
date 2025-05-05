@@ -41,12 +41,10 @@ export const useMessagePolling = ({
   // Renamed to reflect it's a single long poll request cycle
   const fetchMessagesFromServer = useCallback(async (signal: AbortSignal) => {
     if (contacts.length === 0) {
-      console.log('Skipping long poll: no contacts.');
       // Return or throw? Returning allows the loop to continue cleanly.
       // Throwing might be better if no contacts is an error state. Let's return.
       return;
     }
-    console.log('Starting long poll request...');
 
     const requestIdsToSend: string[] = [];
     const requestIdToContactIdMap: Map<string, string> = new Map();
@@ -255,7 +253,6 @@ export const useMessagePolling = ({
     let initialTimeoutId: NodeJS.Timeout | null = null;
 
     const longPoll = async () => {
-      console.log('Long poll loop started.');
       let lastPollStartTime = 0; // Track the start time of the last poll
 
       while (isMountedRef.current) {

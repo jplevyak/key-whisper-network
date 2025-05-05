@@ -28,7 +28,6 @@ interface MessagesContextType {
   markAsRead: (contactId: string, messageId: string) => void;
   deleteMessage: (contactId: string, messageId: string) => void;
   clearHistory: (contactId: string) => void;
-  // triggerFetch: () => void; // Removed - long polling handles this
 }
 
 // Type for the response from /api/get-messages
@@ -178,9 +177,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           [contactId]: [...contactMessages, newMessage],
        };
      });
-
-     // No need to manually trigger fetch, long polling will handle it
-     // triggerFetch(); // Removed call
 
      return true;
    } catch (error) {
