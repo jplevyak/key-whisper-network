@@ -64,6 +64,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
 
   // Save contacts to IndexedDB whenever they change
   useEffect(() => {
+    console.log("Contacts useEffect triggered. Current contacts count:", contacts.length); // <-- Add log here
     const saveContacts = async () => {
       try {
         // Consider removing the length check if you want to save empty lists
@@ -136,9 +137,11 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         lastActive: new Date().toISOString(),
         userGeneratedKey // Set the flag here
       };
-       
-     setContacts(prev => [...prev, newContact]);
-      
+
+      console.log("Calling setContacts in addContact to add:", newContact.name); // <-- Add log here
+      setContacts(prev => [...prev, newContact]);
+      console.log("setContacts in addContact finished."); // <-- Add log here
+
       toast({
         title: 'Contact Added',
         description: `${name} has been added to your contacts`,
