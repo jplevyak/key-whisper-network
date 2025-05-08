@@ -66,8 +66,8 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
 
   const handleRetakeClick = () => {
     // Clear both local and parent state
-    setLocalImage('');
-    onImageCapture(''); 
+    //setLocalImage('');
+    //onImageCapture(''); 
     
     // Need to add a small delay to ensure state is updated before starting camera
     setTimeout(() => {
