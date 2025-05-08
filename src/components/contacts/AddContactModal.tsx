@@ -144,28 +144,13 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
 
   // Correctly handle open/close state changes
   const handleOpenChange = (open: boolean) => {
-    console.log('handleOpenChange called. open:', open);
     if (!open) {
-      console.log('Attempting to close dialog. Current state:');
-      console.log('  isNameEditing:', isNameEditing);
-      console.log('  name:', `"${name}"`); // Log with quotes to see whitespace
-      console.log('  name.trim():', `"${name.trim()}"`);
-      console.log('  !!name.trim():', !!name.trim());
-      console.log('  scannedKey:', `"${scannedKey}"`);
-      console.log('  generatedKey:', `"${generatedKey}"`);
-      console.log('  !!scannedKey:', !!scannedKey);
-      console.log('  !!generatedKey:', !!generatedKey);
-
       // Check if Create Contact button would be enabled
       const canCreateContact = !isNameEditing && !!name.trim() && (!!scannedKey || !!generatedKey);
-      console.log('  canCreateContact:', canCreateContact);
-
       if (canCreateContact) {
-        console.log('  Showing close confirmation alert.');
         setShowCloseConfirmationAlert(true);
         // Prevent dialog from closing immediately by not calling onClose()
       } else {
-        console.log('  Closing dialog directly without confirmation.');
         // If not attempting to create a contact or form is not in a savable state, close normally
         resetForm();
         onClose();
