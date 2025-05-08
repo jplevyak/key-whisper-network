@@ -1,3 +1,5 @@
+import { fromByteArray, toByteArray } from 'base64-js';
+
 // A utility for encrypting/decrypting data with a non-extractable key
 export class SecureStorage {
   private encryptionKey: CryptoKey | null = null;
@@ -103,7 +105,7 @@ export class SecureStorage {
     combined.set(iv);
     combined.set(new Uint8Array(encryptedData), iv.length);
 
-    return btoa(String.fromCharCode(...combined));
+    return fromByteArray(combined);
   }
 
   async decrypt(encryptedData: string): Promise<string> {
@@ -112,11 +114,7 @@ export class SecureStorage {
     }
 
     try {
-      const combined = new Uint8Array(
-        atob(encryptedData)
-          .split('')
-          .map(char => char.charCodeAt(0))
-      );
+      const combined = toByteArray(encryptedData);
 
       const iv = combined.slice(0, 12);
       const data = combined.slice(12);
