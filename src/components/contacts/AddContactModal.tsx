@@ -1,7 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useContacts } from '@/contexts/ContactsContext';
 import { useToast } from '@/hooks/use-toast';
 import ContactNameEdit from './shared/ContactNameEdit';
@@ -22,6 +39,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const [capturedImage, setCapturedImage] = useState<string>('');
   const [scannedKey, setScannedKey] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
+  const [showCloseConfirmationAlert, setShowCloseConfirmationAlert] = useState(false);
   const { addContact, generateContactKey } = useContacts();
   const { toast } = useToast();
 
@@ -127,19 +145,40 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   // Correctly handle open/close state changes
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      // Only reset form and call onClose when dialog is closing
-      resetForm();
-      onClose();
+      // Check if Create Contact button would be enabled
+      const canCreateContact = !isNameEditing && !!name.trim() && (!!scannedKey || !!generatedKey);
+      if (canCreateContact) {
+        setShowCloseConfirmationAlert(true);
+        // Prevent dialog from closing immediately by not calling onClose()
+      } else {
+        // If not attempting to create a contact or form is not in a savable state, close normally
+        resetForm();
+        onClose();
+      }
     }
-    // If opening, we don't need to do anything extra here,
-    // the isOpen prop controls the dialog visibility.
+    // If opening (open is true), the isOpen prop handles visibility.
+    // No specific action needed here for opening via this callback.
   };
 
+  const handleConfirmCloseDialog = () => {
+    setShowCloseConfirmationAlert(false);
+    resetForm();
+    onClose();
+  };
+
+  const handleCreateContactFromAlert = async () => {
+    setShowCloseConfirmationAlert(false);
+    await handleCreateContact(); // This will call onClose on success
+  };
+
+  const isCreateButtonDisabled = isNameEditing || !name.trim() || (!scannedKey && !generatedKey);
+
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add New Contact</DialogTitle>
+    <>
+      <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New Contact</DialogTitle>
           <DialogDescription>
             Exchange encryption keys securely via QR codes
           </DialogDescription>
@@ -188,13 +227,38 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           <Button
             onClick={handleCreateContact}
             // Disable if editing name OR if name is empty OR if no key is set
-            disabled={isNameEditing || !name || (!scannedKey && !generatedKey)}
+            disabled={isCreateButtonDisabled}
           >
             Create Contact
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+      {showCloseConfirmationAlert && (
+        <AlertDialog open={showCloseConfirmationAlert} onOpenChange={setShowCloseConfirmationAlert}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+              <AlertDialogDescription>
+                You have unsaved information. Do you want to create the contact or discard the changes?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setShowCloseConfirmationAlert(false)}>
+                Keep Editing
+              </AlertDialogCancel>
+              <Button variant="outline" onClick={handleConfirmCloseDialog}>
+                Discard Changes
+              </Button>
+              <AlertDialogAction onClick={handleCreateContactFromAlert}>
+                Create Contact
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
   );
 };
 
