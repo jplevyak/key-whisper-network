@@ -18,6 +18,7 @@ export interface Message {
   read: boolean;
   forwarded: boolean;
   forwardedPath?: string[]; // IDs of contacts in forwarding path
+  pending?: boolean; // True if the message is pending send to the server
 }
 
 interface MessagesContextType {
@@ -107,6 +108,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       const encryptedContentBase64 = await encryptMessage(content, key);
 
      // --- Send to backend ---
+     let messageSentToServer = false; // Flag to track backend send status
      try {
        // Find the contact to check userGeneratedKey
        const contact = contacts.find(c => c.id === contactId);
@@ -144,6 +146,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           throw new Error(`API error ${response.status}: ${errorText}`);
         }
         console.log('Message sent to backend successfully');
+        messageSentToServer = true; // Set flag on success
       } catch (apiError) {
         console.error('Failed to send message to backend:', apiError);
         toast({
@@ -151,6 +154,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           description: 'Message saved locally, but failed to send to the server.',
           variant: 'destructive', // Or a 'warning' variant if available
         });
+        // messageSentToServer remains false
         // Note: We still proceed to add the message locally even if backend fails
       }
       // --- End send to backend ---
@@ -167,6 +171,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         read: true, // Sent messages are read by default
         forwarded: forwarding.length > 0,
         forwardedPath: forwarding.length > 0 ? forwarding.map(c => c.id) : undefined,
+        pending: !messageSentToServer, // Set pending based on backend send status
       };
 
       // Add the message to the list
@@ -305,6 +310,85 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       description: 'All messages have been deleted',
     });
   };
+
+  // Retry sending pending messages
+  const retryPendingMessages = useCallback(async () => {
+    let hasChanges = false;
+    const newMessagesState = { ...messages }; // Shallow copy of current messages state
+
+    for (const contactIdKey in messages) {
+      // Ensure contactIdKey is a valid key for messages
+      if (!Object.prototype.hasOwnProperty.call(messages, contactIdKey)) continue;
+      
+      const contactMessages = messages[contactIdKey];
+      const contact = contacts.find(c => c.id === contactIdKey);
+      if (!contact) {
+        console.warn(`Retry: Contact not found for ID ${contactIdKey}, skipping messages.`);
+        continue;
+      }
+
+      const key = await getContactKey(contactIdKey);
+      if (!key) {
+        console.warn(`Retry: Key not found for contact ${contact.name}, skipping messages.`);
+        continue;
+      }
+
+      const currentContactMsgsInNewState = [...(newMessagesState[contactIdKey] || [])]; // Work on a copy for this contact
+      let contactMessagesChanged = false;
+
+      for (let i = 0; i < contactMessages.length; i++) {
+        const message = contactMessages[i];
+        if (message.pending) {
+          console.log(`Retrying message ID: ${message.id} to contact: ${contact.name}`);
+          try {
+            const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
+            const response = await fetch('/api/put-message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message_id: requestId,
+                message: message.content, // message.content is already encryptedContentBase64
+              }),
+            });
+
+            if (response.ok) {
+              console.log(`Successfully resent message ID: ${message.id}`);
+              const messageIndexInNewState = currentContactMsgsInNewState.findIndex(m => m.id === message.id);
+              if (messageIndexInNewState !== -1) {
+                currentContactMsgsInNewState[messageIndexInNewState] = {
+                  ...currentContactMsgsInNewState[messageIndexInNewState],
+                  pending: false,
+                };
+                contactMessagesChanged = true;
+              }
+            } else {
+              const errorText = await response.text();
+              console.error(`Failed to resend message ID: ${message.id}. API error ${response.status}: ${errorText}`);
+            }
+          } catch (retryError) {
+            console.error(`Error during retry of message ID: ${message.id}:`, retryError);
+          }
+        }
+      }
+      if (contactMessagesChanged) {
+        newMessagesState[contactIdKey] = currentContactMsgsInNewState;
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      setMessages(newMessagesState);
+    }
+  }, [messages, contacts, getContactKey, setMessages]); // setMessages is stable
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      console.log("Checking for pending messages to retry...");
+      retryPendingMessages();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(intervalId);
+  }, [retryPendingMessages]);
 
   return (
     <MessagesContext.Provider
