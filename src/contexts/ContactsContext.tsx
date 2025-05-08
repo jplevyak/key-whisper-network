@@ -85,7 +85,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         console.error('Failed to save contacts:', error);
         toast({
           title: 'Save Error',
-          description: 'Could not save contact changes to persistent storage.',
+          description: `Could not save contact changes to persistent storage. Error: ${error}`,
           variant: 'destructive',
         });
       }
