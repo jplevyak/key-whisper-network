@@ -1,6 +1,8 @@
 use axum::{
-    extract::{Json, State},
-    http::StatusCode,
+    body::Body,
+    extract::{DefaultBodyLimit, Json, State},
+    http::{header, Request, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::post,
     Router,
@@ -82,7 +84,6 @@ pub struct SubscriptionKeysInfo {
     auth: String,
 }
 
-// Example structure for the payload data we want to send in a notification
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NotificationPayload {
     title: String,
@@ -134,22 +135,6 @@ async fn put_message_handler(
     State(state): State<SharedState>,
     Json(payload): Json<PutMessageRequest>,
 ) -> Result<StatusCode, AppError> {
-    const MAX_MESSAGE_ID_BYTES: usize = 100;
-    const MAX_MESSAGE_BYTES: usize = 2048;
-
-    if payload.message_id.len() > MAX_MESSAGE_ID_BYTES {
-        return Err(AppError::PayloadTooLarge(format!(
-            "message_id exceeds maximum size of {} bytes",
-            MAX_MESSAGE_ID_BYTES
-        )));
-    }
-    if payload.message.len() > MAX_MESSAGE_BYTES {
-        return Err(AppError::PayloadTooLarge(format!(
-            "message exceeds maximum size of {} bytes",
-            MAX_MESSAGE_BYTES
-        )));
-    }
-
     let timestamp = Utc::now();
     let record = MessageRecord {
         message: payload.message,
@@ -642,8 +627,44 @@ pub async fn send_notification(
     } // Closes outer `match client.send(...).await`
 }
 
+#[derive(Serialize, Clone, Debug)]
+struct CustomErrorResponse {
+    message: &'static str,
+    error_code: &'static str,
+}
+
+const PAYLOAD_TOO_LARGE_CUSTOM_ERROR: CustomErrorResponse = CustomErrorResponse {
+    message: "The request payload is too large.",
+    error_code: "PAYLOAD_TOO_LARGE",
+};
+
+async fn payload_too_large_response(req: Request<Body>, next: Next) -> Response {
+    let response = next.run(req).await;
+
+    if response.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        let is_likely_default_rejection = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .map_or(false, |value| {
+                value.to_str().unwrap_or("").starts_with("text/plain")
+            });
+
+        if is_likely_default_rejection {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(PAYLOAD_TOO_LARGE_CUSTOM_ERROR.clone()),
+            )
+                .into_response();
+        }
+    }
+
+    response
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    const CUSTOM_JSON_PAYLOAD_LIMIT: usize = 3000;
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -678,7 +699,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/put-message", post(put_message_handler))
         .route("/api/get-messages", post(get_messages_handler))
         .route("/api/ack-messages", post(ack_messages_handler))
-        .with_state(app_state) // Use the new AppState
+        .layer(DefaultBodyLimit::max(CUSTOM_JSON_PAYLOAD_LIMIT))
+        .layer(middleware::from_fn(payload_too_large_response))
+        .with_state(app_state)
         .layer(GovernorLayer {
             config: governor_config,
         });
