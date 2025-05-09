@@ -13,11 +13,16 @@ interface DBSchema {
     id: string;
     value: string; // encrypted key data
   };
+  groups: { // New store for groups
+    id: string;
+    value: string; // encrypted group data
+  };
 }
 
 const DB_NAME = 'ccred_db';
 const DB_VERSION = 1;
-const STORES = ['contacts', 'messages', 'keys'] as const;
+// Add 'groups' to the list of stores
+const STORES = ['contacts', 'messages', 'keys', 'groups'] as const;
 
 class IndexedDBManager {
   private db: IDBDatabase | null = null;

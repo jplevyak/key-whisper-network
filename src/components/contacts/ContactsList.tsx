@@ -1,41 +1,41 @@
-import React from 'react';
-import { Contact, useContacts } from '@/contexts/ContactsContext';
+import React, { useState } from 'react'; // Added useState
+import { Contact, Group, ContactOrGroup, useContacts } from '@/contexts/ContactsContext'; // Updated imports
 import { useMessages } from '@/contexts/MessagesContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { BadgeCheck } from 'lucide-react';
+import { Users, UserPlus } from 'lucide-react'; // Added Users icon for groups
+import AddGroupModal from './AddGroupModal'; // Import the new modal
 
 interface ContactsListProps {
   onAddContact: () => void;
-  onContactSelect?: () => void;
+  onContactSelect?: () => void; // This might need to handle ContactOrGroup
 }
 
 const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
-  const { contacts, activeContact, setActiveContact } = useContacts();
+  const { listItems, activeItem, setActiveItem } = useContacts(); // Updated destructuring
   const { messages } = useMessages();
+  const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
 
-  const handleContactClick = (contact: Contact) => {
-    setActiveContact(contact);
-    onContactSelect?.();
+  const handleItemClick = (item: ContactOrGroup) => {
+    setActiveItem(item);
+    onContactSelect?.(); // Consumer of onContactSelect needs to be aware it can be a group
   };
 
-  // Function to count unread messages for a contact
+  // Function to count unread messages for a contact (groups don't have direct unread counts yet)
   const countUnread = (contactId: string): number => {
     const contactMessages = messages[contactId] || [];
     return contactMessages.filter(m => !m.sent && !m.read).length;
   };
 
+  // Get last message time for a contact (groups don't have this directly yet)
   const getLastMessageTime = (contactId: string): string => {
     const contactMessages = messages[contactId] || [];
     if (contactMessages.length === 0) return '';
 
-    // Get the most recent message
-    const lastMessage = contactMessages.reduce((latest, current) => 
+    const lastMessage = contactMessages.reduce((latest, current) =>
       new Date(current.timestamp) > new Date(latest.timestamp) ? current : latest
     );
-
-    // Format the timestamp
     const date = new Date(lastMessage.timestamp);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
@@ -57,75 +57,89 @@ const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-4 border-b">
+      <div className="p-4 border-b space-y-2">
         <Button onClick={onAddContact} className="w-full">
-          Add New Contact
+          <UserPlus className="mr-2 h-4 w-4" /> Add New Contact
+        </Button>
+        <Button onClick={() => setIsAddGroupModalOpen(true)} className="w-full" variant="outline">
+          <Users className="mr-2 h-4 w-4" /> Add Group
         </Button>
       </div>
       
       <ScrollArea className="flex-1">
         <div className="space-y-1 p-2">
-          {contacts.length === 0 ? (
+          {listItems.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>No contacts yet</p>
-              <p className="text-sm">Add contacts to start chatting securely</p>
+              <p>No contacts or groups yet</p>
+              <p className="text-sm">Add contacts or create groups to start chatting</p>
             </div>
           ) : (
-            contacts.map((contact) => (
-              <ContactItem 
-                key={contact.id}
-                contact={contact}
-                isActive={activeContact?.id === contact.id}
-                unreadCount={countUnread(contact.id)}
-                lastMessageTime={getLastMessageTime(contact.id)}
-                onClick={() => handleContactClick(contact)}
+            listItems.map((item) => (
+              <ContactItem
+                key={item.id}
+                item={item}
+                isActive={activeItem?.id === item.id}
+                // For groups, unreadCount and lastMessageTime might be 0 or empty
+                unreadCount={item.itemType === 'contact' ? countUnread(item.id) : 0}
+                lastMessageTime={item.itemType === 'contact' ? getLastMessageTime(item.id) : ''}
+                onClick={() => handleItemClick(item)}
               />
             ))
           )}
         </div>
       </ScrollArea>
+      <AddGroupModal isOpen={isAddGroupModalOpen} onClose={() => setIsAddGroupModalOpen(false)} />
     </div>
   );
 };
 
 interface ContactItemProps {
-  contact: Contact;
+  item: ContactOrGroup; // Changed to ContactOrGroup
   isActive: boolean;
-  unreadCount: number;
-  lastMessageTime: string;
+  unreadCount: number; // Will be 0 for groups for now
+  lastMessageTime: string; // Will be empty for groups for now
   onClick: () => void;
 }
 
-const ContactItem = ({ contact, isActive, unreadCount, lastMessageTime, onClick }: ContactItemProps) => {
+const ContactItem = ({ item, isActive, unreadCount, lastMessageTime, onClick }: ContactItemProps) => {
+  const isGroup = item.itemType === 'group';
+
   return (
-    <div 
+    <div
       className={`flex items-center space-x-3 p-3 rounded-md cursor-pointer hover:bg-muted/50 transition-colors ${
         isActive ? 'bg-muted' : ''
       }`}
       onClick={onClick}
     >
       <Avatar className="h-10 w-10">
-        <AvatarImage src={contact.avatar} alt={contact.name} />
-        <AvatarFallback>{contact.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+        <AvatarImage src={item.avatar} alt={item.name} />
+        <AvatarFallback>
+          {isGroup ? <Users size={20} /> : item.name.substring(0, 2).toUpperCase()}
+        </AvatarFallback>
       </Avatar>
       
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center">
-          <div className="font-medium truncate">{contact.name}</div>
+          <div className="font-medium truncate flex items-center">
+            {item.name}
+            {isGroup && <Users className="ml-2 h-3 w-3 text-muted-foreground" />}
+          </div>
           
-          {lastMessageTime && (
+          {lastMessageTime && !isGroup && ( // Only show for contacts
             <div className="text-xs text-muted-foreground">
               {lastMessageTime}
             </div>
           )}
         </div>
         
-        <div className="flex justify-between items-center">
-          {unreadCount > 0 && (
+        <div className="flex justify-between items-center mt-1">
+          {unreadCount > 0 && !isGroup && ( // Only show for contacts
             <div className="bg-primary text-primary-foreground text-xs rounded-full h-5 min-w-5 flex items-center justify-center px-1.5">
               {unreadCount}
             </div>
           )}
+          {/* Placeholder for group-specific info if any, or just empty space */}
+          {isGroup && <div className="h-5"></div>} 
         </div>
       </div>
     </div>

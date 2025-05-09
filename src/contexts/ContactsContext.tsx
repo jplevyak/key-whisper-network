@@ -3,106 +3,122 @@ import { generateAESKey, exportKey, importKey } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
 import { db } from '@/utils/indexedDB';
 
-export interface Contact {
+// Base interface for items in the list
+interface BaseListItem {
   id: string;
   name: string;
-  avatar: string; // base64 image
+  avatar: string;
+}
+
+// Modified Contact interface
+export interface Contact extends BaseListItem {
+  itemType: 'contact';
   keyId: string; // Identifier for the encrypted key
   lastActive?: string; // ISO date string
   userGeneratedKey: boolean; // True if the user generated the key, false if scanned from contact
 }
 
+// New Group interface
+export interface Group extends BaseListItem {
+  itemType: 'group';
+  memberIds: string[]; // Array of contact IDs
+}
+
+export type ContactOrGroup = Contact | Group;
+
 interface ContactsContextType {
-  contacts: Contact[];
-  activeContact: Contact | null;
-  setActiveContact: (contact: Contact | null) => void;
+  listItems: ContactOrGroup[];
+  activeItem: ContactOrGroup | null;
+  setActiveItem: (item: ContactOrGroup | null) => void;
   addContact: (name: string, avatar: string, keyData: string, userGeneratedKey: boolean) => Promise<boolean>;
-  getContactKey: (contactId: string) => Promise<CryptoKey | null>;
-  generateContactKey: () => Promise<string>;
-  deleteContact: (contactId: string) => void;
-  forwardingPath: Contact[];
+  addGroup: (name: string, memberIds: string[], avatar?: string) => Promise<boolean>;
+  getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
+  generateContactKey: () => Promise<string>; // For contacts
+  deleteContact: (contactId: string) => void; // TODO: Adapt for groups or add deleteGroup
+  forwardingPath: Contact[]; // This likely remains contact-specific for now
   setForwardingPath: (path: Contact[]) => void;
-  updateContact: (contactId: string, updates: Partial<Contact>) => void;
-  updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>; // Add new function
+  updateContact: (contactId: string, updates: Partial<Contact>) => void; // TODO: Adapt for groups or add updateGroup
+  updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>;
 }
 
 const ContactsContext = createContext<ContactsContextType | undefined>(undefined);
 
-// Mock encryption functions removed as db.set/db.get handle secure encryption/decryption
-
 export const ContactsProvider = ({ children }: { children: React.ReactNode }) => {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [activeContact, setActiveContact] = useState<Contact | null>(null);
+  const [listItems, setListItems] = useState<ContactOrGroup[]>([]);
+  const [activeItem, setActiveItem] = useState<ContactOrGroup | null>(null);
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(new Map());
-  const [forwardingPath, setForwardingPath] = useState<Contact[]>([]);
+  const [forwardingPath, setForwardingPath] = useState<Contact[]>([]); // Assumes forwarding is between contacts
   const { toast } = useToast();
 
-  // Load contacts from IndexedDB on init
+  const { toast } = useToast();
+
+  // Load contacts and groups from IndexedDB on init
   useEffect(() => {
-    const loadContacts = async () => {
+    const loadListItems = async () => {
       try {
-        const storedContacts = await db.get('contacts', 'all'); // db.get handles decryption
-        if (storedContacts) {
-          // No need for mockDecryptFromStorage here
-          setContacts(JSON.parse(storedContacts));
-        } else {
-          setContacts([]); // Initialize as empty array if nothing is stored
-        }
+        const storedContactsData = await db.get('contacts', 'all');
+        const loadedContacts: Contact[] = storedContactsData ? JSON.parse(storedContactsData) : [];
+
+        const storedGroupsData = await db.get('groups', 'all');
+        const loadedGroups: Group[] = storedGroupsData ? JSON.parse(storedGroupsData) : [];
+        
+        setListItems([...loadedContacts, ...loadedGroups]);
       } catch (error) {
-        console.error('Error loading contacts:', error);
+        console.error('Error loading list items:', error);
         toast({
           title: 'Error',
-          description: 'Could not load your contacts',
+          description: 'Could not load your contacts and groups',
           variant: 'destructive',
         });
-        setContacts([]); // Initialize as empty on error too
+        setListItems([]);
       }
     };
 
-    loadContacts();
+    loadListItems();
   }, [toast]);
 
-  // Save contacts to IndexedDB whenever they change
+  // Save contacts and groups to IndexedDB whenever listItems change
   useEffect(() => {
-    console.log("Contacts useEffect triggered. Current contacts count:", contacts.length); // <-- Add log here
-    const saveContacts = async () => {
+    const saveListItems = async () => {
       try {
-        // Consider removing the length check if you want to save empty lists
-        // if (contacts.length === 0) {
-        //    // Optionally handle saving an empty list explicitly if needed
-        //    // await db.set('contacts', 'all', ''); // Or delete the entry
-        //    console.log("Contacts list is empty, skipping save or handling explicitly.");
-        //    return;
-        // }
+        const currentContacts = listItems.filter(item => item.itemType === 'contact') as Contact[];
+        const currentGroups = listItems.filter(item => item.itemType === 'group') as Group[];
 
-        console.log("Attempting to save contacts to IndexedDB..."); // Add log
-        // Simplify: Remove mock encryption here
-        const contactsJson = JSON.stringify(contacts);
-        // Let db.set handle the real encryption
-        await db.set('contacts', 'all', contactsJson);
-        console.log("Contacts saved successfully."); // Add log
+        if (currentContacts.length > 0 || listItems.some(item => item.itemType === 'contact')) { // Save even if it becomes empty
+          const contactsJson = JSON.stringify(currentContacts);
+          await db.set('contacts', 'all', contactsJson);
+          console.log("Contacts saved successfully.");
+        } else {
+          await db.set('contacts', 'all', JSON.stringify([])); // Save empty array if all contacts removed
+           console.log("No contacts to save, or all contacts removed. Saved empty array.");
+        }
+
+        if (currentGroups.length > 0 || listItems.some(item => item.itemType === 'group')) { // Save even if it becomes empty
+          const groupsJson = JSON.stringify(currentGroups);
+          await db.set('groups', 'all', groupsJson);
+          console.log("Groups saved successfully.");
+        } else {
+          await db.set('groups', 'all', JSON.stringify([])); // Save empty array if all groups removed
+          console.log("No groups to save, or all groups removed. Saved empty array.");
+        }
+
       } catch (error) {
-        console.error('Failed to save contacts:', error);
+        console.error('Failed to save list items:', error);
         toast({
           title: 'Save Error',
-          description: `Could not save contact changes to persistent storage. Error: ${error}`,
+          description: `Could not save changes to persistent storage. Error: ${error}`,
           variant: 'destructive',
         });
       }
     };
+    // Initial load might trigger this with an empty listItems if not careful.
+    // However, saving an empty list is fine.
+    if (listItems) { // Check if listItems is initialized
+        saveListItems();
+    }
+  }, [listItems, toast]);
 
-    // Avoid running save immediately on initial load if contacts might still be loading
-    // You might need a flag to check if initial load is complete
-    // For now, let's assume it runs after initial load or changes
-    // Also, don't save if contacts is still the initial empty array before loading finishes
-    // A simple check might be to ensure it's not the *initial* empty array,
-    // but this requires careful state management. A dedicated "isLoaded" state might be better.
-    // For now, we'll save whenever contacts changes after the initial load.
-    saveContacts();
-
-  }, [contacts, toast]); // Add toast to dependency array
-
-  // Generate a new AES-256 key for a new contact
+  // Generate a new AES-256 key for a new contact (remains contact-specific)
   const generateContactKey = async (): Promise<string> => {
     try {
       const key = await generateAESKey();
@@ -133,14 +149,13 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         id: `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name,
         avatar,
+        itemType: 'contact', // Explicitly set itemType
         keyId,
         lastActive: new Date().toISOString(),
-        userGeneratedKey // Set the flag here
+        userGeneratedKey
       };
 
-      console.log("Calling setContacts in addContact to add:", newContact.name); // <-- Add log here
-      setContacts(prev => [...prev, newContact]);
-      console.log("setContacts in addContact finished."); // <-- Add log here
+      setListItems(prev => [...prev, newContact]);
 
       toast({
         title: 'Contact Added',
@@ -159,16 +174,48 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
+  const addGroup = async (name: string, memberIds: string[], avatar?: string): Promise<boolean> => {
+    try {
+      const newGroup: Group = {
+        id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        name,
+        avatar: avatar || '/default-group-avatar.png', // Provide a default avatar path
+        itemType: 'group',
+        memberIds,
+      };
+
+      setListItems(prev => [...prev, newGroup]);
+      // Persistence is handled by the useEffect watching listItems
+
+      toast({
+        title: 'Group Created',
+        description: `${name} has been created.`,
+      });
+      return true;
+    } catch (error) {
+      console.error('Error creating group:', error);
+      toast({
+        title: 'Error',
+        description: 'Could not create group.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
     try {
-      const contact = contacts.find(c => c.id === contactId);
-      if (!contact) return null;
+      // Find the contact within listItems
+      const contactItem = listItems.find(item => item.id === contactId && item.itemType === 'contact');
+      if (!contactItem) return null;
       
+      const contact = contactItem as Contact; // Type assertion
+
       if (contactKeys.has(contact.keyId)) {
         return contactKeys.get(contact.keyId) || null;
       }
       
-      const encryptedKeyData = await db.get('keys', contact.keyId);
+      const encryptedKeyData = await db.get('keys', contact.keyId); // keyData is decrypted by db.get
       if (!encryptedKeyData) return null;
 
       // keyData is already decrypted by db.get
@@ -183,47 +230,54 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  const deleteContact = async (contactId: string) => {
-    const contact = contacts.find(c => c.id === contactId);
-    if (!contact) return;
-    
-    setContacts(prev => prev.filter(c => c.id !== contactId));
-    
-    const newContactKeys = new Map(contactKeys);
-    newContactKeys.delete(contact.keyId);
-    setContactKeys(newContactKeys);
+  const deleteContact = async (itemId: string) => { // Renamed to itemId, can be contact or group
+    const itemToDelete = listItems.find(item => item.id === itemId);
+    if (!itemToDelete) return;
 
-    // If the deleted contact was the active one, clear the active contact state
-    if (activeContact && activeContact.id === contactId) {
-      setActiveContact(null);
-    }
+    setListItems(prev => prev.filter(item => item.id !== itemId));
 
-    try {
-      await db.delete('keys', contact.keyId);
-      toast({
-        title: 'Contact Deleted',
-        description: `${contact.name} has been removed from your contacts`,
-      });
-    } catch (error) {
-      console.error('Error deleting contact key:', error);
+    if (itemToDelete.itemType === 'contact') {
+      const contact = itemToDelete as Contact;
+      const newContactKeys = new Map(contactKeys);
+      newContactKeys.delete(contact.keyId);
+      setContactKeys(newContactKeys);
+      try {
+        await db.delete('keys', contact.keyId);
+      } catch (error) {
+        console.error('Error deleting contact key from DB:', error);
+      }
     }
+    // If itemToDelete.itemType === 'group', its deletion from listItems is handled by useEffect saving groups.
+
+    if (activeItem && activeItem.id === itemId) {
+      setActiveItem(null);
+    }
+    toast({
+      title: `${itemToDelete.itemType === 'contact' ? 'Contact' : 'Group'} Deleted`,
+      description: `${itemToDelete.name} has been removed.`,
+    });
   };
 
   const updateContact = (contactId: string, updates: Partial<Contact>) => {
-    setContacts(prev => prev.map(contact => 
-      contact.id === contactId ? { ...contact, ...updates } : contact
-    ));
+    setListItems(prevListItems =>
+      prevListItems.map(item =>
+        item.id === contactId && item.itemType === 'contact'
+          ? { ...item, ...updates }
+          : item
+      ) as ContactOrGroup[] // Ensure the map returns the correct union type
+    );
 
-    // If the updated contact is the active one, update the activeContact state too
-    if (activeContact && activeContact.id === contactId) {
-      setActiveContact(prev => prev ? { ...prev, ...updates } : null);
+    if (activeItem && activeItem.id === contactId && activeItem.itemType === 'contact') {
+      setActiveItem(prev => prev ? { ...prev, ...updates } as Contact : null);
     }
   };
+  
+  // TODO: Add updateGroup if needed later
 
   // Update the key for an existing contact
   const updateContactKey = async (contactId: string, newKeyData: string): Promise<boolean> => {
-    const contact = contacts.find(c => c.id === contactId);
-    if (!contact) {
+    const contactItem = listItems.find(item => item.id === contactId && item.itemType === 'contact');
+    if (!contactItem) {
       console.error(`Contact not found for ID: ${contactId}`);
       toast({
         title: 'Error',
@@ -232,18 +286,13 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       });
       return false;
     }
+    const contact = contactItem as Contact; // Type assertion
 
     try {
-      // Import the new key
       const newKey = await importKey(newKeyData);
-
-      // Update the in-memory key map
       setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
-
-      // Store the new key data in IndexedDB - db.set handles encryption
-      await db.set('keys', contact.keyId, newKeyData);
-
-      console.log(`Key updated successfully for contact ${contactId}`);
+      await db.set('keys', contact.keyId, newKeyData); // db.set handles encryption
+      console.log(`Key updated successfully for contact ${contact.name}`);
       return true;
     } catch (error) {
       console.error(`Error updating key for contact ${contactId}:`, error);
@@ -260,17 +309,18 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   return (
     <ContactsContext.Provider
       value={{
-        contacts,
-        activeContact,
-        setActiveContact,
+        listItems,
+        activeItem,
+        setActiveItem,
         addContact,
+        addGroup, // Expose addGroup
         getContactKey,
         generateContactKey,
-        deleteContact,
+        deleteContact, // This now handles both based on itemType for deletion from listItems
         forwardingPath,
         setForwardingPath,
-        updateContact,
-        updateContactKey, // Expose the new function
+        updateContact, // This is still contact-specific
+        updateContactKey,
       }}
     >
       {children}
