@@ -49,9 +49,31 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(new Map());
   const [forwardingPath, setForwardingPath] = useState<Contact[]>([]); // Assumes forwarding is between contacts
   const { toast } = useToast();
+  const [isDbInitialized, setIsDbInitialized] = useState(false);
+
+  // Initialize DB
+  useEffect(() => {
+    const initializeDatabase = async () => {
+      try {
+        await db.init(); // Call init on the imported db instance
+        setIsDbInitialized(true);
+        console.log("Database initialized successfully.");
+      } catch (error) {
+        console.error('Failed to initialize database:', error);
+        toast({
+          title: 'Database Error',
+          description: 'Could not initialize local database. Some features may not work.',
+          variant: 'destructive',
+        });
+        // setIsDbInitialized remains false
+      }
+    };
+    initializeDatabase();
+  }, [toast]); // toast is a stable dependency from useToast
 
   // Load contacts and groups from IndexedDB on init
   useEffect(() => {
+    if (!isDbInitialized) return; // Wait for DB initialization
     const loadListItems = async () => {
       try {
         const storedContactsData = await db.get('contacts', 'all');
@@ -73,10 +95,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     };
 
     loadListItems();
-  }, [toast]);
+  }, [isDbInitialized, toast]);
 
   // Save contacts and groups to IndexedDB whenever listItems change
   useEffect(() => {
+    if (!isDbInitialized) { // Only proceed if DB is initialized
+      return;
+    }
+
     const saveListItems = async () => {
       try {
         const currentContacts = listItems.filter(item => item.itemType === 'contact') as Contact[];
@@ -109,12 +135,9 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         });
       }
     };
-    // Initial load might trigger this with an empty listItems if not careful.
-    // However, saving an empty list is fine.
-    if (listItems) { // Check if listItems is initialized
-        saveListItems();
-    }
-  }, [listItems, toast]);
+    // The saveListItems function itself handles the logic for empty or populated arrays.
+    saveListItems();
+  }, [listItems, isDbInitialized, toast]);
 
   // Generate a new AES-256 key for a new contact (remains contact-specific)
   const generateContactKey = async (): Promise<string> => {
@@ -134,6 +157,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   const addContact = async (name: string, avatar: string, keyData: string, userGeneratedKey: boolean): Promise<boolean> => {
+    if (!isDbInitialized) {
+      toast({
+        title: 'Database Not Ready',
+        description: 'Please wait a moment and try again.',
+        variant: 'destructive',
+      });
+      return false;
+    }
     try {
       const key = await importKey(keyData);
       const keyId = `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -202,6 +233,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
+    if (!isDbInitialized) {
+      toast({
+        title: 'Database Not Ready',
+        description: 'Cannot retrieve contact key. Please wait and try again.',
+        variant: 'destructive',
+      });
+      return null;
+    }
     try {
       // Find the contact within listItems
       const contactItem = listItems.find(item => item.id === contactId && item.itemType === 'contact');
@@ -229,6 +268,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   const deleteContact = async (itemId: string) => { // Renamed to itemId, can be contact or group
+    if (!isDbInitialized) {
+      toast({
+        title: 'Database Not Ready',
+        description: 'Cannot delete item. Please wait and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const itemToDelete = listItems.find(item => item.id === itemId);
     if (!itemToDelete) return;
 
@@ -274,6 +321,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
 
   // Update the key for an existing contact
   const updateContactKey = async (contactId: string, newKeyData: string): Promise<boolean> => {
+    if (!isDbInitialized) {
+      toast({
+        title: 'Database Not Ready',
+        description: 'Cannot update contact key. Please wait and try again.',
+        variant: 'destructive',
+      });
+      return false;
+    }
     const contactItem = listItems.find(item => item.id === contactId && item.itemType === 'contact');
     if (!contactItem) {
       console.error(`Contact not found for ID: ${contactId}`);
