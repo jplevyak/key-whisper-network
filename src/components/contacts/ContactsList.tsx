@@ -19,7 +19,13 @@ const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
 
   const handleItemClick = (item: ContactOrGroup) => {
     setActiveItem(item);
-    onContactSelect?.(); // Consumer of onContactSelect needs to be aware it can be a group
+    // Only call onContactSelect if the item is a contact,
+    // as the handler might not be prepared for groups.
+    if (item.itemType === 'contact') {
+      onContactSelect?.();
+    }
+    // If item is a group, activeItem is set, but onContactSelect is not called.
+    // The parent component can still react to activeItem changes from context if needed.
   };
 
   // Function to count unread messages for a contact (groups don't have direct unread counts yet)
