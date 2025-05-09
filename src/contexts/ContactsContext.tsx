@@ -208,7 +208,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       const newGroup: Group = {
         id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name,
-        avatar: avatar || '/default-group-avatar.png', // Provide a default avatar path
+        avatar: avatar || '/default-group-avatar.jpg', // Provide a default avatar path
         itemType: 'group',
         memberIds,
       };
