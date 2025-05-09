@@ -32,12 +32,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   const { messages, clearHistory } = useMessages();
   const { toast } = useToast();
 
-  // State for confirmation dialog
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [confirmActionType, setConfirmActionType] = useState<'scan' | 'generate' | null>(null);
-  const [pendingScanData, setPendingScanData] = useState<string | null>(null);
-  const [pendingGeneratedKeyData, setPendingGeneratedKeyData] = useState<string | null>(null);
-
   // State for name editing
   const [isNameEditing, setIsNameEditing] = useState(false);
   const [tempName, setTempName] = useState(contact.name); // Initialize with current name
@@ -85,6 +79,72 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   };
   // --- End Name Editing Handlers ---
 
+  // Handler for when a scanned key is accepted in QRCodeActions
+  const handleScanAccept = async (scannedKeyData: string) => {
+    clearHistory(contact.id);
+    toast({
+      title: 'Chat History Cleared',
+      description: 'Previous messages removed due to key change.',
+      variant: 'destructive'
+    });
+
+    const keyUpdateSuccess = await updateContactKey(contact.id, scannedKeyData);
+    if (keyUpdateSuccess) {
+      updateContact(contact.id, { userGeneratedKey: false });
+      toast({
+        title: 'Key Updated via Scan',
+        description: 'The encryption key has been updated.',
+      });
+    } else {
+      // Assuming updateContactKey might show its own error toast or log
+      console.error("Failed to update key via scan.");
+      toast({
+          title: 'Key Update Failed',
+          description: 'Could not update the key using the scanned QR code.',
+          variant: 'destructive',
+      });
+    }
+  };
+
+  // Handler for when a newly generated key is accepted in QRCodeActions
+  const handleGeneratedKeyAccept = async (newKeyData: string) => {
+    clearHistory(contact.id);
+    toast({
+      title: 'Chat History Cleared',
+      description: 'Previous messages removed due to key change.',
+      variant: 'destructive'
+    });
+
+    const keyUpdateSuccess = await updateContactKey(contact.id, newKeyData);
+    if (keyUpdateSuccess) {
+      updateContact(contact.id, { userGeneratedKey: true });
+      toast({
+        title: 'Key Updated',
+        description: 'The encryption key has been updated with the new generated key.',
+      });
+    } else {
+      console.error("Failed to update key with generated data.");
+      toast({
+          title: 'Key Update Failed',
+          description: 'Could not assign the new generated key.',
+          variant: 'destructive',
+      });
+    }
+  };
+
+  // Handler for QRCodeActions to request a new key generation
+  const handleGenerateKeyRequest = async (): Promise<string> => {
+    const newKey = await generateContactKey();
+    if (!newKey) {
+      toast({
+        title: 'Key Generation Failed',
+        description: 'Could not generate a new key. Please try again.',
+        variant: 'destructive',
+      });
+      return ''; // Return empty string, QRCodeActions should handle this
+    }
+    return newKey; // Return the generated key for QRCodeActions to display
+  };
 
   const handleUpdateImage = (image: string) => {
     updateContact(contact.id, { avatar: image });
@@ -153,28 +213,9 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
 
           <div className="space-y-2">
             <QRCodeActions
-              onScanSuccess={(keyData) => {
-                // Instead of immediate action, trigger confirmation
-                setPendingScanData(keyData);
-                setConfirmActionType('scan');
-                setIsConfirmOpen(true);
-              }}
-              onGenerateKey={async () => {
-                // Generate the key immediately to be shown in QR code
-                const newKey = await generateContactKey();
-                if (!newKey) {
-                  toast({
-                    title: 'Key Generation Failed',
-                    description: 'Could not generate a new key. Please try again.',
-                    variant: 'destructive',
-                  });
-                  return ''; // Return empty string, QRCodeActions might handle this
-                }
-                setPendingGeneratedKeyData(newKey); // Store for use after confirmation
-                setConfirmActionType('generate');
-                setIsConfirmOpen(true);
-                return newKey; // Return the generated key for QRCodeActions to display
-              }}
+              onScanAccept={handleScanAccept}
+              onGenerateKeyRequest={handleGenerateKeyRequest}
+              onGeneratedKeyAccept={handleGeneratedKeyAccept}
               variant="stacked"
             />
             <Button
@@ -197,85 +238,6 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
         </div>
       </DialogContent>
     </Dialog>
-
-    <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Change Encryption Key?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Changing the encryption key will clear the existing chat history for this contact,
-            as old messages will no longer be decryptable. This action cannot be undone.
-            Are you sure you want to proceed?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => {
-            setConfirmActionType(null);
-            setPendingScanData(null);
-            setPendingGeneratedKeyData(null); // Reset pending generated key
-          }}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={async () => {
-            // 1. Clear history first
-            clearHistory(contact.id);
-            toast({
-              title: 'Chat History Cleared',
-              description: 'Previous messages removed due to key change.',
-              variant: 'destructive' // Use a more prominent variant
-            });
-
-            // 2. Perform the original action
-            if (confirmActionType === 'scan' && pendingScanData) {
-              const keyUpdateSuccess = await updateContactKey(contact.id, pendingScanData);
-              if (keyUpdateSuccess) {
-                // Update the flag indicating the key was provided by the contact
-                updateContact(contact.id, { userGeneratedKey: false });
-                toast({
-                  title: 'Key Updated via Scan',
-                  description: 'The encryption key has been updated.',
-                });
-              } else {
-                // Toast for failure is handled within updateContactKey
-                console.error("Failed to update key via scan.");
-              }
-            } else if (confirmActionType === 'generate' && pendingGeneratedKeyData) {
-              try {
-                // Key already generated and stored in pendingGeneratedKeyData
-                const keyUpdateSuccess = await updateContactKey(contact.id, pendingGeneratedKeyData);
-                if (keyUpdateSuccess) {
-                  // Update the flag indicating the key was generated by the user
-                  updateContact(contact.id, { userGeneratedKey: true });
-                  toast({
-                    title: 'Key Updated', // Changed from "New Key Generated" for consistency
-                    description: 'The encryption key has been updated.',
-                  });
-                } else {
-                  // Failure toast might be handled by updateContactKey or needs to be explicit here
-                  console.error("Failed to update key with pre-generated data.");
-                  toast({
-                    title: 'Key Update Failed',
-                    description: 'Could not assign the new key after generation.',
-                    variant: 'destructive',
-                  });
-                }
-              } catch (error) {
-                 console.error("Failed to update key with pre-generated data:", error);
-                 toast({
-                   title: 'Key Update Error',
-                   description: 'An error occurred while assigning the new key.',
-                   variant: 'destructive',
-                 });
-              }
-            }
-
-            // 3. Reset state
-            setConfirmActionType(null);
-            setPendingScanData(null);
-            setPendingGeneratedKeyData(null); // Reset pending generated key
-            // No need to call setIsConfirmOpen(false) here, AlertDialogAction closes automatically
-          }}>Confirm</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 };
