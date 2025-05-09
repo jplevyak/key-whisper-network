@@ -165,18 +165,21 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   }, [isOpen]);
 
   // Correctly handle open/close state changes
+  const handleAttemptClose = () => {
+    const canCreateContact = !isNameEditing && !!name.trim() && (!!scannedKey || !!generatedKey);
+    if (canCreateContact) {
+      setShowCloseConfirmationAlert(true);
+      // Prevent dialog from closing immediately by not calling onClose() yet
+    } else {
+      // If not attempting to create a contact or form is not in a savable state, close normally
+      resetForm();
+      onClose();
+    }
+  };
+
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      // Check if Create Contact button would be enabled
-      const canCreateContact = !isNameEditing && !!name.trim() && (!!scannedKey || !!generatedKey);
-      if (canCreateContact) {
-        setShowCloseConfirmationAlert(true);
-        // Prevent dialog from closing immediately by not calling onClose()
-      } else {
-        // If not attempting to create a contact or form is not in a savable state, close normally
-        resetForm();
-        onClose();
-      }
+      handleAttemptClose();
     }
     // If opening (open is true), the isOpen prop handles visibility.
     // No specific action needed here for opening via this callback.
@@ -235,7 +238,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
         </div>
         
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={handleAttemptClose}>
             Cancel
           </Button>
           <Button
