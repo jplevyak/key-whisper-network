@@ -40,7 +40,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   const [scannedKey, setScannedKey] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
   const [showCloseConfirmationAlert, setShowCloseConfirmationAlert] = useState(false);
-  const { addContact, generateContactKey } = useContacts();
+  const { addContact, generateContactKey } = useContacts(); // generateContactKey is already here
   const { toast } = useToast();
 
   useEffect(() => {
@@ -91,6 +91,28 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
     return true; // Not editing, so proceed
   };
 
+  // --- QRCodeActions Handlers for AddContactModal ---
+  const handleModalScanAccept = (keyData: string) => {
+    if (!ensureNameIsSaved()) return;
+    setGeneratedKey(''); // Clear generated key if scanning
+    setScannedKey(keyData);
+  };
+
+  const handleModalGenerateKeyRequest = async (): Promise<string> => {
+    if (!ensureNameIsSaved()) return ''; // Save name first, return empty on failure
+    const key = await generateContactKey(); // This comes from useContacts
+    // The key is returned to QRCodeActions to be displayed in QRCodeGenerator.
+    // We don't set generatedKey state here yet, only after user accepts it in QRCodeGenerator.
+    return key;
+  };
+
+  const handleModalGeneratedKeyAccept = (keyData: string) => {
+    // This is called when the user "Accepts" the generated key within the QRCodeGenerator dialog
+    if (!ensureNameIsSaved()) return; // Name should ideally be saved by now
+    setScannedKey(''); // Clear scanned key if a new one was generated and accepted
+    setGeneratedKey(keyData);
+  };
+  // --- End QRCodeActions Handlers ---
 
   const handleCreateContact = async () => {
     // Ensure name is saved first
@@ -199,18 +221,10 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
           />
 
           <QRCodeActions
-            onScanSuccess={(keyData) => {
-              if (!ensureNameIsSaved()) return; // Save name first
-              setGeneratedKey(''); // Clear generated key if scanning
-              setScannedKey(keyData);
-            }}
-            onGenerateKey={async () => {
-              if (!ensureNameIsSaved()) return ''; // Save name first, return empty on failure
-              const key = await generateContactKey();
-              setScannedKey(''); // Clear scanned key if generating
-              setGeneratedKey(key);
-              return key;
-            }}
+            onScanAccept={handleModalScanAccept}
+            onGenerateKeyRequest={handleModalGenerateKeyRequest}
+            onGeneratedKeyAccept={handleModalGeneratedKeyAccept}
+            // variant="inline" or "stacked" can be set if needed, defaults to "inline"
           />
 
           {(scannedKey || generatedKey) && (
