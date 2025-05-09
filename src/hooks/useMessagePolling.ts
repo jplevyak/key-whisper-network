@@ -32,7 +32,7 @@ export const useMessagePolling = ({
   longPollTimeoutMs = 300000, // Timeout for a single long poll request (5 minutes)
   minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
 }: UseMessagePollingOptions) => {
-  const { contacts, getContactKey } = useContacts();
+  const { listItems, getContactKey } = useContacts(); // Changed contacts to listItems
   const { toast } = useToast();
   const { isAuthenticated } = useAuth(); // Get authentication status
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -40,7 +40,9 @@ export const useMessagePolling = ({
 
   // Renamed to reflect it's a single long poll request cycle
   const fetchMessagesFromServer = useCallback(async (signal: AbortSignal) => {
-    if (contacts.length === 0) {
+    const actualContacts = listItems.filter(item => item.itemType === 'contact');
+
+    if (actualContacts.length === 0) {
       // Return or throw? Returning allows the loop to continue cleanly.
       // Throwing might be better if no contacts is an error state. Let's return.
       return;
@@ -52,7 +54,7 @@ export const useMessagePolling = ({
 
     try {
       // Prepare data needed for the request and response processing
-      for (const contact of contacts) {
+      for (const contact of actualContacts) { // Use actualContacts
         const key = await getContactKey(contact.id);
         if (!key) {
           console.warn(`Skipping fetch for contact ${contact.id}: key not found.`);
@@ -233,7 +235,7 @@ export const useMessagePolling = ({
       throw error; // Re-throw other errors
     }
     // No finally block needed here, the loop handles continuation/stopping
-  }, [contacts, getContactKey, setMessages, toast, longPollTimeoutMs]); // Add longPollTimeoutMs dependency
+  }, [listItems, getContactKey, setMessages, toast, longPollTimeoutMs]); // Changed contacts to listItems
 
   useEffect(() => {
     isMountedRef.current = true;
