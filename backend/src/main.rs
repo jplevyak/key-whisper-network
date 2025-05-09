@@ -47,8 +47,6 @@ struct GetMessagesRequest {
     message_ids: Vec<String>,
     timeout_ms: Option<u64>,
     push_subscription: Option<PushSubscriptionInfo>,
-    group: Option<String>, // This field seems unused in current get_messages_handler logic based on message_ids
-                           // but adding it as requested.
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -50,8 +50,6 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [forwardingPath, setForwardingPath] = useState<Contact[]>([]); // Assumes forwarding is between contacts
   const { toast } = useToast();
 
-  const { toast } = useToast();
-
   // Load contacts and groups from IndexedDB on init
   useEffect(() => {
     const loadListItems = async () => {
