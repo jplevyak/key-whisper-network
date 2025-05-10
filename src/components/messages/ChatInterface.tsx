@@ -33,7 +33,7 @@ import ForwardMessageDialog from './ForwardMessageDialog';
 import ContactProfile from '../contacts/ContactProfile';
 
 const ChatInterface = () => {
-  const { activeContact } = useContacts();
+  const { activeItem: activeContact } = useContacts(); // Correctly alias activeItem to activeContact
   // Get clearHistory from useMessages
   const { messages, sendMessage, markAsRead, clearHistory } = useMessages();
   const [newMessage, setNewMessage] = useState('');
