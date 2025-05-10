@@ -31,7 +31,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
 import ContactProfile from '../contacts/ContactProfile';
-import GroupProfile from '../contact/GroupProfile'; // Import GroupProfile
+import GroupProfile from '../contacts/GroupProfile'; // Import GroupProfile
 import { Group } from '@/contexts/ContactsContext'; // Import Group type
 
 const ChatInterface = () => {
