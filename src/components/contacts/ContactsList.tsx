@@ -21,10 +21,6 @@ const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
     setActiveItem(item);
     // Only call onContactSelect if the item is a contact,
     // and pass the contact object to the handler.
-    // Trim itemType and use optional chaining to guard against potential leading/trailing whitespace or null/undefined values.
-    console.log('Item clicked:', item);
-    console.log('Item clicked itemType:', item.itemType);
-    console.log('Item clicked itemType ==', item.itemType === 'contact');
     if (item.itemType === 'contact') {
       onContactSelect?.(item as Contact); // Pass the contact item
     }
