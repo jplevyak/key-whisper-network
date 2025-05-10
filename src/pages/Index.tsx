@@ -231,7 +231,12 @@ const IndexContent = () => {
           <div className={`${isMobile ? 'w-full' : 'w-80'} border-r bg-card overflow-y-auto`}>
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
-              onContactSelect={() => isMobile && setShowContacts(false)}
+              onContactSelect={(contact) => { // Accept the contact argument
+                if (isMobile) {
+                  setShowContacts(false);
+                }
+                // The 'contact' object is now available here if needed for future logic
+              }}
             />
           </div>
         )}
