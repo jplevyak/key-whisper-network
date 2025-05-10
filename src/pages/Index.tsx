@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const IndexContent = () => {
   const { isAuthenticated, isLoading, logout, username } = useAuth();
-  const { activeContact } = useContacts();
+  const { activeItem: activeContact, setActiveItem } = useContacts(); // Correctly destructure and get setActiveItem
   const [showAddContact, setShowAddContact] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -232,6 +232,7 @@ const IndexContent = () => {
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
               onContactSelect={(contact) => { // Accept the contact argument
+                setActiveItem(contact); // Set the selected contact as the active item
                 // Set showContacts to false on any contact selection,
                 // to ensure ChatInterface is prioritized or shown.
                 // The actual layout behavior is controlled by JSX conditions using isMobile and showContacts.
