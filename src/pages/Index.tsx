@@ -232,10 +232,11 @@ const IndexContent = () => {
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
               onContactSelect={(contact) => { // Accept the contact argument
-                if (isMobile) {
-                  setShowContacts(false);
-                }
-                // The 'contact' object is now available here if needed for future logic
+                // Set showContacts to false on any contact selection,
+                // to ensure ChatInterface is prioritized or shown.
+                // The actual layout behavior is controlled by JSX conditions using isMobile and showContacts.
+                setShowContacts(false);
+                // The 'contact' object is available here if needed for future logic
               }}
             />
           </div>
