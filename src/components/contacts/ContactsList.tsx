@@ -9,7 +9,7 @@ import AddGroupModal from './AddGroupModal'; // Import the new modal
 
 interface ContactsListProps {
   onAddContact: () => void;
-  onContactSelect?: () => void; // This might need to handle ContactOrGroup
+  onContactSelect?: (contact: Contact) => void; // Changed to pass the selected contact
 }
 
 const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
@@ -20,9 +20,9 @@ const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
   const handleItemClick = (item: ContactOrGroup) => {
     setActiveItem(item);
     // Only call onContactSelect if the item is a contact,
-    // as the handler might not be prepared for groups.
+    // and pass the contact object to the handler.
     if (item.itemType === 'contact') {
-      onContactSelect?.();
+      onContactSelect?.(item as Contact); // Pass the contact item
     }
     // If item is a group, activeItem is set, but onContactSelect is not called.
     // The parent component can still react to activeItem changes from context if needed.
