@@ -250,8 +250,8 @@ const IndexContent = () => {
           </div>
         )}
         
-        {/* Chat area - full width on mobile when active */}
-        {(!isMobile || (isMobile && !showContacts)) && (
+        {/* Chat area - full width on mobile when active, only render if a contact is active */}
+        {activeContact && (!isMobile || (isMobile && !showContacts)) && (
           <div className="flex-1 overflow-hidden">
             <ChatInterface />
           </div>
