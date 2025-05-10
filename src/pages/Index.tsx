@@ -237,7 +237,6 @@ const IndexContent = () => {
               onAddContact={() => setShowAddContact(true)} 
               onContactSelect={(contact) => {
                 setActiveItem(contact);
-                console.log('Selected contact:', contact);
                 if (isMobile) {
                   setShowContacts(false);
                 }
