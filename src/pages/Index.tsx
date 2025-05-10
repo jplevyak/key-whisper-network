@@ -230,28 +230,23 @@ const IndexContent = () => {
         </div>
       </header>
       
-      {/* Main content - with contacts sidebar and chat interface */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Contacts sidebar - hidden on mobile when chat is active */}
         {(!isMobile || (isMobile && showContacts)) && (
           <div className={`${isMobile ? 'w-full' : 'w-80'} border-r bg-card overflow-y-auto`}>
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
-              onContactSelect={(contact) => { // Accept the contact argument
-                setActiveItem(contact); // Set the selected contact as active, ChatInterface will use this
+              onContactSelect={(contact) => {
+                setActiveItem(contact);
+                console.log('Selected contact:', contact);
                 if (isMobile) {
-                  setShowContacts(false); // On mobile, hide contacts list and show chat
+                  setShowContacts(false);
                 }
-                // On non-mobile, showContacts is managed by useEffect to be true.
-                // ContactsList remains visible due to JSX `!isMobile`.
-                // ChatInterface is also visible due to JSX `!isMobile` and updates with activeItem.
               }}
             />
           </div>
         )}
         
-        {/* Chat area - full width on mobile when active, only render if a contact is active */}
-        {activeContact && (!isMobile || (isMobile && !showContacts)) && (
+        {(!isMobile || (isMobile && !showContacts)) && (
           <div className="flex-1 overflow-hidden">
             <ChatInterface />
           </div>

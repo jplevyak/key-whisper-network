@@ -165,7 +165,6 @@ const ChatInterface = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        {/* Removed About Dialog Trigger and Content */}
       </div>
       
       {/* Scrollable Messages Area */}
