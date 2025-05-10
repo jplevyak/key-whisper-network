@@ -252,7 +252,6 @@ const IndexContent = () => {
         )}
       </div>
       
-      {/* Add contact modal */}
       <AddContactModal
         isOpen={showAddContact}
         onClose={() => setShowAddContact(false)}

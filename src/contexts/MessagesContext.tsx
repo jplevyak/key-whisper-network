@@ -229,9 +229,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         ),
       }));
 
-      if (allSendsSuccessful) {
-        toast({ title: 'Message Sent', description: `Message sent to group ${group.name}.` });
-      } else {
+      if (!allSendsSuccessful) {
          toast({ title: 'Group Send Issue', description: `Message to ${group.name} sent with some errors.`, variant: 'warning' });
       }
       return true; // Local save is successful, return true even if some remote sends fail
