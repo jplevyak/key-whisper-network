@@ -147,16 +147,9 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) resetAndClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center space-x-3 mb-2">
-            <Avatar className="h-12 w-12">
-              <AvatarImage src={group.avatar} alt={group.name} />
-              <AvatarFallback>{group.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <DialogTitle className="text-2xl">{isNameEditing ? "Edit Group Name" : group.name}</DialogTitle>
-          </div>
+          <DialogTitle>Group Profile</DialogTitle>
         </DialogHeader>
-        <Separator className="my-4" />
-        <div className="space-y-4 py-1 max-h-[calc(60vh-50px)] overflow-y-auto"> {/* Adjusted max-h to account for stats */}
+        <div className="space-y-6 py-4">
           <ContactNameEdit
             name={isNameEditing ? tempGroupName : group.name}
             isEditing={isNameEditing}
@@ -191,7 +184,7 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             <Label htmlFor="group-members" className="text-lg font-medium">
               Group Members ({selectedMemberCount})
             </Label>
-            <ScrollArea className="h-[200px] w-full rounded-md border p-2">
+            <div className="w-full rounded-md border p-2 max-h-[200px] overflow-y-auto"> {/* Retain scroll for member list if it's very long, but remove fixed height for the container */}
               {availableContacts.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">No contacts available.</p>
               )}
@@ -209,11 +202,10 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
                   <Label htmlFor={`profile-member-${contact.id}`} className="flex-1 cursor-pointer">{contact.name}</Label>
                 </div>
               ))}
-            </ScrollArea>
+            </div>
           </div>
-          {/* Removed old Statistics block */}
         </div>
-        <DialogFooter className="mt-4">
+        <DialogFooter> {/* Removed mt-4 to be consistent with ContactProfile if DialogContent handles padding */}
           <Button variant="outline" onClick={resetAndClose}>
             Cancel
           </Button>
