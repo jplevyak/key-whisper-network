@@ -52,10 +52,16 @@ const IndexContent = () => {
     }
   }, [isMobile]);
 
-  // Show contacts list when active contact is cleared on mobile
+  // Manage showContacts state based on isMobile and activeContact
   useEffect(() => {
-    if (isMobile && !activeContact) {
-      setShowContacts(true);
+    if (!isMobile) {
+      setShowContacts(true); // On desktop, always ensure showContacts state is true
+    } else {
+      // On mobile
+      if (!activeContact) {
+        setShowContacts(true); // If no active contact, show the list
+      }
+      // If a contact is active on mobile, onContactSelect handles setting showContacts to false.
     }
   }, [isMobile, activeContact]);
 
@@ -232,12 +238,13 @@ const IndexContent = () => {
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
               onContactSelect={(contact) => { // Accept the contact argument
-                setActiveItem(contact); // Set the selected contact as the active item
-                // Set showContacts to false on any contact selection,
-                // to ensure ChatInterface is prioritized or shown.
-                // The actual layout behavior is controlled by JSX conditions using isMobile and showContacts.
-                setShowContacts(false);
-                // The 'contact' object is available here if needed for future logic
+                setActiveItem(contact); // Set the selected contact as active, ChatInterface will use this
+                if (isMobile) {
+                  setShowContacts(false); // On mobile, hide contacts list and show chat
+                }
+                // On non-mobile, showContacts is managed by useEffect to be true.
+                // ContactsList remains visible due to JSX `!isMobile`.
+                // ChatInterface is also visible due to JSX `!isMobile` and updates with activeItem.
               }}
             />
           </div>
