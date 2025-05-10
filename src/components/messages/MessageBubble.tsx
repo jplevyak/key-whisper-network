@@ -2,18 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Message, useMessages } from '@/contexts/MessagesContext';
-import { useContacts } from '@/contexts/ContactsContext';
+import { useContacts, Contact } from '@/contexts/ContactsContext'; // Import Contact
 import { formatDistanceToNow } from 'date-fns';
-import { Check, MessageSquare } from 'lucide-react';
+import { Check, MessageSquare, Users } from 'lucide-react'; // Added Users for group icon
 
 interface MessageBubbleProps {
   message: Message;
   onForward: (message: Message) => void;
+  onGroupContextClick?: (groupName: string, contactId: string, groupContextId?: string) => void;
 }
 
-const MessageBubble = ({ message, onForward }: MessageBubbleProps) => {
+const MessageBubble = ({ message, onForward, onGroupContextClick }: MessageBubbleProps) => {
   const { getDecryptedContent } = useMessages();
-  const { contacts } = useContacts();
+  const { listItems } = useContacts(); // Use listItems to find contacts
   const [decryptedContent, setDecryptedContent] = useState<string>('');
   const [decrypting, setDecrypting] = useState<boolean>(true);
   

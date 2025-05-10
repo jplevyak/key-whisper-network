@@ -20,29 +20,47 @@ import Haikunator from 'haikunator';
 interface AddGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialGroupName?: string;
+  initialSelectedMemberIds?: string[];
+  // initialGroupContextId?: string; // Not directly used for creation logic yet, but can be passed
 }
 
-const AddGroupModal = ({ isOpen, onClose }: AddGroupModalProps) => {
+const AddGroupModal = ({ 
+  isOpen, 
+  onClose, 
+  initialGroupName, 
+  initialSelectedMemberIds 
+}: AddGroupModalProps) => {
   const haikunator = new Haikunator();
   const { listItems, addGroup } = useContacts();
   const { toast } = useToast();
 
-  const [groupName, setGroupName] = useState('');
-  const [isNameEditing, setIsNameEditing] = useState(false);
-  const [tempGroupName, setTempGroupName] = useState('');
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [groupName, setGroupName] = useState(initialGroupName || '');
+  const [isNameEditing, setIsNameEditing] = useState(!!initialGroupName); // Start in edit mode if name provided
+  const [tempGroupName, setTempGroupName] = useState(initialGroupName || '');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(initialSelectedMemberIds || []);
 
   const availableContacts = listItems.filter(item => item.itemType === 'contact') as Contact[];
 
   useEffect(() => {
     if (isOpen) {
-      const initialHaiku = haikunator.haikunate({tokenChars: "0123456789", tokenLength: 4, delimiter: " "});
-      setGroupName(initialHaiku);
-      setTempGroupName(initialHaiku);
+      const nameToSet = initialGroupName || haikunator.haikunate({ tokenChars: "0123456789", tokenLength: 4, delimiter: " " });
+      setGroupName(nameToSet);
+      setTempGroupName(nameToSet);
+      // If initialGroupName is provided, user might want to edit it or confirm it.
+      // If not provided, it's a fresh haiku, so not necessarily in edit mode unless user clicks.
+      setIsNameEditing(!!initialGroupName); 
+      setSelectedMemberIds(initialSelectedMemberIds || []);
+    } else {
+      // Reset when closing if not triggered by internal logic that already reset
+      // This handles external closes like ESC key
+      setGroupName('');
+      setTempGroupName('');
       setIsNameEditing(false);
-      setSelectedMemberIds([]); // Reset selected members
+      setSelectedMemberIds([]);
     }
-  }, [isOpen]);
+  }, [isOpen, initialGroupName, initialSelectedMemberIds, haikunator]);
+
 
   const handleToggleNameEdit = () => {
     if (!isNameEditing) {
@@ -110,25 +128,21 @@ const AddGroupModal = ({ isOpen, onClose }: AddGroupModalProps) => {
   };
 
 
-  const resetForm = () => {
-    setGroupName('');
-    setTempGroupName('');
-    setIsNameEditing(false);
-    setSelectedMemberIds([]);
-  };
-
-  // Reset form when dialog is closed externally (e.g. Escape key)
-  useEffect(() => {
-    if (!isOpen) {
-      resetForm();
-    }
-  }, [isOpen]);
-
+  // Removed explicit resetForm and combined its logic into the main useEffect for isOpen.
 
   const isCreateButtonDisabled = isNameEditing || !groupName.trim() || selectedMemberIds.length === 0;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { 
+      if (!open) {
+        onClose(); 
+        // Explicitly reset internal state on external close, as props might not change for next open
+        setGroupName(''); 
+        setTempGroupName('');
+        setIsNameEditing(false);
+        setSelectedMemberIds([]);
+      } 
+    }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Create New Group</DialogTitle>

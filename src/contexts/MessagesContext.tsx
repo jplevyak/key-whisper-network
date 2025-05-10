@@ -11,8 +11,11 @@ import { useMessagePolling } from '@/hooks/useMessagePolling';
 // Export the Message interface
 export interface Message {
   id: string; // This will be the local message ID, not the server hash
-  contactId: string; // For 1-1: other user's ID. For group msg sent by user: groupID. For group msg received: actual sender's ID.
-  groupId?: string;   // If message is part of a group chat, this is the group's ID.
+  contactId: string; // For 1-1: other user's ID. For group msg sent by user: groupID. For group msg received (where group exists): groupID. For group msg received (where group context only): actual sender's ID.
+  groupId?: string;   // If message is part of an existing group chat, this is the group's ID.
+  originalSenderId?: string; // If received message is part of an existing group, this is the actual sender's contact ID.
+  groupContextName?: string; // If a 1-to-1 message has a group context name (group doesn't exist yet).
+  groupContextId?: string; // If groupContextName refers to an existing group.
   content: string; // Encrypted content
   timestamp: string;
   sent: boolean; // true if sent by user, false if received
@@ -301,22 +304,32 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     try {
       let key: CryptoKey | null = null;
       if (message.sent) { // Message sent by the current user
-        if (message.groupId) { // Sent to a group
+        if (message.groupId) { // Sent to a group by the current user
           const group = listItems.find(i => i.id === message.groupId && i.itemType === 'group') as Group | undefined;
           if (group && group.memberIds.length > 0) {
-            // Convention: content for sender's view was encrypted with the first member's key.
-            // message.contactId would be the groupId in this case for the sender's local copy.
+            // Convention: content for sender's view (local copy) was encrypted with the first member's key.
+            // message.contactId is the groupId for the sender's local copy.
             key = await getContactKey(group.memberIds[0]);
           } else {
-            return '[Could not decrypt - group or members missing for sent group message]';
+            return '[Could not decrypt - group/members missing for sent group message]';
           }
-        } else { // Sent 1-to-1
-          // message.contactId is the recipient's ID
+        } else { // Sent 1-to-1 by the current user
+          // message.contactId is the recipient's ID. Key is recipient's key.
           key = await getContactKey(message.contactId);
         }
       } else { // Message received by the current user
-        // message.contactId is the actual sender's ID (for both 1-to-1 and group messages received)
-        key = await getContactKey(message.contactId);
+        if (message.groupId && message.originalSenderId) {
+          // Received message that is part of an existing group.
+          // message.contactId is the groupId. Key is the originalSenderId's key.
+          key = await getContactKey(message.originalSenderId);
+        } else if (message.groupContextName && message.contactId) {
+          // Received message from a contact, with a group context (group doesn't exist yet or was just a name).
+          // message.contactId is the actual sender's ID. Key is the sender's key.
+          key = await getContactKey(message.contactId);
+        } else if (message.contactId) { // Standard 1-to-1 received message
+          // message.contactId is the sender's ID. Key is the sender's key.
+          key = await getContactKey(message.contactId);
+        }
       }
 
       if (!key) {

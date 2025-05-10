@@ -32,21 +32,29 @@ import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
 import ContactProfile from '../contacts/ContactProfile';
 import GroupProfile from '../contacts/GroupProfile'; // Import GroupProfile
+import AddGroupModal from '../contacts/AddGroupModal'; // Import AddGroupModal
 import { Group } from '@/contexts/ContactsContext'; // Import Group type
 
+interface InitialGroupData {
+  groupName: string;
+  contactId: string;
+  groupContextId?: string;
+}
+
 const ChatInterface = () => {
-  const { activeItem } = useContacts(); 
+  const { activeItem } = useContacts();
   const { messages, sendMessage, markAsRead, clearHistory } = useMessages();
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   // State for confirmation dialog
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  // Removed About dialog state
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [showProfile, setShowProfile] = useState(false); // This state will toggle visibility for both profile types
-  
+  const [showProfile, setShowProfile] = useState(false);
+  const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
+  const [initialGroupDataForModal, setInitialGroupDataForModal] = useState<InitialGroupData | null>(null);
+
   // Get messages for the active item (contact or group)
   const activeMessages = activeItem ? messages[activeItem.id] || [] : [];
   
@@ -105,10 +113,15 @@ const ChatInterface = () => {
   };
 
   const handleClearHistory = () => {
-    if (activeItem) { // Use activeItem
+    if (activeItem) {
       clearHistory(activeItem.id);
-      setIsClearConfirmOpen(false); // Close the dialog after clearing
+      setIsClearConfirmOpen(false);
     }
+  };
+
+  const handleGroupContextClick = (groupName: string, contactId: string, groupContextId?: string) => {
+    setInitialGroupDataForModal({ groupName, contactId, groupContextId });
+    setIsAddGroupModalOpen(true);
   };
   
   // If no active item, show empty state
@@ -190,6 +203,7 @@ const ChatInterface = () => {
                   key={message.id}
                   message={message}
                   onForward={handleForwardMessage}
+                  onGroupContextClick={handleGroupContextClick}
                 />
               ))}
             </div>
@@ -237,6 +251,19 @@ const ChatInterface = () => {
           group={activeItem as Group} // activeItem is a Group here
           isOpen={showProfile}
           onClose={() => setShowProfile(false)}
+        />
+      )}
+
+      {isAddGroupModalOpen && (
+        <AddGroupModal
+          isOpen={isAddGroupModalOpen}
+          onClose={() => {
+            setIsAddGroupModalOpen(false);
+            setInitialGroupDataForModal(null); // Reset initial data
+          }}
+          initialGroupName={initialGroupDataForModal?.groupName}
+          initialSelectedMemberIds={initialGroupDataForModal?.contactId ? [initialGroupDataForModal.contactId] : []}
+          // initialGroupContextId={initialGroupDataForModal?.groupContextId} // Pass if needed by AddGroupModal
         />
       )}
     </div>

@@ -14,6 +14,8 @@ interface GetMessagesApiResponse {
     message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
     message: string;    // Base64 encoded encrypted message content
     timestamp: string;  // ISO timestamp from backend
+    serverGroupId?: string; // Optional: ID of an existing group OR name of a potential new group
+    serverSenderInGroupId?: string; // Optional: Contact ID of the original sender, if serverGroupId is present
   }[];
 }
 
@@ -129,36 +131,79 @@ export const useMessagePolling = ({
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
-         // Log the ID being processed and the result of the map lookup
-         const lookedUpContactId = requestIdToContactIdMap.get(receivedMsg.message_id);
+         const directSenderContactId = requestIdToContactIdMap.get(receivedMsg.message_id); // ID of the contact whose key was used for this message_id
 
-         const contactId = lookedUpContactId; // Use the looked-up value
-         const key = contactId ? contactKeysMap.get(contactId) : null; // Get key using contactId
+         if (!directSenderContactId) {
+           console.warn(`Could not find contact for received message_id (request_id): ${receivedMsg.message_id}. Skipping message: ${JSON.stringify(receivedMsg)}`);
+           continue;
+         }
 
-         if (!contactId || !key) {
-           console.warn(`Could not find contact or key for received message_id: ${JSON.stringify(receivedMsg)}`);
+         let messageForStorage: Partial<Message> = { // Use Partial as we build it up
+           id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
+           content: receivedMsg.message,
+           timestamp: receivedMsg.timestamp,
+           sent: false,
+           read: false,
+           forwarded: false,
+         };
+         let keyForDecryption: CryptoKey | null = null;
+         let effectiveContactIdForMessageList: string | null = null; // Determines which chat list this message goes into
+
+         if (receivedMsg.serverGroupId) {
+           // Message has a group context
+           const existingGroupById = listItems.find(item => item.itemType === 'group' && item.id === receivedMsg.serverGroupId);
+           const existingGroupByName = listItems.find(item => item.itemType === 'group' && item.name === receivedMsg.serverGroupId);
+           const identifiedGroup = existingGroupById || existingGroupByName;
+
+           if (identifiedGroup && receivedMsg.serverSenderInGroupId) {
+             // Scenario 1: Group exists, and we know the original sender within that group.
+             // Message goes into the group's chat.
+             effectiveContactIdForMessageList = identifiedGroup.id;
+             messageForStorage.groupId = identifiedGroup.id;
+             messageForStorage.originalSenderId = receivedMsg.serverSenderInGroupId;
+             // Key for decryption is the original sender's key.
+             keyForDecryption = contactKeysMap.get(receivedMsg.serverSenderInGroupId) || await getContactKey(receivedMsg.serverSenderInGroupId);
+             if (!keyForDecryption) {
+                console.warn(`Could not get key for original sender ${receivedMsg.serverSenderInGroupId} in group ${identifiedGroup.name}. Skipping message.`);
+                continue;
+             }
+           } else {
+             // Scenario 2: Group does not exist (or serverSenderInGroupId missing), message is from directSenderContactId but with a group context name.
+             // Message goes into the direct sender's chat.
+             effectiveContactIdForMessageList = directSenderContactId;
+             messageForStorage.groupContextName = receivedMsg.serverGroupId; // serverGroupId is the group name here
+             if (identifiedGroup) { // If a group with that name was found, store its ID for context
+                messageForStorage.groupContextId = identifiedGroup.id;
+             }
+             // Key for decryption is the direct sender's key.
+             keyForDecryption = contactKeysMap.get(directSenderContactId);
+           }
+         } else {
+           // This is a direct 1-to-1 message.
+           effectiveContactIdForMessageList = directSenderContactId;
+           // Key for decryption is the direct sender's key.
+           keyForDecryption = contactKeysMap.get(directSenderContactId);
+         }
+
+         if (!effectiveContactIdForMessageList) {
+            console.warn(`Could not determine effective contact/group ID for message. Skipping: ${JSON.stringify(receivedMsg)}`);
+            continue;
+         }
+         messageForStorage.contactId = effectiveContactIdForMessageList;
+
+
+         if (!keyForDecryption) {
+           console.warn(`Could not find key for decryption for message associated with effectiveId ${effectiveContactIdForMessageList}. Skipping message: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
 
          try {
-           // We could optionally try decrypting here to validate the message early.
-           // Note: Decryption errors here don't prevent ACK, as we successfully received it.
-           await decryptMessage(receivedMsg.message, key); // Try decrypting to catch errors early
+           await decryptMessage(receivedMsg.message, keyForDecryption); // Try decrypting
          } catch (decryptError) {
-           console.error(`Failed to decrypt message for contact ${contactId} (will store anyway):`, decryptError);
-           // Continue processing even if decryption fails here, store the encrypted message
+           console.error(`Failed to decrypt message for effectiveId ${effectiveContactIdForMessageList} (will store anyway):`, decryptError);
          }
 
-         const newMessage: Message = {
-           id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
-           contactId: contactId,
-           content: receivedMsg.message, // Store encrypted content
-           timestamp: receivedMsg.timestamp, // Use server timestamp
-           sent: false, // Mark as received
-           read: false, // Mark as unread initially
-           forwarded: false, // Assume not forwarded initially
-         };
-         newlyReceivedMessages.push(newMessage);
+         newlyReceivedMessages.push(messageForStorage as Message);
          // Add to the list of messages to acknowledge
          messagesToAck.push({
             message_id: receivedMsg.message_id,
