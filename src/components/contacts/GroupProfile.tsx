@@ -17,7 +17,6 @@ import { useMessages } from '@/contexts/MessagesContext';
 import { useToast } from '@/hooks/use-toast';
 import ContactNameEdit from './shared/ContactNameEdit'; // Reusing for name input
 import { Separator } from '@/components/ui/separator';
-import { format } from 'date-fns';
 
 interface GroupProfileProps {
   group: Group;
@@ -132,13 +131,11 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
   const receivedCount = groupMessages.filter(msg => !msg.sent).length;
   const unreadCount = groupMessages.filter(msg => !msg.sent && !msg.read).length;
 
-  let lastActivityDisplay = "No activity yet";
-  if (groupMessages.length > 0) {
-    const lastMessageTimestamp = groupMessages.reduce((latest, msg) => {
-      return new Date(msg.timestamp) > new Date(latest) ? msg.timestamp : latest;
-    }, groupMessages[0].timestamp);
-    lastActivityDisplay = `Last active: ${format(new Date(lastMessageTimestamp), "PPpp")}`;
-  }
+  const lastMessageTimestamp = groupMessages.length > 0
+    ? groupMessages.reduce((latest, msg) => {
+        return new Date(msg.timestamp) > new Date(latest) ? msg.timestamp : latest;
+      }, groupMessages[0].timestamp)
+    : null;
 
   const hasChanges = tempGroupName.trim() !== group.name ||
                      selectedMemberIds.length !== group.memberIds.length ||
@@ -157,13 +154,6 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             </Avatar>
             <DialogTitle className="text-2xl">{isNameEditing ? "Edit Group Name" : group.name}</DialogTitle>
           </div>
-          <DialogDescription>
-            View and edit group details.
-          </DialogDescription>
-          <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-            <p>Sent: {sentCount} | Received: {receivedCount} {unreadCount > 0 && `| Unread: ${unreadCount}`}</p>
-            <p>{lastActivityDisplay}</p>
-          </div>
         </DialogHeader>
         <Separator className="my-4" />
         <div className="space-y-4 py-1 max-h-[calc(60vh-50px)] overflow-y-auto"> {/* Adjusted max-h to account for stats */}
@@ -175,6 +165,27 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             onEditToggle={handleToggleNameEdit}
             onClear={() => setTempGroupName('')}
           />
+
+          <div className="grid grid-cols-2 gap-4 bg-muted p-4 rounded-lg">
+            <div>
+              <div className="text-sm text-muted-foreground">Sent</div>
+              <div className="text-2xl font-bold">{sentCount}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Received</div>
+              <div className="text-2xl font-bold">{receivedCount}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Unread</div>
+              <div className="text-2xl font-bold">{unreadCount}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted-foreground">Last Active</div>
+              <div className="text-sm">
+                {lastMessageTimestamp ? new Date(lastMessageTimestamp).toLocaleDateString() : 'Never'}
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="group-members" className="text-lg font-medium">
