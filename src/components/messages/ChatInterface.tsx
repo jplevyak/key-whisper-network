@@ -26,15 +26,16 @@ import {
 } from "@/components/ui/dialog";
 import { useContacts } from '@/contexts/ContactsContext';
 import { useMessages, Message } from '@/contexts/MessagesContext';
-import { Send, Fingerprint, Trash2 } from 'lucide-react'; // Remove Info icon import
+import { Send, Fingerprint, Trash2, Users, User } from 'lucide-react'; // Added Users, User
 import { useIsMobile } from '@/hooks/use-mobile';
 import MessageBubble from './MessageBubble';
 import ForwardMessageDialog from './ForwardMessageDialog';
 import ContactProfile from '../contacts/ContactProfile';
+import GroupProfile from '../contact/GroupProfile'; // Import GroupProfile
+import { Group } from '@/contexts/ContactsContext'; // Import Group type
 
 const ChatInterface = () => {
-  const { activeItem: activeContact } = useContacts(); // Correctly alias activeItem to activeContact
-  // Get clearHistory from useMessages
+  const { activeItem } = useContacts(); 
   const { messages, sendMessage, markAsRead, clearHistory } = useMessages();
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
@@ -44,27 +45,27 @@ const ChatInterface = () => {
   // Removed About dialog state
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [showProfile, setShowProfile] = useState(false);
+  const [showProfile, setShowProfile] = useState(false); // This state will toggle visibility for both profile types
   
-  // Get messages for the active contact
-  const activeMessages = activeContact ? messages[activeContact.id] || [] : [];
+  // Get messages for the active item (contact or group)
+  const activeMessages = activeItem ? messages[activeItem.id] || [] : [];
   
-  // Mark unread messages as read when active contact changes
+  // Mark unread messages as read when active item changes
   useEffect(() => {
-    if (activeContact) {
+    if (activeItem) {
       activeMessages
        .filter(msg => !msg.sent && !msg.read)
        .forEach(msg => {
-         markAsRead(activeContact.id, msg.id);
-       }); 
+         markAsRead(activeItem.id, msg.id);
+       });
    }
- }, [activeContact, activeMessages, markAsRead]); // Removed triggerFetch dependency
+ }, [activeItem, activeMessages, markAsRead]);
 
 
  // Scroll to bottom when messages change
  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeMessages]);
+  }, [activeMessages]); // activeMessages dependency is correct
   
   // Effect to set viewport height for mobile devices
   useEffect(() => {
@@ -90,9 +91,9 @@ const ChatInterface = () => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!activeContact || !newMessage.trim()) return;
+    if (!activeItem || !newMessage.trim()) return; // Use activeItem
     
-    const success = await sendMessage(activeContact.id, newMessage);
+    const success = await sendMessage(activeItem.id, newMessage);
     if (success) {
       setNewMessage('');
     }
@@ -104,20 +105,20 @@ const ChatInterface = () => {
   };
 
   const handleClearHistory = () => {
-    if (activeContact) {
-      clearHistory(activeContact.id);
+    if (activeItem) { // Use activeItem
+      clearHistory(activeItem.id);
       setIsClearConfirmOpen(false); // Close the dialog after clearing
     }
   };
   
-  // If no active contact, show empty state
-  if (!activeContact) {
+  // If no active item, show empty state
+  if (!activeItem) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8">
         <div className="p-4 rounded-full bg-muted">
           <Fingerprint className="h-12 w-12 text-muted-foreground" />
         </div>
-        <h3 className="mt-6 text-xl font-semibold">Select a Contact</h3>
+        <h3 className="mt-6 text-xl font-semibold">Select a Chat</h3>
         <p className="mt-2 text-center text-muted-foreground">
           Choose a contact to start an end-to-end encrypted conversation
         </p>
@@ -131,14 +132,21 @@ const ChatInterface = () => {
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
         <div 
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
-          onClick={() => activeContact && setShowProfile(true)}
+          onClick={() => activeItem && setShowProfile(true)} // Use activeItem
         >
           <Avatar className="h-10 w-10">
-            <AvatarImage src={activeContact?.avatar} alt={activeContact?.name} />
-            <AvatarFallback>{activeContact?.name?.substring(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarImage src={activeItem?.avatar} alt={activeItem?.name} />
+            <AvatarFallback>
+              {activeItem?.itemType === 'group' ? <Users className="h-5 w-5" /> : activeItem?.name?.substring(0, 2).toUpperCase()}
+            </AvatarFallback>
           </Avatar>
           <div>
-            <div className="font-medium">{activeContact?.name}</div>
+            <div className="font-medium">{activeItem?.name}</div>
+            {activeItem?.itemType === 'group' && (
+              <div className="text-xs text-muted-foreground">
+                {(activeItem as Group).memberIds.length} member(s)
+              </div>
+            )}
           </div>
         </div>
         {/* Clear History Button and Dialog */}
@@ -217,9 +225,16 @@ const ChatInterface = () => {
         />
       )}
 
-      {activeContact && (
+      {activeItem && showProfile && activeItem.itemType === 'contact' && (
         <ContactProfile
-          contact={activeContact}
+          contact={activeItem} // activeItem is a Contact here
+          isOpen={showProfile}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
+      {activeItem && showProfile && activeItem.itemType === 'group' && (
+        <GroupProfile
+          group={activeItem as Group} // activeItem is a Group here
           isOpen={showProfile}
           onClose={() => setShowProfile(false)}
         />

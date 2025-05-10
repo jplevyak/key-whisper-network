@@ -34,10 +34,11 @@ interface ContactsContextType {
   addGroup: (name: string, memberIds: string[], avatar?: string) => Promise<boolean>;
   getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
   generateContactKey: () => Promise<string>; // For contacts
-  deleteContact: (contactId: string) => void; // TODO: Adapt for groups or add deleteGroup
+  deleteContact: (contactId: string) => void; // Handles both contacts and groups
   forwardingPath: Contact[]; // This likely remains contact-specific for now
   setForwardingPath: (path: Contact[]) => void;
-  updateContact: (contactId: string, updates: Partial<Contact>) => void; // TODO: Adapt for groups or add updateGroup
+  updateContact: (contactId: string, updates: Partial<Contact>) => void;
+  updateGroup: (groupId: string, updates: Partial<Omit<Group, 'id' | 'itemType'>>) => Promise<boolean>;
   updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>;
 }
 
@@ -317,7 +318,29 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
   
-  // TODO: Add updateGroup if needed later
+  const updateGroup = async (groupId: string, updates: Partial<Omit<Group, 'id' | 'itemType'>>): Promise<boolean> => {
+    if (!isDbInitialized) {
+      toast({
+        title: 'Database Not Ready',
+        description: 'Cannot update group. Please wait and try again.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+    setListItems(prevListItems =>
+      prevListItems.map(item =>
+        item.id === groupId && item.itemType === 'group'
+          ? { ...item, ...updates }
+          : item
+      ) as ContactOrGroup[]
+    );
+
+    if (activeItem && activeItem.id === groupId && activeItem.itemType === 'group') {
+      setActiveItem(prev => prev ? { ...prev, ...updates } as Group : null);
+    }
+    // Persistence is handled by the useEffect watching listItems
+    return true; // Assuming success if state is set, persistence handles errors
+  };
 
   // Update the key for an existing contact
   const updateContactKey = async (contactId: string, newKeyData: string): Promise<boolean> => {
@@ -372,7 +395,8 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         deleteContact, // This now handles both based on itemType for deletion from listItems
         forwardingPath,
         setForwardingPath,
-        updateContact, // This is still contact-specific
+        updateContact,
+        updateGroup, // Expose updateGroup
         updateContactKey,
       }}
     >
