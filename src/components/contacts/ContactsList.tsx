@@ -21,7 +21,8 @@ const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
     setActiveItem(item);
     // Only call onContactSelect if the item is a contact,
     // and pass the contact object to the handler.
-    if (item.itemType === 'contact') {
+    // Trim itemType and use optional chaining to guard against potential leading/trailing whitespace or null/undefined values.
+    if (item.itemType?.trim() === 'contact') {
       onContactSelect?.(item as Contact); // Pass the contact item
     }
     // If item is a group, activeItem is set, but onContactSelect is not called.
