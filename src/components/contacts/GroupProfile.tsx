@@ -13,9 +13,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useContacts, Contact, Group } from '@/contexts/ContactsContext';
+import { useMessages } from '@/contexts/MessagesContext';
 import { useToast } from '@/hooks/use-toast';
 import ContactNameEdit from './shared/ContactNameEdit'; // Reusing for name input
 import { Separator } from '@/components/ui/separator';
+import { format } from 'date-fns';
 
 interface GroupProfileProps {
   group: Group;
@@ -24,7 +26,8 @@ interface GroupProfileProps {
 }
 
 const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
-  const { listItems, updateGroup, contacts: allContactsList } = useContacts(); // Assuming updateGroup will be added
+  const { listItems, updateGroup } = useContacts();
+  const { messages } = useMessages();
   const { toast } = useToast();
 
   const [tempGroupName, setTempGroupName] = useState(group.name);
@@ -122,10 +125,22 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
     onClose();
   };
 
-  const currentMemberCount = group.memberIds.length;
   const selectedMemberCount = selectedMemberIds.length;
 
-  const hasChanges = tempGroupName.trim() !== group.name || 
+  const groupMessages = messages[group.id] || [];
+  const sentCount = groupMessages.filter(msg => msg.sent).length;
+  const receivedCount = groupMessages.filter(msg => !msg.sent).length;
+  const unreadCount = groupMessages.filter(msg => !msg.sent && !msg.read).length;
+
+  let lastActivityDisplay = "No activity yet";
+  if (groupMessages.length > 0) {
+    const lastMessageTimestamp = groupMessages.reduce((latest, msg) => {
+      return new Date(msg.timestamp) > new Date(latest) ? msg.timestamp : latest;
+    }, groupMessages[0].timestamp);
+    lastActivityDisplay = `Last active: ${format(new Date(lastMessageTimestamp), "PPpp")}`;
+  }
+
+  const hasChanges = tempGroupName.trim() !== group.name ||
                      selectedMemberIds.length !== group.memberIds.length ||
                      !selectedMemberIds.every(id => group.memberIds.includes(id)) ||
                      !group.memberIds.every(id => selectedMemberIds.includes(id));
@@ -145,9 +160,13 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
           <DialogDescription>
             View and edit group details.
           </DialogDescription>
+          <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+            <p>Sent: {sentCount} | Received: {receivedCount} {unreadCount > 0 && `| Unread: ${unreadCount}`}</p>
+            <p>{lastActivityDisplay}</p>
+          </div>
         </DialogHeader>
         <Separator className="my-4" />
-        <div className="space-y-4 py-1 max-h-[60vh] overflow-y-auto">
+        <div className="space-y-4 py-1 max-h-[calc(60vh-50px)] overflow-y-auto"> {/* Adjusted max-h to account for stats */}
           <ContactNameEdit
             name={isNameEditing ? tempGroupName : group.name}
             isEditing={isNameEditing}
@@ -181,14 +200,7 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
               ))}
             </ScrollArea>
           </div>
-          
-          <Separator className="my-4" />
-          <div className="space-y-1">
-            <h3 className="text-lg font-medium">Statistics</h3>
-            <p className="text-sm text-muted-foreground">Current members: {currentMemberCount}</p>
-            {/* Add more stats as needed */}
-          </div>
-
+          {/* Removed old Statistics block */}
         </div>
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={resetAndClose}>
