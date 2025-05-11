@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { generateAESKey, exportKey, importKey } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
 import { db } from '@/utils/indexedDB';
-import { useMessages } from './MessagesContext'; // Import useMessages
+// Removed: import { useMessages } from './MessagesContext';
 
 // Base interface for items in the list
 interface BaseListItem {
@@ -38,7 +38,7 @@ interface ContactsContextType {
   deleteContact: (contactId: string) => void; // Handles both contacts and groups
   updateContact: (contactId: string, updates: Partial<Contact>) => void;
   updateGroup: (groupId: string, updates: Partial<Omit<Group, 'id' | 'itemType'>>) => Promise<boolean>;
-  updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>;
+  updateContactKey: (contactId: string, newKeyData: string) => Promise<{ success: boolean; oldKey: CryptoKey | null; newKey: CryptoKey | null }>;
 }
 
 const ContactsContext = createContext<ContactsContextType | undefined>(undefined);
@@ -48,7 +48,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [activeItem, setActiveItem] = useState<ContactOrGroup | null>(null);
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(new Map());
   const { toast } = useToast();
-  const messagesContext = useMessages(); // Initialize useMessages
+  // Removed: const messagesContext = useMessages(); 
   const [isDbInitialized, setIsDbInitialized] = useState(false);
 
   // Initialize DB
@@ -316,11 +316,9 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       setActiveItem(null);
     }
 
-    // Clear direct messages and messages from this contact in groups
-    messagesContext.clearHistory(itemId); // Clears direct messages for this contact/group
-    if (itemToDelete.itemType === 'contact') {
-      messagesContext.deleteMessagesFromSenderInGroups(itemId); // Clears messages sent by this contact in all groups
-    }
+    // Message clearing logic will be handled by the calling component (e.g., ContactProfile)
+    // Removed: messagesContext.clearHistory(itemId);
+    // Removed: if (itemToDelete.itemType === 'contact') { messagesContext.deleteMessagesFromSenderInGroups(itemId); }
 
     toast({
       title: `${itemToDelete.itemType === 'contact' ? 'Contact' : 'Group'} Deleted`,
@@ -367,14 +365,14 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   // Update the key for an existing contact
-  const updateContactKey = async (contactId: string, newKeyData: string): Promise<boolean> => {
+  const updateContactKey = async (contactId: string, newKeyData: string): Promise<{ success: boolean; oldKey: CryptoKey | null; newKey: CryptoKey | null }> => {
     if (!isDbInitialized) {
       toast({
         title: 'Database Not Ready',
         description: 'Cannot update contact key. Please wait and try again.',
         variant: 'destructive',
       });
-      return false;
+      return { success: false, oldKey: null, newKey: null };
     }
     const contactItem = listItems.find(item => item.id === contactId && item.itemType === 'contact');
     if (!contactItem) {
@@ -384,34 +382,36 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         description: 'Could not find the contact to update the key.',
         variant: 'destructive',
       });
-      return false;
+      return { success: false, oldKey: null, newKey: null };
     }
     const contact = contactItem as Contact; // Type assertion
 
-    try {
-      const oldKey = await getContactKey(contactId); // Get OLD key before updating
+    let oldKey: CryptoKey | null = null;
+    let newImportedKey: CryptoKey | null = null;
 
-      const newKey = await importKey(newKeyData);
+    try {
+      oldKey = await getContactKey(contactId); // Get OLD key before updating
+
+      newImportedKey = await importKey(newKeyData);
       
       // Update the key in memory and DB
-      setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
+      setContactKeys(prev => new Map(prev).set(contact.keyId, newImportedKey!)); // newImportedKey won't be null if importKey succeeds
       await db.set('keys', contact.keyId, newKeyData); // db.set handles encryption
       console.log(`Key updated successfully for contact ${contact.name}`);
 
-      if (oldKey) {
-        // Re-encrypt messages instead of clearing them
-        await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
-        // Toast for re-encryption is handled within reEncryptMessagesForKeyChange
-      } else {
-        // This case (no old key) should ideally not happen if a key existed.
-        // If it's a first-time key setup for an existing contact placeholder, no messages to re-encrypt.
+      // Message re-encryption will be handled by the calling component (e.g., ContactProfile)
+      // Removed: await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
+      
+      if (!oldKey) {
+        // This toast is relevant if it's the first time a key is set.
+        // If oldKey existed, re-encryption toasts will be shown by MessagesContext.
         toast({
           title: 'Contact Key Set',
           description: `The encryption key for ${contact.name} has been set.`,
         });
       }
-      // The toast messages are now more granular within reEncryptMessagesForKeyChange or here if no old key.
-      return true;
+      // The calling component will handle toasts related to message re-encryption.
+      return { success: true, oldKey, newKey: newImportedKey };
     } catch (error) {
       console.error(`Error updating key for contact ${contactId}:`, error);
       toast({
@@ -419,7 +419,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         description: 'Could not import or save the new encryption key.',
         variant: 'destructive',
       });
-      return false;
+      return { success: false, oldKey, newKey: newImportedKey };
     }
   };
 

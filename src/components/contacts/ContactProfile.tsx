@@ -29,7 +29,7 @@ interface ContactProfileProps {
 
 const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   const { deleteContact, generateContactKey, updateContact, updateContactKey } = useContacts();
-  const { messages, clearHistory } = useMessages();
+  const { messages, clearHistory, deleteMessagesFromSenderInGroups, reEncryptMessagesForKeyChange } = useMessages();
   const { toast } = useToast();
 
   // State for name editing
@@ -81,36 +81,31 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
 
   // Handler for when a scanned key is accepted in QRCodeActions
   const handleScanAccept = async (scannedKeyData: string) => {
-    // Messages will be re-encrypted by updateContactKey, not cleared here.
-    const keyUpdateSuccess = await updateContactKey(contact.id, scannedKeyData);
-    if (keyUpdateSuccess) {
+    const keyUpdateResult = await updateContactKey(contact.id, scannedKeyData);
+    if (keyUpdateResult.success) {
       updateContact(contact.id, { userGeneratedKey: false });
-      // Toast for key update/re-encryption is handled in ContactsContext/MessagesContext
+      if (keyUpdateResult.oldKey && keyUpdateResult.newKey) {
+        await reEncryptMessagesForKeyChange(contact.id, keyUpdateResult.oldKey, keyUpdateResult.newKey);
+      }
+      // Toasts are handled by updateContactKey (for initial set) or reEncryptMessagesForKeyChange
     } else {
-      // Assuming updateContactKey shows its own error toast or logs
+      // Error toast is already shown by updateContactKey if it fails.
       console.error("Failed to update key via scan.");
-      toast({
-          title: 'Key Update Failed',
-          description: 'Could not update the key using the scanned QR code.',
-          variant: 'destructive',
-      });
     }
   };
 
   // Handler for when a newly generated key is accepted in QRCodeActions
   const handleGeneratedKeyAccept = async (newKeyData: string) => {
-    // Messages will be re-encrypted by updateContactKey, not cleared here.
-    const keyUpdateSuccess = await updateContactKey(contact.id, newKeyData);
-    if (keyUpdateSuccess) {
+    const keyUpdateResult = await updateContactKey(contact.id, newKeyData);
+    if (keyUpdateResult.success) {
       updateContact(contact.id, { userGeneratedKey: true });
-      // Toast for key update/re-encryption is handled in ContactsContext/MessagesContext
+      if (keyUpdateResult.oldKey && keyUpdateResult.newKey) {
+        await reEncryptMessagesForKeyChange(contact.id, keyUpdateResult.oldKey, keyUpdateResult.newKey);
+      }
+      // Toasts are handled by updateContactKey (for initial set) or reEncryptMessagesForKeyChange
     } else {
+      // Error toast is already shown by updateContactKey if it fails.
       console.error("Failed to update key with generated data.");
-      toast({
-          title: 'Key Update Failed',
-          description: 'Could not assign the new generated key.',
-          variant: 'destructive',
-      });
     }
   };
 
@@ -133,12 +128,14 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
   };
 
   const handleDeleteContact = () => {
-    deleteContact(contact.id);
+    deleteContact(contact.id); // This will show its own "Contact Deleted" toast.
+    // Now, also clear/delete associated messages
+    clearHistory(contact.id); // This will show "Conversation Cleared" toast.
+    // Since 'contact' prop is of type Contact, itemType is 'contact'.
+    deleteMessagesFromSenderInGroups(contact.id); // This will show "Group Messages Cleaned" toast.
     onClose();
-    toast({
-      title: 'Contact Deleted',
-      description: 'The contact has been removed from your list.',
-    });
+    // The multiple toasts from individual operations might be verbose but confirm actions.
+    // Consider a single summary toast here if preferred, and reduce toasts in context functions.
   };
 
   const handleClearHistory = () => {
