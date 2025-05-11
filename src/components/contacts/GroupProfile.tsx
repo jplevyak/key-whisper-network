@@ -151,7 +151,7 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
         </DialogHeader>
         <div className="space-y-6 py-4">
           <ContactNameEdit
-            name={isNameEditing ? tempGroupName : group.name}
+            name={tempGroupName}
             isEditing={isNameEditing}
             onNameChange={setTempGroupName}
             onSave={handleSaveName} // Saves to temp state, actual update on main save
