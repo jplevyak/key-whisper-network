@@ -40,6 +40,7 @@ interface MessagesContextType {
   clearHistory: (itemId: string) => void;
   moveContextualMessagesToGroup: (sourceContactId: string, targetGroup: Group, originalGroupContextName: string) => Promise<void>;
   deleteMessagesFromSenderInGroups: (senderContactId: string) => void;
+  reEncryptMessagesForKeyChange: (contactId: string, oldKey: CryptoKey, newKey: CryptoKey) => Promise<void>;
 }
 
 // Type for the response from /api/get-messages
@@ -584,6 +585,94 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     });
   };
 
+  // Helper to decrypt with a specific key
+  const _decryptMessageContent = async (encryptedContent: string, key: CryptoKey): Promise<MessageContent | null> => {
+    try {
+      const decryptedJson = await decryptMessage(encryptedContent, key);
+      return JSON.parse(decryptedJson) as MessageContent;
+    } catch (error) {
+      console.error('Helper decryption failed:', error);
+      return null;
+    }
+  };
+
+  // Helper to encrypt with a specific key
+  const _encryptMessageContent = async (messageContent: MessageContent, key: CryptoKey): Promise<string> => {
+    return encryptMessage(JSON.stringify(messageContent), key);
+  };
+
+  const reEncryptMessagesForKeyChange = async (contactId: string, oldKey: CryptoKey, newKey: CryptoKey) => {
+    // Get a snapshot of the current messages to avoid issues with processing stale state
+    // if multiple key changes happen rapidly (though unlikely).
+    const currentMessages = messages; // This will be the state at the time of the call.
+    
+    let finalMessagesState = { ...currentMessages };
+    let overallReEncryptedCount = 0;
+
+    // Direct messages
+    if (finalMessagesState[contactId]) {
+      const directMessages = finalMessagesState[contactId];
+      const reEncryptedDirectMessages: Message[] = [];
+      for (const msg of directMessages) {
+        const decrypted = await _decryptMessageContent(msg.content, oldKey);
+        if (decrypted) {
+          const reEncrypted = await _encryptMessageContent(decrypted, newKey);
+          reEncryptedDirectMessages.push({ ...msg, content: reEncrypted });
+          overallReEncryptedCount++;
+        } else {
+          // If decryption fails (e.g., content was not encrypted with oldKey, or corrupted)
+          // keep the original message to avoid data loss.
+          reEncryptedDirectMessages.push(msg); 
+          console.warn(`Failed to decrypt/re-encrypt direct message ${msg.id} for contact ${contactId}. Keeping original.`);
+        }
+      }
+      finalMessagesState = { ...finalMessagesState, [contactId]: reEncryptedDirectMessages };
+    }
+
+    // Group messages
+    for (const itemId in finalMessagesState) {
+      if (Object.prototype.hasOwnProperty.call(finalMessagesState, itemId)) {
+        const item = listItems.find(i => i.id === itemId);
+        // Process if it's a group AND not the same as contactId (which is direct messages, already handled)
+        if (item && item.itemType === 'group' && itemId !== contactId) { 
+          const groupMessages = finalMessagesState[itemId];
+          const reEncryptedGroupMessages: Message[] = [];
+          for (const msg of groupMessages) {
+            // Only re-encrypt messages sent BY this contact within the group
+            if (!msg.sent && msg.originalSenderId === contactId) {
+              const decrypted = await _decryptMessageContent(msg.content, oldKey);
+              if (decrypted) {
+                const reEncrypted = await _encryptMessageContent(decrypted, newKey);
+                reEncryptedGroupMessages.push({ ...msg, content: reEncrypted });
+                overallReEncryptedCount++;
+              } else {
+                reEncryptedGroupMessages.push(msg);
+                console.warn(`Failed to decrypt/re-encrypt group message ${msg.id} (original sender ${contactId}) in group ${itemId}. Keeping original.`);
+              }
+            } else {
+              reEncryptedGroupMessages.push(msg);
+            }
+          }
+          finalMessagesState = { ...finalMessagesState, [itemId]: reEncryptedGroupMessages };
+        }
+      }
+    }
+
+    if (overallReEncryptedCount > 0) {
+      toast({
+        title: "Messages Re-encrypted",
+        description: `${overallReEncryptedCount} message(s) were re-encrypted with the new key.`,
+      });
+    } else {
+       toast({
+        title: "Key Updated",
+        description: "Contact key updated. No messages required re-encryption or no messages found for this contact.",
+      });
+    }
+    setMessages(finalMessagesState); // Update state once with all changes
+  };
+
+
   return (
     <MessagesContext.Provider
       value={{
@@ -596,6 +685,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         clearHistory,
         moveContextualMessagesToGroup,
         deleteMessagesFromSenderInGroups,
+        reEncryptMessagesForKeyChange,
       }}
     >
       {children}

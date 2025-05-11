@@ -81,22 +81,13 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
 
   // Handler for when a scanned key is accepted in QRCodeActions
   const handleScanAccept = async (scannedKeyData: string) => {
-    clearHistory(contact.id);
-    toast({
-      title: 'Chat History Cleared',
-      description: 'Previous messages removed due to key change.',
-      variant: 'destructive'
-    });
-
+    // Messages will be re-encrypted by updateContactKey, not cleared here.
     const keyUpdateSuccess = await updateContactKey(contact.id, scannedKeyData);
     if (keyUpdateSuccess) {
       updateContact(contact.id, { userGeneratedKey: false });
-      toast({
-        title: 'Key Updated via Scan',
-        description: 'The encryption key has been updated.',
-      });
+      // Toast for key update/re-encryption is handled in ContactsContext/MessagesContext
     } else {
-      // Assuming updateContactKey might show its own error toast or log
+      // Assuming updateContactKey shows its own error toast or logs
       console.error("Failed to update key via scan.");
       toast({
           title: 'Key Update Failed',
@@ -108,20 +99,11 @@ const ContactProfile = ({ contact, isOpen, onClose }: ContactProfileProps) => {
 
   // Handler for when a newly generated key is accepted in QRCodeActions
   const handleGeneratedKeyAccept = async (newKeyData: string) => {
-    clearHistory(contact.id);
-    toast({
-      title: 'Chat History Cleared',
-      description: 'Previous messages removed due to key change.',
-      variant: 'destructive'
-    });
-
+    // Messages will be re-encrypted by updateContactKey, not cleared here.
     const keyUpdateSuccess = await updateContactKey(contact.id, newKeyData);
     if (keyUpdateSuccess) {
       updateContact(contact.id, { userGeneratedKey: true });
-      toast({
-        title: 'Key Updated',
-        description: 'The encryption key has been updated with the new generated key.',
-      });
+      // Toast for key update/re-encryption is handled in ContactsContext/MessagesContext
     } else {
       console.error("Failed to update key with generated data.");
       toast({

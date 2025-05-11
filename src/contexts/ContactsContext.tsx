@@ -389,19 +389,28 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     const contact = contactItem as Contact; // Type assertion
 
     try {
+      const oldKey = await getContactKey(contactId); // Get OLD key before updating
+
       const newKey = await importKey(newKeyData);
+      
+      // Update the key in memory and DB
       setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
       await db.set('keys', contact.keyId, newKeyData); // db.set handles encryption
       console.log(`Key updated successfully for contact ${contact.name}`);
 
-      // Clear messages associated with this contact due to key change
-      messagesContext.clearHistory(contactId);
-      messagesContext.deleteMessagesFromSenderInGroups(contactId);
-      
-      toast({
-        title: 'Contact Key Updated',
-        description: `The encryption key for ${contact.name} has been changed. Their message history has been cleared.`,
-      });
+      if (oldKey) {
+        // Re-encrypt messages instead of clearing them
+        await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
+        // Toast for re-encryption is handled within reEncryptMessagesForKeyChange
+      } else {
+        // This case (no old key) should ideally not happen if a key existed.
+        // If it's a first-time key setup for an existing contact placeholder, no messages to re-encrypt.
+        toast({
+          title: 'Contact Key Set',
+          description: `The encryption key for ${contact.name} has been set.`,
+        });
+      }
+      // The toast messages are now more granular within reEncryptMessagesForKeyChange or here if no old key.
       return true;
     } catch (error) {
       console.error(`Error updating key for contact ${contactId}:`, error);
