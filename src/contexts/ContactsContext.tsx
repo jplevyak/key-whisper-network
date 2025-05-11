@@ -35,8 +35,6 @@ interface ContactsContextType {
   getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
   generateContactKey: () => Promise<string>; // For contacts
   deleteContact: (contactId: string) => void; // Handles both contacts and groups
-  forwardingPath: Contact[]; // This likely remains contact-specific for now
-  setForwardingPath: (path: Contact[]) => void;
   updateContact: (contactId: string, updates: Partial<Contact>) => void;
   updateGroup: (groupId: string, updates: Partial<Omit<Group, 'id' | 'itemType'>>) => Promise<boolean>;
   updateContactKey: (contactId: string, newKeyData: string) => Promise<boolean>;
@@ -48,7 +46,6 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [listItems, setListItems] = useState<ContactOrGroup[]>([]);
   const [activeItem, setActiveItem] = useState<ContactOrGroup | null>(null);
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(new Map());
-  const [forwardingPath, setForwardingPath] = useState<Contact[]>([]); // Assumes forwarding is between contacts
   const { toast } = useToast();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
 
@@ -393,8 +390,6 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         getContactKey,
         generateContactKey,
         deleteContact, // This now handles both based on itemType for deletion from listItems
-        forwardingPath,
-        setForwardingPath,
         updateContact,
         updateGroup, // Expose updateGroup
         updateContactKey,

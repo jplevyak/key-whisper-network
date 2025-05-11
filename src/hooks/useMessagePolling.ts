@@ -14,8 +14,7 @@ interface GetMessagesApiResponse {
     message_id: string; // This is the encrypted request ID (e.g., encrypted "sending to key generator")
     message: string;    // Base64 encoded encrypted message content
     timestamp: string;  // ISO timestamp from backend
-    serverGroupId?: string; // Optional: ID of an existing group OR name of a potential new group
-    serverSenderInGroupId?: string; // Optional: Contact ID of the original sender, if serverGroupId is present
+    group?: string; 
   }[];
 }
 
@@ -47,8 +46,6 @@ export const useMessagePolling = ({
     const actualContacts = listItems.filter(item => item.itemType === 'contact');
 
     if (actualContacts.length === 0) {
-      // Return or throw? Returning allows the loop to continue cleanly.
-      // Throwing might be better if no contacts is an error state. Let's return.
       return;
     }
 
@@ -86,10 +83,6 @@ export const useMessagePolling = ({
 
       if (requestIdsToSend.length === 0) {
         console.log('No valid contacts/keys to fetch messages for.');
-        // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
-        // isFetchingRef.current = false; 
-        // isFetchingRef is not used in this hook anymore, remove if confirmed unnecessary elsewhere
-        // isFetchingRef.current = false; 
         return;
       }
 
@@ -133,9 +126,9 @@ export const useMessagePolling = ({
 
        // Process messages asynchronously first
        for (const receivedMsg of data.results) {
-         const directSenderContactId = requestIdToContactIdMap.get(receivedMsg.message_id); // ID of the contact whose key was used for this message_id
+         const contactId = requestIdToContactIdMap.get(receivedMsg.message_id);
 
-         if (!directSenderContactId) {
+         if (!contactId) {
            console.warn(`Could not find contact for received message_id (request_id): ${receivedMsg.message_id}. Skipping message: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
@@ -148,57 +141,27 @@ export const useMessagePolling = ({
            read: false,
            forwarded: false,
          };
-         let keyForDecryption: CryptoKey | null = null;
-         let effectiveContactIdForMessageList: string | null = null; // Determines which chat list this message goes into
 
-         if (receivedMsg.serverGroupId) {
-           // Message has a group context
-           const existingGroupById = listItems.find(item => item.itemType === 'group' && item.id === receivedMsg.serverGroupId);
-           const existingGroupByName = listItems.find(item => item.itemType === 'group' && item.name === receivedMsg.serverGroupId);
-           const identifiedGroup = existingGroupById || existingGroupByName;
+         let keyForDecryption: CryptoKey | null = contactKeysMap.get(contactId);
 
-           if (identifiedGroup && receivedMsg.serverSenderInGroupId) {
+         if (receivedMsg.group) {
+           const group = listItems.find(item => item.itemType === 'group' && item.name === receivedMsg.group);
+
+           if (group) {
              // Scenario 1: Group exists, and we know the original sender within that group.
              // Message goes into the group's chat.
-             effectiveContactIdForMessageList = identifiedGroup.id;
-             messageForStorage.groupId = identifiedGroup.id;
-             messageForStorage.originalSenderId = receivedMsg.serverSenderInGroupId;
-             // Key for decryption is the original sender's key.
-             keyForDecryption = contactKeysMap.get(receivedMsg.serverSenderInGroupId) || await getContactKey(receivedMsg.serverSenderInGroupId);
-             if (!keyForDecryption) {
-                console.warn(`Could not get key for original sender ${receivedMsg.serverSenderInGroupId} in group ${identifiedGroup.name}. Skipping message.`);
-                continue;
-             }
+             messageForStorage.groupId = group.id;
            } else {
              // Scenario 2: Group does not exist (or serverSenderInGroupId missing), message is from directSenderContactId but with a group context name.
              // Message goes into the direct sender's chat.
-             effectiveContactIdForMessageList = directSenderContactId;
-             messageForStorage.groupContextName = receivedMsg.serverGroupId; // serverGroupId is the group name here
-             if (identifiedGroup) { // If a group with that name was found, store its ID for context
-                messageForStorage.groupContextId = identifiedGroup.id;
-             }
-             // Key for decryption is the direct sender's key.
-             keyForDecryption = contactKeysMap.get(directSenderContactId);
+             messageForStorage.groupContextName = receivedMsg.group;
            }
-         } else {
-           // This is a direct 1-to-1 message.
-           effectiveContactIdForMessageList = directSenderContactId;
-           // Key for decryption is the direct sender's key.
-           keyForDecryption = contactKeysMap.get(directSenderContactId);
          }
-
-         if (!effectiveContactIdForMessageList) {
-            console.warn(`Could not determine effective contact/group ID for message. Skipping: ${JSON.stringify(receivedMsg)}`);
-            continue;
-         }
-         messageForStorage.contactId = effectiveContactIdForMessageList;
-
 
          if (!keyForDecryption) {
            console.warn(`Could not find key for decryption for message associated with effectiveId ${effectiveContactIdForMessageList}. Skipping message: ${JSON.stringify(receivedMsg)}`);
            continue;
          }
-
          try {
            await decryptMessage(receivedMsg.message, keyForDecryption); // Try decrypting
          } catch (decryptError) {
@@ -220,15 +183,15 @@ export const useMessagePolling = ({
            let changed = false;
 
            for (const newMessage of newlyReceivedMessages) {
-             const contactId = newMessage.contactId;
-             const contactMessages = updatedMessages[contactId] || [];
+             const targetId = newMessage.groupId || newMessage.contactId;
+             const contactMessages = updatedMessages[targetId] || [];
              // Check for duplicates based on content and timestamp before adding
              const exists = contactMessages.some(
                m => m.content === newMessage.content && m.timestamp === newMessage.timestamp
              );
 
              if (!exists) {
-               updatedMessages[contactId] = [...contactMessages, newMessage].sort(
+               updatedMessages[targetId] = [...contactMessages, newMessage].sort(
                  (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
                );
                changed = true;
@@ -382,7 +345,6 @@ export const useMessagePolling = ({
 
     // Start the first poll after the initial delay ONLY if authenticated
     initialTimeoutId = setTimeout(() => {
-        // Added isAuthenticated check here too for safety
         if (isMountedRef.current && !signal.aborted && isAuthenticated) { 
             longPoll();
         }
@@ -397,7 +359,6 @@ export const useMessagePolling = ({
       }
       abortControllerRef.current?.abort();
     };
-    // Add isAuthenticated and minPollIntervalMs to dependency array
   }, [fetchMessagesFromServer, initialFetchDelay, isAuthenticated, minPollIntervalMs]);
 
   // Return a function to manually trigger a fetch if needed (optional)

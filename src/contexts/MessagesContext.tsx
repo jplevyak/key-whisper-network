@@ -11,23 +11,19 @@ import { useMessagePolling } from '@/hooks/useMessagePolling';
 // Export the Message interface
 export interface Message {
   id: string; // This will be the local message ID, not the server hash
-  contactId: string; // For 1-1: other user's ID. For group msg sent by user: groupID. For group msg received (where group exists): groupID. For group msg received (where group context only): actual sender's ID.
+  contactId: string;
   groupId?: string;   // If message is part of an existing group chat, this is the group's ID.
-  originalSenderId?: string; // If received message is part of an existing group, this is the actual sender's contact ID.
-  groupContextName?: string; // If a 1-to-1 message has a group context name (group doesn't exist yet).
-  groupContextId?: string; // If groupContextName refers to an existing group.
+  groupContextName?: string;  // If message is received from a contact with a group context, this is the group name.
   content: string; // Encrypted content
   timestamp: string;
   sent: boolean; // true if sent by user, false if received
   read: boolean;
-  forwarded: boolean;
-  forwardedPath?: string[]; // IDs of contacts in forwarding path
   pending?: boolean; // True if the message is pending send to the server
 }
 
 interface MessagesContextType {
   messages: Record<string, Message[]>; // Keyed by itemId (contactId or groupId)
-  sendMessage: (itemId: string, content: string, forwarding?: Contact[]) => Promise<boolean>;
+  sendMessage: (itemId: string, content: string) => Promise<boolean>;
   forwardMessage: (messageId: string, originalItemId: string, targetItemId: string) => Promise<boolean>;
   getDecryptedContent: (message: Message) => Promise<string>;
   markAsRead: (itemId: string, messageId: string) => void;
@@ -95,7 +91,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
  const sendMessage = async (
     itemId: string, // Can be contactId or groupId
     content: string,
-    forwarding: Contact[] = [] // Forwarding path still consists of Contacts
   ): Promise<boolean> => {
     const item = listItems.find(i => i.id === itemId);
     if (!item) {
@@ -104,7 +99,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     }
 
     const localMessageIdBase = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    const isForwarded = forwarding.length > 0;
 
     if (item.itemType === 'contact') {
       const contact = item as Contact;
@@ -138,8 +132,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           timestamp: new Date().toISOString(),
           sent: true,
           read: true,
-          forwarded: isForwarded,
-          forwardedPath: isForwarded ? forwarding.map(c => c.id) : undefined,
           pending: !messageSentToServer,
         };
         setMessages(prev => ({ ...prev, [contact.id]: [...(prev[contact.id] || []), newMessage] }));
@@ -178,8 +170,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         timestamp: new Date().toISOString(),
         sent: true,
         read: true,
-        forwarded: isForwarded,
-        forwardedPath: isForwarded ? forwarding.map(c => c.id) : undefined,
         pending: true, // Initially pending, will be updated after attempts
       };
       setMessages(prev => ({ ...prev, [group.id]: [...(prev[group.id] || []), localGroupMessage] }));
@@ -209,7 +199,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             body: JSON.stringify({
               message_id: requestId,
               message: encryptedContentForMember,
-              group: group.name, // Add group name to the POST body
+              group: group.name,
             }),
           });
           if (!response.ok) {
@@ -262,32 +252,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         return false;
       }
       
-      const newForwardingPath: Contact[] = [];
-      const sourceChatItem = listItems.find(i => i.id === originalItemId);
-
-      // Add the contact representing the chat from which message is forwarded, if it's a contact.
-      // If forwarding from a group, the "source" is implicitly the current user in context of that group.
-      // The original sender of the message (if it was received) will be part of its existing forwardedPath or determined by originalMessage.contactId.
-      if (sourceChatItem && sourceChatItem.itemType === 'contact') {
-        newForwardingPath.push(sourceChatItem as Contact);
-      }
-      
-      if (originalMessage.forwardedPath) {
-        const pathContacts = originalMessage.forwardedPath
-          .map(id => listItems.find(c => c.id === id && c.itemType === 'contact') as Contact | undefined)
-          .filter((c): c is Contact => c !== undefined);
-        newForwardingPath.push(...pathContacts); // Add previous path contacts
-      } else if (!originalMessage.sent && originalMessage.contactId !== originalItemId) {
-        // If it's a received message (not sent by user) and not already part of a long forward chain,
-        // its original sender should be part of the path.
-        const originalSenderContact = listItems.find(c => c.id === originalMessage.contactId && c.itemType === 'contact') as Contact | undefined;
-        if (originalSenderContact && !newForwardingPath.some(p => p.id === originalSenderContact.id)) {
-          newForwardingPath.unshift(originalSenderContact); // Add original sender at the beginning
-        }
-      }
-
-
-      return await sendMessage(targetItemId, decryptedContent, newForwardingPath);
+      return await sendMessage(targetItemId, decryptedContent);
     } catch (error) {
       console.error('Error forwarding message:', error);
       toast({
