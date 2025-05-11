@@ -277,20 +277,38 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     const itemToDelete = listItems.find(item => item.id === itemId);
     if (!itemToDelete) return;
 
-    setListItems(prev => prev.filter(item => item.id !== itemId));
+    setListItems(prevListItems => {
+      let updatedListItems = prevListItems.filter(item => item.id !== itemId);
 
-    if (itemToDelete.itemType === 'contact') {
-      const contact = itemToDelete as Contact;
-      const newContactKeys = new Map(contactKeys);
-      newContactKeys.delete(contact.keyId);
-      setContactKeys(newContactKeys);
-      try {
-        await db.delete('keys', contact.keyId);
-      } catch (error) {
-        console.error('Error deleting contact key from DB:', error);
+      if (itemToDelete.itemType === 'contact') {
+        // Remove the contact from any groups it was a member of
+        updatedListItems = updatedListItems.map(item => {
+          if (item.itemType === 'group') {
+            const group = item as Group;
+            return {
+              ...group,
+              memberIds: group.memberIds.filter(memberId => memberId !== itemId),
+            };
+          }
+          return item;
+        });
+
+        // Handle contact-specific key deletion
+        const contact = itemToDelete as Contact;
+        const newContactKeys = new Map(contactKeys);
+        newContactKeys.delete(contact.keyId);
+        setContactKeys(newContactKeys);
+        // Asynchronously delete the key from DB, don't block UI updates
+        db.delete('keys', contact.keyId).catch(error => {
+          console.error('Error deleting contact key from DB:', error);
+          // Optionally, inform the user if critical, though key deletion failure
+          // might not be immediately apparent or critical for UI flow.
+        });
       }
-    }
-    // If itemToDelete.itemType === 'group', its deletion from listItems is handled by useEffect saving groups.
+      // If itemToDelete.itemType === 'group', its deletion from listItems is already handled by the filter.
+      // The useEffect watching listItems will persist these changes.
+      return updatedListItems;
+    });
 
     if (activeItem && activeItem.id === itemId) {
       setActiveItem(null);
