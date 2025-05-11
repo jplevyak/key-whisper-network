@@ -16,20 +16,21 @@ import { useContacts, Contact } from '@/contexts/ContactsContext';
 import { useToast } from '@/hooks/use-toast';
 import ContactNameEdit from './shared/ContactNameEdit'; // Reusing for name input
 import Haikunator from 'haikunator';
+import { Group } from '@/contexts/ContactsContext'; // Import Group type
 
 interface AddGroupModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (createdGroup?: Group) => void; // Updated to pass Group object
   initialGroupName?: string;
   initialSelectedMemberIds?: string[];
   // initialGroupContextId?: string; // Not directly used for creation logic yet, but can be passed
 }
 
-const AddGroupModal = ({ 
-  isOpen, 
-  onClose, 
-  initialGroupName, 
-  initialSelectedMemberIds 
+const AddGroupModal = ({
+  isOpen,
+  onClose,
+  initialGroupName,
+  initialSelectedMemberIds
 }: AddGroupModalProps) => {
   const haikunator = useMemo(() => new Haikunator(), []);
   const { listItems, addGroup } = useContacts();
@@ -115,12 +116,16 @@ const AddGroupModal = ({
 
     // For now, groups will use a default avatar. This can be expanded later.
     // const defaultGroupAvatar = '/icons/group-avatar-default.svg'; // Example path
-    const success = await addGroup(groupName, selectedMemberIds /*, defaultGroupAvatar */);
-    if (success) {
-      onClose(); // Close modal on successful creation
+    const newGroup = await addGroup(groupName, selectedMemberIds /*, defaultGroupAvatar */);
+    if (newGroup) {
+      onClose(newGroup); // Pass the new group on successful creation
+    } else {
+      // Optionally, handle the case where group creation failed but modal shouldn't close,
+      // or ensure onClose is called without args if it should still close.
+      // For now, assuming failure means modal stays open or error is handled by addGroup's toast.
     }
   };
-  
+
   const ensureNameIsSaved = (): boolean => {
     if (isNameEditing) {
       return handleSaveName();
@@ -134,15 +139,15 @@ const AddGroupModal = ({
   const isCreateButtonDisabled = isNameEditing || !groupName.trim() || selectedMemberIds.length === 0;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { 
+    <Dialog open={isOpen} onOpenChange={(open) => {
       if (!open) {
-        onClose(); 
+        onClose(); // Call without arguments for external close
         // Explicitly reset internal state on external close, as props might not change for next open
-        setGroupName(''); 
+        setGroupName('');
         setTempGroupName('');
         setIsNameEditing(false);
         setSelectedMemberIds([]);
-      } 
+      }
     }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>

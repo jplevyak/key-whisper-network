@@ -38,6 +38,7 @@ interface MessagesContextType {
   markAsRead: (itemId: string, messageId: string) => void;
   deleteMessage: (itemId: string, messageId: string) => void;
   clearHistory: (itemId: string) => void;
+  moveContextualMessagesToGroup: (sourceContactId: string, targetGroup: Group, originalGroupContextName: string) => Promise<void>;
 }
 
 // Type for the response from /api/get-messages
@@ -495,6 +496,55 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     return () => clearInterval(intervalId);
   }, [retryPendingMessages]);
 
+  const moveContextualMessagesToGroup = async (
+    sourceContactId: string,
+    targetGroup: Group,
+    originalGroupContextName: string
+  ) => {
+    setMessages(prevMessages => {
+      const newMessagesState = { ...prevMessages };
+      const sourceMessages = newMessagesState[sourceContactId] || [];
+      const messagesToMove: Message[] = [];
+      const remainingSourceMessages: Message[] = [];
+
+      for (const msg of sourceMessages) {
+        // We'll rely on msg.groupContextName for identification
+        if (msg.groupContextName === originalGroupContextName) {
+          const movedMessage = { ...msg };
+          movedMessage.groupId = targetGroup.id;
+          delete movedMessage.groupContextName; // Clear the context name
+
+          if (movedMessage.sent) { // Message sent by current user
+            movedMessage.contactId = targetGroup.id; // Associate with group for sender's view
+          } else { // Message received from the contact
+            // contactId remains the sourceContactId (actual sender)
+            movedMessage.originalSenderId = sourceContactId;
+          }
+          messagesToMove.push(movedMessage);
+        } else {
+          remainingSourceMessages.push(msg);
+        }
+      }
+
+      if (messagesToMove.length > 0) {
+        newMessagesState[sourceContactId] = remainingSourceMessages;
+        newMessagesState[targetGroup.id] = [
+          ...(newMessagesState[targetGroup.id] || []),
+          ...messagesToMove,
+        ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Keep messages sorted
+
+        if (remainingSourceMessages.length === 0) {
+          delete newMessagesState[sourceContactId];
+        }
+        toast({
+          title: "Messages Moved",
+          description: `${messagesToMove.length} message(s) moved to group "${targetGroup.name}".`
+        });
+      }
+      return newMessagesState;
+    });
+  };
+
   return (
     <MessagesContext.Provider
       value={{
@@ -503,11 +553,12 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         forwardMessage,
         getDecryptedContent,
         markAsRead,
-      deleteMessage,
-      clearHistory,
-      // triggerFetch, // Removed
-    }}
-  >
+        deleteMessage,
+        clearHistory,
+        moveContextualMessagesToGroup,
+        // triggerFetch, // Removed
+      }}
+    >
       {children}
     </MessagesContext.Provider>
   );

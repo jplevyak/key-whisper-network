@@ -42,8 +42,8 @@ interface InitialGroupData {
 }
 
 const ChatInterface = () => {
-  const { activeItem } = useContacts();
-  const { messages, sendMessage, markAsRead, clearHistory } = useMessages();
+  const { activeItem, setActiveItem } = useContacts(); // Added setActiveItem
+  const { messages, sendMessage, markAsRead, clearHistory, moveContextualMessagesToGroup } = useMessages();
   const [newMessage, setNewMessage] = useState('');
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -236,7 +236,16 @@ const ChatInterface = () => {
       {isAddGroupModalOpen && (
         <AddGroupModal
           isOpen={isAddGroupModalOpen}
-          onClose={() => {
+          onClose={async (createdGroup?: Group) => {
+            if (createdGroup && initialGroupDataForModal?.contactId && initialGroupDataForModal?.groupName) {
+              await moveContextualMessagesToGroup(
+                initialGroupDataForModal.contactId,
+                createdGroup,
+                initialGroupDataForModal.groupName
+              );
+              // Optionally, switch active chat to the new group
+              setActiveItem(createdGroup);
+            }
             setIsAddGroupModalOpen(false);
             setInitialGroupDataForModal(null); // Reset initial data
           }}

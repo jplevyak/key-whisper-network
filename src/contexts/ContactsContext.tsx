@@ -31,7 +31,7 @@ interface ContactsContextType {
   activeItem: ContactOrGroup | null;
   setActiveItem: (item: ContactOrGroup | null) => void;
   addContact: (name: string, avatar: string, keyData: string, userGeneratedKey: boolean) => Promise<boolean>;
-  addGroup: (name: string, memberIds: string[], avatar?: string) => Promise<boolean>;
+  addGroup: (name: string, memberIds: string[], avatar?: string) => Promise<Group | null>; // Return Group or null
   getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
   generateContactKey: () => Promise<string>; // For contacts
   deleteContact: (contactId: string) => void; // Handles both contacts and groups
@@ -201,7 +201,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     }
   };
 
-  const addGroup = async (name: string, memberIds: string[], avatar?: string): Promise<boolean> => {
+  const addGroup = async (name: string, memberIds: string[], avatar?: string): Promise<Group | null> => {
     try {
       const newGroup: Group = {
         id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -218,7 +218,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         title: 'Group Created',
         description: `${name} has been created.`,
       });
-      return true;
+      return newGroup;
     } catch (error) {
       console.error('Error creating group:', error);
       toast({
@@ -226,7 +226,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
         description: 'Could not create group.',
         variant: 'destructive',
       });
-      return false;
+      return null;
     }
   };
 
