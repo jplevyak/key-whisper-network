@@ -17,29 +17,46 @@ const MessageBubble = ({ message, onForward, onGroupContextClick }: MessageBubbl
   const { listItems } = useContacts(); // Use listItems to find contacts
   const [decryptedContent, setDecryptedContent] = useState<string>('');
   const [decrypting, setDecrypting] = useState<boolean>(true);
-  
-  // Decrypt the message content when the component mounts
+  const [senderDisplayName, setSenderDisplayName] = useState<string | null>(null);
+
+  // Decrypt the message content and determine sender display name
   useEffect(() => {
-    const decrypt = async () => {
+    const processMessage = async () => {
       setDecrypting(true);
       const content = await getDecryptedContent(message);
       setDecryptedContent(content);
       setDecrypting(false);
+
+      if (!message.sent && message.groupId && message.originalSenderId) {
+        const sender = listItems.find(item => item.id === message.originalSenderId && item.itemType === 'contact') as Contact | undefined;
+        setSenderDisplayName(sender?.name || 'Unknown Sender');
+      } else {
+        setSenderDisplayName(null);
+      }
     };
     
-    decrypt();
-  }, [message, getDecryptedContent]);
+    processMessage();
+  }, [message, getDecryptedContent, listItems]);
   
   // Format message timestamp
   const formattedTime = formatDistanceToNow(new Date(message.timestamp), { addSuffix: true });
   
   // Get forwarded info
   const forwardingInfo = message.forwarded && message.forwardedPath 
-    ? message.forwardedPath.map(id => contacts.find(c => c.id === id)?.name).filter(Boolean)
+    ? message.forwardedPath.map(id => {
+        const contact = listItems.find(c => c.id === id && c.itemType === 'contact') as Contact | undefined;
+        return contact?.name;
+      }).filter(Boolean)
     : [];
   
   // Check if message is sent or received
   const isSent = message.sent;
+
+  const handleGroupContextNameClick = () => {
+    if (onGroupContextClick && message.groupContextName && message.contactId) {
+      onGroupContextClick(message.groupContextName, message.contactId, message.groupContextId);
+    }
+  };
   
   return (
     <div className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}>
@@ -48,6 +65,23 @@ const MessageBubble = ({ message, onForward, onGroupContextClick }: MessageBubbl
           ? 'bg-primary text-primary-foreground rounded-tr-none' 
           : 'bg-muted rounded-tl-none'
       }`}>
+        {/* Display sender name for group messages received */}
+        {!isSent && senderDisplayName && (
+          <div className="text-xs font-semibold mb-1">
+            {senderDisplayName}
+          </div>
+        )}
+
+        {/* Display group context name if present and clickable */}
+        {!isSent && message.groupContextName && (
+          <div 
+            className={`text-xs mb-1 italic ${onGroupContextClick ? 'cursor-pointer hover:underline text-blue-500' : (isSent ? 'text-primary-foreground/80' : 'text-muted-foreground')}`}
+            onClick={onGroupContextClick ? handleGroupContextNameClick : undefined}
+          >
+            via <Users size={12} className="inline mr-1" /> {message.groupContextName}
+          </div>
+        )}
+
         {message.forwarded && forwardingInfo.length > 0 && (
           <div className={`text-xs mb-1 italic ${
             isSent ? 'text-primary-foreground/80' : 'text-muted-foreground'

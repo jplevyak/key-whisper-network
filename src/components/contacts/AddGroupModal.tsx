@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -31,7 +31,7 @@ const AddGroupModal = ({
   initialGroupName, 
   initialSelectedMemberIds 
 }: AddGroupModalProps) => {
-  const haikunator = new Haikunator();
+  const haikunator = useMemo(() => new Haikunator(), []);
   const { listItems, addGroup } = useContacts();
   const { toast } = useToast();
 
