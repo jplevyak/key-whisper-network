@@ -137,25 +137,26 @@ interface ForwardPreviewProps {
 
 const ForwardPreview = ({ message }: ForwardPreviewProps) => {
   const { getDecryptedContent } = useMessages();
-  const [decryptedContent, setDecryptedContent] = useState<string>('');
+  const [decryptedText, setDecryptedText] = useState<string>('');
   
   React.useEffect(() => {
-    const decrypt = async () => {
-      const content = await getDecryptedContent(message).message;
+    const decryptAndSet = async () => {
+      const contentObj = await getDecryptedContent(message);
+      const text = contentObj ? contentObj.message : '';
       // Truncate long messages
-      if (content.length > 100) {
-        setDecryptedContent(content.substring(0, 100) + '...');
+      if (text.length > 100) {
+        setDecryptedText(text.substring(0, 100) + '...');
       } else {
-        setDecryptedContent(content);
+        setDecryptedText(text);
       }
     };
     
-    decrypt();
+    decryptAndSet();
   }, [message, getDecryptedContent]);
   
   return (
     <div className="text-sm font-medium">
-      {decryptedContent || 'Decrypting...'}
+      {decryptedText || 'Decrypting...'}
     </div>
   );
 };

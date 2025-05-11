@@ -23,11 +23,12 @@ const MessageBubble = ({ message, onForward, onGroupContextClick }: MessageBubbl
   useEffect(() => {
     const processMessage = async () => {
       setDecrypting(true);
-      const message = await getDecryptedContent(message);
-      setDecryptedContent(message.message);
+      const decryptedData = await getDecryptedContent(message);
+      setDecryptedContent(decryptedData ? decryptedData.message : '[Decryption Error]');
       setDecrypting(false);
 
-      if (!message.sent && message.groupId && message.originalSenderId) {
+      // Access original message prop for sender info, not the decrypted content object
+      if (!message.sent && message.groupId && message.originalSenderId) { 
         const sender = listItems.find(item => item.id === message.originalSenderId && item.itemType === 'contact') as Contact | undefined;
         setSenderDisplayName(sender?.name || 'Unknown Sender');
       } else {

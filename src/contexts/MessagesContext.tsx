@@ -8,24 +8,33 @@ import { loadMessagesFromStorage, saveMessagesToStorage } from '@/services/messa
 import { useMessagePolling } from '@/hooks/useMessagePolling';
 // Buffer utils are no longer needed directly in this file
 
+// Define the structure of the content being encrypted/decrypted
+export interface MessageContent {
+  message: string;
+  group?: string; // Optional: name of the group if it's a group message
+}
+
 // Export the Message interface
 export interface Message {
   id: string; // This will be the local message ID, not the server hash
   contactId: string;
   groupId?: string;   // If message is part of an existing group chat, this is the group's ID.
   groupContextName?: string;  // If message is received from a contact with a group context, this is the group name.
-  message: string; // Encrypted content
+  content: string; // Encrypted MessageContent (JSON stringified)
   timestamp: string;
   sent: boolean; // true if sent by user, false if received
   read: boolean;
   pending?: boolean; // True if the message is pending send to the server
+  originalSenderId?: string; // ID of the original sender (for received group messages)
+  forwarded?: boolean; // True if the message was forwarded
+  forwardedPath?: string[]; // Array of contact IDs representing the forwarding path
 }
 
 interface MessagesContextType {
   messages: Record<string, Message[]>; // Keyed by itemId (contactId or groupId)
-  sendMessage: (itemId: string, content: string) => Promise<boolean>;
+  sendMessage: (itemId: string, textContent: string) => Promise<boolean>;
   forwardMessage: (messageId: string, originalItemId: string, targetItemId: string) => Promise<boolean>;
-  getDecryptedContent: (message: Message) => Promise<string>;
+  getDecryptedContent: (message: Message) => Promise<MessageContent | null>;
   markAsRead: (itemId: string, messageId: string) => void;
   deleteMessage: (itemId: string, messageId: string) => void;
   clearHistory: (itemId: string) => void;
@@ -90,7 +99,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
  // Send a message to a contact or group
  const sendMessage = async (
     itemId: string, // Can be contactId or groupId
-    content: string,
+    textContent: string,
   ): Promise<boolean> => {
     const item = listItems.find(i => i.id === itemId);
     if (!item) {
@@ -108,7 +117,8 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           toast({ title: 'Error', description: `Could not find encryption key for ${contact.name}.`, variant: 'destructive' });
           return false;
         }
-        const encryptedMessageBase64 = await encryptMessage(JSON.stringify({ message: content }), key);
+        const messageContent: MessageContent = { message: textContent };
+        const encryptedMessageBase64 = await encryptMessage(JSON.stringify(messageContent), key);
         const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
 
         let messageSentToServer = false;
@@ -128,7 +138,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         const newMessage: Message = {
           id: `${localMessageIdBase}-c-${contact.id}`,
           contactId: contact.id,
-          message: encryptedMessagetBase64,
+          content: encryptedMessageBase64,
           timestamp: new Date().toISOString(),
           sent: true,
           read: true,
@@ -160,13 +170,14 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         toast({ title: 'Encryption Error', description: `Cannot get key for ${firstMemberContact.name} (for local group message).`, variant: 'destructive' });
         return false;
       }
-      const localEncryptedMesssage = await encryptMessage(JSON.stringify({message: content, group: group.name}), keyForLocalEncryption);
+      const groupMessageContent: MessageContent = { message: textContent, group: group.name };
+      const localEncryptedMessage = await encryptMessage(JSON.stringify(groupMessageContent), keyForLocalEncryption);
       
       const localGroupMessage: Message = {
         id: `${localMessageIdBase}-g-${group.id}`,
         contactId: group.id, // For sender's view, contactId is the groupId
         groupId: group.id,
-        message: localEncryptedMessage,
+        content: localEncryptedMessage,
         timestamp: new Date().toISOString(),
         sent: true,
         read: true,
@@ -190,7 +201,8 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             allSendsSuccessful = false;
             continue;
           }
-          const encryptedContentForMember = await encryptMessage(JSON.stringify({ message: content, group: group.name }), memberKey);
+          const memberMessageContent: MessageContent = { message: textContent, group: group.name };
+          const encryptedContentForMember = await encryptMessage(JSON.stringify(memberMessageContent), memberKey);
           const requestId = await generateStableRequestId(memberContact.userGeneratedKey, memberKey);
           
           const response = await fetch('/api/put-message', {
@@ -244,14 +256,13 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         return false;
       }
 
-      const decryptedMessage = await getDecryptedContent(originalMessage);
-      // Check if decryption failed (returned placeholder error string)
-      if (!decryptedMessage) {
+      const decryptedMessageContent = await getDecryptedContent(originalMessage);
+      if (!decryptedMessageContent || !decryptedMessageContent.message) {
         toast({ title: 'Error', description: 'Could not decrypt the message to forward.', variant: 'destructive' });
         return false;
       }
       
-      return await sendMessage(targetItemId, decryptedMessage.message);
+      return await sendMessage(targetItemId, decryptedMessageContent.message);
     } catch (error) {
       console.error('Error forwarding message:', error);
       toast({
@@ -264,7 +275,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   // Get decrypted content of a message
-  const getDecryptedContent = async (message: Message): Promise<string> => {
+  const getDecryptedContent = async (message: Message): Promise<MessageContent | null> => {
     try {
       let key: CryptoKey | null = null;
       if (message.sent) { // Message sent by the current user
@@ -299,10 +310,12 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       if (!key) {
         return null;
       }
-      return await JSON.parse(decryptMessage(message.message, key));
+      const decryptedJson = await decryptMessage(message.content, key);
+      return JSON.parse(decryptedJson) as MessageContent;
     } catch (error) {
       console.error('Error decrypting message:', error, message);
-      return null;
+      // Ensure a null is returned on error, matching the Promise type
+      return null; 
     }
   };
 
@@ -381,7 +394,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             const response = await fetch('/api/put-message', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message_id: requestId, message: message.message }),
+              body: JSON.stringify({ message_id: requestId, message: message.content }),
             });
 
             if (response.ok) {
@@ -441,7 +454,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
                 body: JSON.stringify({
                   message_id: requestId,
                   message: encryptedMessageForMember,
-                  group: group.name,
+                  // group: group.name, // Group name is now part of the encrypted MessageContent
                 }),
               });
               if (!response.ok) {
