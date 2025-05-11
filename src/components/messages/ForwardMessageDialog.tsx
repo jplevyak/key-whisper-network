@@ -141,7 +141,7 @@ const ForwardPreview = ({ message }: ForwardPreviewProps) => {
   
   React.useEffect(() => {
     const decrypt = async () => {
-      const content = await getDecryptedContent(message);
+      const content = await getDecryptedContent(message).message;
       // Truncate long messages
       if (content.length > 100) {
         setDecryptedContent(content.substring(0, 100) + '...');

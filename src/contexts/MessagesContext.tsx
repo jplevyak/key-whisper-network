@@ -14,7 +14,7 @@ export interface Message {
   contactId: string;
   groupId?: string;   // If message is part of an existing group chat, this is the group's ID.
   groupContextName?: string;  // If message is received from a contact with a group context, this is the group name.
-  content: string; // Encrypted content
+  message: string; // Encrypted content
   timestamp: string;
   sent: boolean; // true if sent by user, false if received
   read: boolean;
@@ -108,7 +108,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           toast({ title: 'Error', description: `Could not find encryption key for ${contact.name}.`, variant: 'destructive' });
           return false;
         }
-        const encryptedContentBase64 = await encryptMessage(content, key);
+        const encryptedMessageBase64 = await encryptMessage(JSON.stringify({ message: content }), key);
         const requestId = await generateStableRequestId(contact.userGeneratedKey, key);
 
         let messageSentToServer = false;
@@ -116,7 +116,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
           const response = await fetch('/api/put-message', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message_id: requestId, message: encryptedContentBase64 }),
+            body: JSON.stringify({ message_id: requestId, message: encryptedMessageBase64 }),
           });
           if (!response.ok) throw new Error(`API error ${response.status}: ${await response.text()}`);
           messageSentToServer = true;
@@ -128,7 +128,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         const newMessage: Message = {
           id: `${localMessageIdBase}-c-${contact.id}`,
           contactId: contact.id,
-          content: encryptedContentBase64,
+          message: encryptedMessagetBase64,
           timestamp: new Date().toISOString(),
           sent: true,
           read: true,
@@ -160,13 +160,13 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         toast({ title: 'Encryption Error', description: `Cannot get key for ${firstMemberContact.name} (for local group message).`, variant: 'destructive' });
         return false;
       }
-      const localEncryptedContent = await encryptMessage(content, keyForLocalEncryption);
+      const localEncryptedMesssage = await encryptMessage(JSON.stringify({message: content, group: group.name}), keyForLocalEncryption);
       
       const localGroupMessage: Message = {
         id: `${localMessageIdBase}-g-${group.id}`,
         contactId: group.id, // For sender's view, contactId is the groupId
         groupId: group.id,
-        content: localEncryptedContent,
+        message: localEncryptedMessage,
         timestamp: new Date().toISOString(),
         sent: true,
         read: true,
@@ -190,7 +190,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             allSendsSuccessful = false;
             continue;
           }
-          const encryptedContentForMember = await encryptMessage(content, memberKey);
+          const encryptedContentForMember = await encryptMessage(JSON.stringify({ message: content, group: group.name }), memberKey);
           const requestId = await generateStableRequestId(memberContact.userGeneratedKey, memberKey);
           
           const response = await fetch('/api/put-message', {
@@ -199,7 +199,6 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             body: JSON.stringify({
               message_id: requestId,
               message: encryptedContentForMember,
-              group: group.name,
             }),
           });
           if (!response.ok) {
@@ -245,14 +244,14 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         return false;
       }
 
-      const decryptedContent = await getDecryptedContent(originalMessage);
+      const decryptedMessage = await getDecryptedContent(originalMessage);
       // Check if decryption failed (returned placeholder error string)
-      if (decryptedContent.startsWith('[Could not decrypt') || decryptedContent.startsWith('[Decryption failed')) {
+      if (!decryptedMessage) {
         toast({ title: 'Error', description: 'Could not decrypt the message to forward.', variant: 'destructive' });
         return false;
       }
       
-      return await sendMessage(targetItemId, decryptedContent);
+      return await sendMessage(targetItemId, decryptedMessage.message);
     } catch (error) {
       console.error('Error forwarding message:', error);
       toast({
@@ -298,12 +297,12 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
       }
 
       if (!key) {
-        return '[Could not decrypt - key missing]';
+        return null;
       }
-      return await decryptMessage(message.content, key);
+      return await JSON.parse(decryptMessage(message.message, key));
     } catch (error) {
       console.error('Error decrypting message:', error, message);
-      return '[Decryption failed]';
+      return null;
     }
   };
 
@@ -382,7 +381,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
             const response = await fetch('/api/put-message', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ message_id: requestId, message: message.content }),
+              body: JSON.stringify({ message_id: requestId, message: message.message }),
             });
 
             if (response.ok) {
@@ -414,9 +413,9 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
              continue;
           }
           console.log(`Retrying group message ID: ${message.id} for group: ${group.name}`);
-          const decryptedContent = await getDecryptedContent(message); // Decrypts using first member's key
+          const decryptedMessage = await getDecryptedContent(message); // Decrypts using first member's key
           
-          if (decryptedContent.startsWith('[Could not decrypt') || decryptedContent.startsWith('[Decryption failed')) {
+          if (!decryptedMessage) {
             console.error(`Cannot retry group message ${message.id}: decryption failed.`);
             continue;
           }
@@ -434,14 +433,14 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
               allMemberSendsSuccessful = false; continue;
             }
             try {
-              const encryptedContentForMember = await encryptMessage(decryptedContent, memberKey);
+              const encryptedMessageForMember = await encryptMessage(JSON.stringify(decryptedMessage), memberKey);
               const requestId = await generateStableRequestId(memberContact.userGeneratedKey, memberKey);
               const response = await fetch('/api/put-message', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   message_id: requestId,
-                  message: encryptedContentForMember,
+                  message: encryptedMessageForMember,
                   group: group.name,
                 }),
               });

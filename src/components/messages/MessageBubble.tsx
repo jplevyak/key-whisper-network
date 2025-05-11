@@ -23,8 +23,8 @@ const MessageBubble = ({ message, onForward, onGroupContextClick }: MessageBubbl
   useEffect(() => {
     const processMessage = async () => {
       setDecrypting(true);
-      const content = await getDecryptedContent(message);
-      setDecryptedContent(content);
+      const message = await getDecryptedContent(message);
+      setDecryptedContent(message.message);
       setDecrypting(false);
 
       if (!message.sent && message.groupId && message.originalSenderId) {
