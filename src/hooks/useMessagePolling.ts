@@ -21,6 +21,7 @@ interface GetMessagesApiResponse {
 
 interface UseMessagePollingOptions {
   setMessages: React.Dispatch<React.SetStateAction<Record<string, Message[]>>>;
+  activeItemId?: string | null; // ID of the currently active contact or group in ChatInterface
   initialFetchDelay?: number;
   longPollTimeoutMs?: number; // Timeout for a single long poll request
   minPollIntervalMs?: number; // Minimum time between the start of polls
@@ -30,6 +31,7 @@ const MIN_POLL_INTERVAL_MS = 1000; // Default minimum interval of 1 second
 
 export const useMessagePolling = ({
   setMessages,
+  activeItemId = null, // Default to null if not provided
   initialFetchDelay = 500, // Delay before the *first* poll starts
   longPollTimeoutMs = 300000, // Timeout for a single long poll request (5 minutes)
   minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
@@ -264,7 +266,11 @@ export const useMessagePolling = ({
 
 
        if (newMessagesAdded) {
-         toast({ title: "New Messages", description: "You have received new messages." });
+         // Show toast only if no chat is active, or if the new messages are not for the currently active chat.
+         const showToast = !activeItemId || !newlyReceivedMessages.some(msg => msg.contactId === activeItemId);
+         if (showToast) {
+           toast({ title: "New Messages", description: "You have received new messages." });
+         }
        }
       } else {
         // This is expected during long polling timeouts
@@ -280,7 +286,7 @@ export const useMessagePolling = ({
       throw error; // Re-throw other errors
     }
     // No finally block needed here, the loop handles continuation/stopping
-  }, [listItems, getContactKey, setMessages, toast, longPollTimeoutMs]); // Changed contacts to listItems
+  }, [listItems, getContactKey, setMessages, toast, longPollTimeoutMs, activeItemId]); // Added activeItemId
 
   useEffect(() => {
     isMountedRef.current = true;

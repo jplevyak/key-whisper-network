@@ -52,7 +52,7 @@ const MessagesContext = createContext<MessagesContextType | undefined>(undefined
 
 export const MessagesProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
-  const { getContactKey, listItems } = useContacts(); // Use listItems
+  const { getContactKey, listItems, activeItem } = useContacts(); // Use listItems and get activeItem
   const { toast } = useToast();
   // Fetching logic and refs moved to useMessagePolling hook
 
@@ -88,7 +88,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
  }, [messages]);
 
  // Use the message polling hook - it runs automatically
- useMessagePolling({ setMessages }); // This hook might need adjustments for group messages
+ useMessagePolling({ setMessages, activeItemId: activeItem?.id });
 
 
  // Send a message to a contact or group
