@@ -106,7 +106,7 @@ const ChatInterface = () => {
   // If no active item, show empty state
   if (!activeItem) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
+      <div className="h-screen flex flex-col items-center justify-center p-8">
         <div className="p-4 rounded-full bg-muted">
           <Fingerprint className="h-12 w-12 text-muted-foreground" />
         </div>
@@ -119,7 +119,7 @@ const ChatInterface = () => {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-screen flex flex-col">
       {/* Fixed Chat Header */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
         <div 
