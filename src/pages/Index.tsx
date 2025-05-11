@@ -50,6 +50,20 @@ const IndexContent = () => {
       document.documentElement.style.setProperty('--header-height', headerHeight);
       document.documentElement.style.setProperty('--input-height', '4rem'); // Set input height var
     }
+
+    // Effect to set viewport height for mobile devices
+    const setVh = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    setVh();
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', setVh);
+
+    return () => {
+      window.removeEventListener('resize', setVh);
+      window.removeEventListener('orientationchange', setVh);
+    };
   }, [isMobile]);
 
   // Manage showContacts state based on isMobile and activeContact
@@ -134,7 +148,10 @@ const IndexContent = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col h-screen overflow-hidden">
+    <div 
+      className="bg-background flex flex-col overflow-hidden"
+      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
+    >
       {/* Fixed Header */}
       <header className="bg-card p-4 border-b flex justify-between items-center shrink-0">
         <div 

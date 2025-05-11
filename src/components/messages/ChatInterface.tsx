@@ -75,27 +75,6 @@ const ChatInterface = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages]); // activeMessages dependency is correct
   
-  // Effect to set viewport height for mobile devices
-  useEffect(() => {
-    const setVh = () => {
-      // Set the value of --vh CSS variable to the actual viewport height
-      const vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    };
-    
-    // Set the initial value
-    setVh();
-    
-    // Update on resize and orientation change
-    window.addEventListener('resize', setVh);
-    window.addEventListener('orientationchange', setVh);
-    
-    return () => {
-      window.removeEventListener('resize', setVh);
-      window.removeEventListener('orientationchange', setVh);
-    };
-  }, []);
-  
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
