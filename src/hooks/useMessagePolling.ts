@@ -137,6 +137,7 @@ export const useMessagePolling = ({
            id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-received`,
            content: receivedMsg.message,
            timestamp: receivedMsg.timestamp,
+           contactId: contactId,
            sent: false,
            read: false,
            forwarded: false,
@@ -144,8 +145,21 @@ export const useMessagePolling = ({
 
          let keyForDecryption: CryptoKey | null = contactKeysMap.get(contactId);
 
-         if (receivedMsg.group) {
-           const group = listItems.find(item => item.itemType === 'group' && item.name === receivedMsg.group);
+         if (!keyForDecryption) {
+           console.warn(`Could not find key for decryption for message associated with contactId ${contactId}. Skipping message: ${JSON.stringify(receivedMsg)}`);
+           continue;
+         }
+         let groupName: String | undefined = undefined;
+         try {
+           const msg = JSON.parse(await decryptMessage(receivedMsg.message, keyForDecryption));
+           groupName = msg.group;
+         } catch (decryptError) {
+           console.error(`Failed to decrypt message for contactId ${contactId} (will store anyway):`, decryptError);
+         }
+
+         console.log('Group name from decrypted message:', groupName);
+         if (groupName) {
+           const group = listItems.find(item => item.itemType === 'group' && item.name === groupName);
 
            if (group) {
              // Scenario 1: Group exists, and we know the original sender within that group.
@@ -154,22 +168,11 @@ export const useMessagePolling = ({
            } else {
              // Scenario 2: Group does not exist (or serverSenderInGroupId missing), message is from directSenderContactId but with a group context name.
              // Message goes into the direct sender's chat.
-             messageForStorage.groupContextName = receivedMsg.group;
+             messageForStorage.groupContextName = groupName;
            }
          }
 
-         if (!keyForDecryption) {
-           console.warn(`Could not find key for decryption for message associated with effectiveId ${effectiveContactIdForMessageList}. Skipping message: ${JSON.stringify(receivedMsg)}`);
-           continue;
-         }
-         try {
-           await decryptMessage(receivedMsg.message, keyForDecryption); // Try decrypting
-         } catch (decryptError) {
-           console.error(`Failed to decrypt message for effectiveId ${effectiveContactIdForMessageList} (will store anyway):`, decryptError);
-         }
-
          newlyReceivedMessages.push(messageForStorage as Message);
-         // Add to the list of messages to acknowledge
          messagesToAck.push({
             message_id: receivedMsg.message_id,
             timestamp: receivedMsg.timestamp,
@@ -184,6 +187,7 @@ export const useMessagePolling = ({
 
            for (const newMessage of newlyReceivedMessages) {
              const targetId = newMessage.groupId || newMessage.contactId;
+             console.log(`Adding message for contact/group ID: ${targetId}`, newMessage);
              const contactMessages = updatedMessages[targetId] || [];
              // Check for duplicates based on content and timestamp before adding
              const exists = contactMessages.some(
@@ -196,6 +200,8 @@ export const useMessagePolling = ({
                );
                changed = true;
                newMessagesAdded = true; // Track if any messages were actually added
+             } else {
+               console.log(`Duplicate message detected for contact ${targetId}:`, newMessage);
              }
            }
            // Only return a new object if changes were actually made
@@ -232,7 +238,6 @@ export const useMessagePolling = ({
          // Show toast only if no chat is active, or if the new messages are not for the currently active chat.
          const showToast = !activeItemId || !newlyReceivedMessages.some(msg => msg.contactId === activeItemId);
          if (showToast) {
-           console.log('New messages received', newlyReceivedMessages);
            toast({ title: "New Messages", description: "You have received new messages." });
          }
        }
