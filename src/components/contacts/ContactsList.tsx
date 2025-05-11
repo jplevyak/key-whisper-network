@@ -9,23 +9,19 @@ import AddGroupModal from './AddGroupModal'; // Import the new modal
 
 interface ContactsListProps {
   onAddContact: () => void;
-  onContactSelect?: (contact: Contact) => void; // Changed to pass the selected contact
+  onItemSelect?: (item: ContactOrGroup) => void; // Renamed from onContactSelect and accepts ContactOrGroup
 }
 
-const ContactsList = ({ onAddContact, onContactSelect }: ContactsListProps) => {
-  const { listItems, activeItem, setActiveItem } = useContacts(); // Updated destructuring
+const ContactsList = ({ onAddContact, onItemSelect }: ContactsListProps) => { // Use onItemSelect
+  const { listItems, activeItem, setActiveItem } = useContacts();
   const { messages } = useMessages();
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
 
   const handleItemClick = (item: ContactOrGroup) => {
     setActiveItem(item);
-    // Only call onContactSelect if the item is a contact,
-    // and pass the contact object to the handler.
-    if (item.itemType === 'contact') {
-      onContactSelect?.(item as Contact); // Pass the contact item
-    }
-    // If item is a group, activeItem is set, but onContactSelect is not called.
-    // The parent component can still react to activeItem changes from context if needed.
+    // Call onItemSelect for any selected item (contact or group)
+    // This allows the parent component (Index.tsx) to react, e.g., by hiding the list on mobile.
+    onItemSelect?.(item);
   };
 
   // Function to count unread messages for a contact (groups don't have direct unread counts yet)
