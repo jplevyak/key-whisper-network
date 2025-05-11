@@ -119,7 +119,7 @@ const ChatInterface = () => {
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-full flex flex-col"> {/* Changed h-screen to h-full */}
       {/* Fixed Chat Header */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
         <div 
