@@ -235,8 +235,8 @@ const IndexContent = () => {
           <div className={`${isMobile ? 'w-full' : 'w-80'} border-r bg-card overflow-y-auto`}>
             <ContactsList 
               onAddContact={() => setShowAddContact(true)} 
-              onContactSelect={(contact) => {
-                setActiveItem(contact);
+              onItemSelect={(item) => { // Renamed prop and parameter
+                // setActiveItem is now called within ContactsList's handleItemClick
                 if (isMobile) {
                   setShowContacts(false);
                 }
