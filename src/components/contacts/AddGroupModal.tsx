@@ -49,7 +49,8 @@ const AddGroupModal = ({
       setTempGroupName(nameToSet);
       // If initialGroupName is provided, user might want to edit it or confirm it.
       // If not provided, it's a fresh haiku, so not necessarily in edit mode unless user clicks.
-      setIsNameEditing(!!initialGroupName); 
+      // We will now default to not being in edit mode, allowing the user to explicitly edit.
+      setIsNameEditing(false); 
       setSelectedMemberIds(initialSelectedMemberIds || []);
     } else {
       // Reset when closing if not triggered by internal logic that already reset
