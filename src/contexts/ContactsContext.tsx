@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { generateAESKey, exportKey, importKey } from '@/utils/encryption';
 import { useToast } from '@/components/ui/use-toast';
 import { db } from '@/utils/indexedDB';
+import { useMessages } from './MessagesContext'; // Import useMessages
 
 // Base interface for items in the list
 interface BaseListItem {
@@ -47,6 +48,7 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
   const [activeItem, setActiveItem] = useState<ContactOrGroup | null>(null);
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(new Map());
   const { toast } = useToast();
+  const messagesContext = useMessages(); // Initialize useMessages
   const [isDbInitialized, setIsDbInitialized] = useState(false);
 
   // Initialize DB
@@ -313,6 +315,13 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
     if (activeItem && activeItem.id === itemId) {
       setActiveItem(null);
     }
+
+    // Clear direct messages and messages from this contact in groups
+    messagesContext.clearHistory(itemId); // Clears direct messages for this contact/group
+    if (itemToDelete.itemType === 'contact') {
+      messagesContext.deleteMessagesFromSenderInGroups(itemId); // Clears messages sent by this contact in all groups
+    }
+
     toast({
       title: `${itemToDelete.itemType === 'contact' ? 'Contact' : 'Group'} Deleted`,
       description: `${itemToDelete.name} has been removed.`,
@@ -384,6 +393,15 @@ export const ContactsProvider = ({ children }: { children: React.ReactNode }) =>
       setContactKeys(prev => new Map(prev).set(contact.keyId, newKey));
       await db.set('keys', contact.keyId, newKeyData); // db.set handles encryption
       console.log(`Key updated successfully for contact ${contact.name}`);
+
+      // Clear messages associated with this contact due to key change
+      messagesContext.clearHistory(contactId);
+      messagesContext.deleteMessagesFromSenderInGroups(contactId);
+      
+      toast({
+        title: 'Contact Key Updated',
+        description: `The encryption key for ${contact.name} has been changed. Their message history has been cleared.`,
+      });
       return true;
     } catch (error) {
       console.error(`Error updating key for contact ${contactId}:`, error);

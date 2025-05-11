@@ -39,6 +39,7 @@ interface MessagesContextType {
   deleteMessage: (itemId: string, messageId: string) => void;
   clearHistory: (itemId: string) => void;
   moveContextualMessagesToGroup: (sourceContactId: string, targetGroup: Group, originalGroupContextName: string) => Promise<void>;
+  deleteMessagesFromSenderInGroups: (senderContactId: string) => void;
 }
 
 // Type for the response from /api/get-messages
@@ -545,6 +546,44 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
     });
   };
 
+  const deleteMessagesFromSenderInGroups = (senderContactId: string) => {
+    setMessages(prevMessages => {
+      const newMessagesState = { ...prevMessages };
+      let changed = false;
+
+      for (const itemId in newMessagesState) {
+        if (Object.prototype.hasOwnProperty.call(newMessagesState, itemId)) {
+          const item = listItems.find(i => i.id === itemId);
+          // Only process if the itemId corresponds to a group
+          if (item && item.itemType === 'group') {
+            const originalGroupMessages = newMessagesState[itemId];
+            const filteredGroupMessages = originalGroupMessages.filter(msg => {
+              // Keep message if it's not from the specified senderContactId
+              // This primarily targets received messages in a group.
+              return !(!msg.sent && msg.originalSenderId === senderContactId);
+            });
+
+            if (filteredGroupMessages.length < originalGroupMessages.length) {
+              if (filteredGroupMessages.length === 0) {
+                delete newMessagesState[itemId];
+              } else {
+                newMessagesState[itemId] = filteredGroupMessages;
+              }
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) {
+        toast({
+          title: "Group Messages Cleaned",
+          description: `Messages from a contact (whose key changed or was deleted) have been removed from relevant groups.`,
+        });
+      }
+      return changed ? newMessagesState : prevMessages;
+    });
+  };
+
   return (
     <MessagesContext.Provider
       value={{
@@ -556,7 +595,7 @@ export const MessagesProvider = ({ children }: { children: React.ReactNode }) =>
         deleteMessage,
         clearHistory,
         moveContextualMessagesToGroup,
-        // triggerFetch, // Removed
+        deleteMessagesFromSenderInGroups,
       }}
     >
       {children}
