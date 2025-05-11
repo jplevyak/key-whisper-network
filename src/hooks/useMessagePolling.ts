@@ -232,6 +232,7 @@ export const useMessagePolling = ({
          // Show toast only if no chat is active, or if the new messages are not for the currently active chat.
          const showToast = !activeItemId || !newlyReceivedMessages.some(msg => msg.contactId === activeItemId);
          if (showToast) {
+           console.log('New messages received', newlyReceivedMessages);
            toast({ title: "New Messages", description: "You have received new messages." });
          }
        }
