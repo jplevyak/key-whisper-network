@@ -8,6 +8,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -25,7 +36,7 @@ interface GroupProfileProps {
 }
 
 const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
-  const { listItems, updateGroup } = useContacts();
+  const { listItems, updateGroup, deleteContact } = useContacts();
   const { messages } = useMessages();
   const { toast } = useToast();
 
@@ -114,6 +125,12 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
     } else {
       toast({ title: 'Update Failed', description: 'Could not update group details.', variant: 'destructive' });
     }
+  };
+
+  const handleConfirmDelete = () => {
+    deleteContact(group.id);
+    // The toast for deletion is handled within deleteContact context function
+    onClose(); // Close the main profile dialog
   };
   
   const resetAndClose = () => {
@@ -205,13 +222,32 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             </div>
           </div>
         </div>
-        <DialogFooter> {/* Removed mt-4 to be consistent with ContactProfile if DialogContent handles padding */}
-          <Button variant="outline" onClick={resetAndClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSaveChanges} disabled={!hasChanges || isNameEditing || selectedMemberIds.length === 0}>
-            Save Changes
-          </Button>
+        <DialogFooter className="sm:justify-between">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive">Delete Group</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the group "{group.name}" and remove it from your list.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmDelete}>Confirm Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={resetAndClose}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveChanges} disabled={!hasChanges || isNameEditing || selectedMemberIds.length === 0}>
+              Save Changes
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
