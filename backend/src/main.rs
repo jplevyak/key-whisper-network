@@ -33,7 +33,6 @@ use web_push::{
 struct PutMessageRequest {
     message_id: String,
     message: String,
-    group: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -53,7 +52,6 @@ struct GetMessagesRequest {
 struct MessageRecord {
     message: String,
     timestamp: DateTime<Utc>,
-    group: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -61,7 +59,6 @@ struct FoundMessage {
     message_id: String,
     message: String,
     timestamp: DateTime<Utc>,
-    group: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -142,7 +139,6 @@ async fn put_message_handler(
     let record = MessageRecord {
         message: payload.message,
         timestamp,
-        group: payload.group,
     };
     let value_bytes = serde_json::to_vec(&record)?;
     let messages_partition = state
@@ -330,7 +326,6 @@ async fn get_messages_handler(
                                             message_id: message_id_str.clone(),
                                             message: record.message,
                                             timestamp: record.timestamp,
-                                            group: record.group,
                                         });
                                         // Deletion happens on ACK
                                     }

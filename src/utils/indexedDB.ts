@@ -20,7 +20,7 @@ interface DBSchema {
 }
 
 const DB_NAME = 'ccred_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 // Add 'groups' to the list of stores
 const STORES = ['contacts', 'messages', 'keys', 'groups'] as const;
 
