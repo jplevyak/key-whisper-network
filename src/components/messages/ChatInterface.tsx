@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import React, { useState, useEffect, useRef } from "react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,16 +24,16 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { useContacts } from '@/contexts/ContactsContext';
-import { useMessages, Message } from '@/contexts/MessagesContext';
-import { Send, Fingerprint, Trash2, Users, User } from 'lucide-react'; // Added Users, User
-import { useIsMobile } from '@/hooks/use-mobile';
-import MessageBubble from './MessageBubble';
-import ForwardMessageDialog from './ForwardMessageDialog';
-import ContactProfile from '../contacts/ContactProfile';
-import GroupProfile from '../contacts/GroupProfile'; // Import GroupProfile
-import AddGroupModal from '../contacts/AddGroupModal'; // Import AddGroupModal
-import { Group } from '@/contexts/ContactsContext'; // Import Group type
+import { useContacts } from "@/contexts/ContactsContext";
+import { useMessages, Message } from "@/contexts/MessagesContext";
+import { Send, Fingerprint, Trash2, Users, User } from "lucide-react"; // Added Users, User
+import { useIsMobile } from "@/hooks/use-mobile";
+import MessageBubble from "./MessageBubble";
+import ForwardMessageDialog from "./ForwardMessageDialog";
+import ContactProfile from "../contacts/ContactProfile";
+import GroupProfile from "../contacts/GroupProfile"; // Import GroupProfile
+import AddGroupModal from "../contacts/AddGroupModal"; // Import AddGroupModal
+import { Group } from "@/contexts/ContactsContext"; // Import Group type
 
 interface InitialGroupData {
   groupName: string;
@@ -43,8 +43,14 @@ interface InitialGroupData {
 
 const ChatInterface = () => {
   const { activeItem, setActiveItem } = useContacts(); // Added setActiveItem
-  const { messages, sendMessage, markAsRead, clearHistory, moveContextualMessagesToGroup } = useMessages();
-  const [newMessage, setNewMessage] = useState('');
+  const {
+    messages,
+    sendMessage,
+    markAsRead,
+    clearHistory,
+    moveContextualMessagesToGroup,
+  } = useMessages();
+  const [newMessage, setNewMessage] = useState("");
   const [isForwarding, setIsForwarding] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   // State for confirmation dialog
@@ -53,39 +59,39 @@ const ChatInterface = () => {
   const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
-  const [initialGroupDataForModal, setInitialGroupDataForModal] = useState<InitialGroupData | null>(null);
+  const [initialGroupDataForModal, setInitialGroupDataForModal] =
+    useState<InitialGroupData | null>(null);
 
   // Get messages for the active item (contact or group)
   const activeMessages = activeItem ? messages[activeItem.id] || [] : [];
-  
+
   // Mark unread messages as read when active item changes
   useEffect(() => {
     if (activeItem) {
       activeMessages
-       .filter(msg => !msg.sent && !msg.read)
-       .forEach(msg => {
-         markAsRead(activeItem.id, msg.id);
-       });
-   }
- }, [activeItem, activeMessages, markAsRead]);
+        .filter((msg) => !msg.sent && !msg.read)
+        .forEach((msg) => {
+          markAsRead(activeItem.id, msg.id);
+        });
+    }
+  }, [activeItem, activeMessages, markAsRead]);
 
-
- // Scroll to bottom when messages change
- useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeMessages]); // activeMessages dependency is correct
-  
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!activeItem || !newMessage.trim()) return; // Use activeItem
-    
+
     const success = await sendMessage(activeItem.id, newMessage);
     if (success) {
-      setNewMessage('');
+      setNewMessage("");
     }
   };
-  
+
   const handleForwardMessage = (message: Message) => {
     setSelectedMessage(message);
     setIsForwarding(true);
@@ -98,15 +104,19 @@ const ChatInterface = () => {
     }
   };
 
-  const handleGroupContextClick = (groupName: string, contactId: string, groupContextId?: string) => {
+  const handleGroupContextClick = (
+    groupName: string,
+    contactId: string,
+    groupContextId?: string,
+  ) => {
     setInitialGroupDataForModal({ groupName, contactId, groupContextId });
     setIsAddGroupModalOpen(true);
   };
-  
+
   // If no active item, show empty state
   if (!activeItem) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center p-8">
+      <div className="h-full flex flex-col items-center justify-center p-8">
         <div className="p-4 rounded-full bg-muted">
           <Fingerprint className="h-12 w-12 text-muted-foreground" />
         </div>
@@ -119,22 +129,26 @@ const ChatInterface = () => {
   }
 
   return (
-    <div className="h-full flex flex-col"> {/* Changed h-screen to h-full */}
+    <div className="h-full flex flex-col">
       {/* Fixed Chat Header */}
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
-        <div 
+        <div
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
           onClick={() => activeItem && setShowProfile(true)} // Use activeItem
         >
           <Avatar className="h-10 w-10">
             <AvatarImage src={activeItem?.avatar} alt={activeItem?.name} />
             <AvatarFallback>
-              {activeItem?.itemType === 'group' ? <Users className="h-5 w-5" /> : activeItem?.name?.substring(0, 2).toUpperCase()}
+              {activeItem?.itemType === "group" ? (
+                <Users className="h-5 w-5" />
+              ) : (
+                activeItem?.name?.substring(0, 2).toUpperCase()
+              )}
             </AvatarFallback>
           </Avatar>
           <div>
             <div className="font-medium">{activeItem?.name}</div>
-            {activeItem?.itemType === 'group' && (
+            {activeItem?.itemType === "group" && (
               <div className="text-xs text-muted-foreground">
                 {(activeItem as Group).memberIds.length} member(s)
               </div>
@@ -142,9 +156,16 @@ const ChatInterface = () => {
           </div>
         </div>
         {/* Clear History Button and Dialog */}
-        <AlertDialog open={isClearConfirmOpen} onOpenChange={setIsClearConfirmOpen}>
+        <AlertDialog
+          open={isClearConfirmOpen}
+          onOpenChange={setIsClearConfirmOpen}
+        >
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive"
+            >
               <Trash2 className="h-5 w-5" />
               <span className="sr-only">Clear Messages</span>
             </Button>
@@ -153,23 +174,26 @@ const ChatInterface = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete all messages
-                in this conversation from your device.
+                This action cannot be undone. This will permanently delete all
+                messages in this conversation from your device.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              <AlertDialogAction
+                onClick={handleClearHistory}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
                 Clear Messages
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </div>
-      
+
       {/* Scrollable Messages Area */}
       <ScrollArea className="flex-1">
-        <div className="min-h-full flex flex-col justify-end px-4 py-2">
+        <div className="flex flex-col justify-end px-4 py-2">
           {activeMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No messages yet</p>
@@ -178,7 +202,7 @@ const ChatInterface = () => {
           ) : (
             <div className="space-y-4">
               {activeMessages.map((message) => (
-                <MessageBubble 
+                <MessageBubble
                   key={message.id}
                   message={message}
                   onForward={handleForwardMessage}
@@ -190,7 +214,7 @@ const ChatInterface = () => {
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
-      
+
       {/* Fixed Message Input */}
       <div className="p-4 border-t bg-background z-10 shrink-0">
         <form onSubmit={handleSendMessage} className="flex space-x-2">
@@ -205,7 +229,7 @@ const ChatInterface = () => {
           </Button>
         </form>
       </div>
-      
+
       {/* Dialogs */}
       {isForwarding && selectedMessage && (
         <ForwardMessageDialog
@@ -218,14 +242,14 @@ const ChatInterface = () => {
         />
       )}
 
-      {activeItem && showProfile && activeItem.itemType === 'contact' && (
+      {activeItem && showProfile && activeItem.itemType === "contact" && (
         <ContactProfile
           contact={activeItem} // activeItem is a Contact here
           isOpen={showProfile}
           onClose={() => setShowProfile(false)}
         />
       )}
-      {activeItem && showProfile && activeItem.itemType === 'group' && (
+      {activeItem && showProfile && activeItem.itemType === "group" && (
         <GroupProfile
           group={activeItem as Group} // activeItem is a Group here
           isOpen={showProfile}
@@ -237,11 +261,15 @@ const ChatInterface = () => {
         <AddGroupModal
           isOpen={isAddGroupModalOpen}
           onClose={async (createdGroup?: Group) => {
-            if (createdGroup && initialGroupDataForModal?.contactId && initialGroupDataForModal?.groupName) {
+            if (
+              createdGroup &&
+              initialGroupDataForModal?.contactId &&
+              initialGroupDataForModal?.groupName
+            ) {
               await moveContextualMessagesToGroup(
                 initialGroupDataForModal.contactId,
                 createdGroup,
-                initialGroupDataForModal.groupName
+                initialGroupDataForModal.groupName,
               );
               // Optionally, switch active chat to the new group
               setActiveItem(createdGroup);
@@ -250,7 +278,11 @@ const ChatInterface = () => {
             setInitialGroupDataForModal(null); // Reset initial data
           }}
           initialGroupName={initialGroupDataForModal?.groupName}
-          initialSelectedMemberIds={initialGroupDataForModal?.contactId ? [initialGroupDataForModal.contactId] : []}
+          initialSelectedMemberIds={
+            initialGroupDataForModal?.contactId
+              ? [initialGroupDataForModal.contactId]
+              : []
+          }
           // initialGroupContextId={initialGroupDataForModal?.groupContextId} // Pass if needed by AddGroupModal
         />
       )}

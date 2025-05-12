@@ -1,8 +1,8 @@
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Pencil, X } from 'lucide-react'; // Import X icon
+import React from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Pencil, X } from "lucide-react"; // Import X icon
 
 interface ContactNameEditProps {
   name: string; // The current name (saved or temporary)
@@ -23,7 +23,8 @@ const ContactNameEdit = ({
 }: ContactNameEditProps) => {
   return (
     <div className="space-y-2">
-      <Label htmlFor="contact-name-input">Name</Label> {/* Add htmlFor for accessibility */}
+      <Label htmlFor="contact-name-input">Name</Label>{" "}
+      {/* Add htmlFor for accessibility */}
       {isEditing ? (
         <div className="flex items-center space-x-2">
           {/* Wrap input and clear button for relative positioning */}
@@ -34,7 +35,9 @@ const ContactNameEdit = ({
               onChange={(e) => onNameChange(e.target.value)} // Update temporary name in parent
               className="pr-8" // Add padding to the right for the clear button
               autoFocus // Focus input when editing starts
-              onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }} // Save on Enter
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSave();
+              }} // Save on Enter
             />
             {/* Conditionally render clear button */}
             {name && (
@@ -46,16 +49,19 @@ const ContactNameEdit = ({
                 onClick={onClear} // Call the clear handler
               >
                 <X className="h-4 w-4" />
-                <span className="sr-only">Clear name</span> {/* Screen reader text */}
+                <span className="sr-only">Clear name</span>{" "}
+                {/* Screen reader text */}
               </Button>
             )}
           </div>
-          <Button onClick={onSave}>Save</Button> {/* Call parent's save handler */}
+          <Button onClick={onSave}>Save</Button>{" "}
+          {/* Call parent's save handler */}
         </div>
       ) : (
         <div className="flex items-center justify-between">
           {/* Display the saved name */}
-          <span className="text-lg font-medium">{name}</span> {/* Always display the name */}
+          <span className="text-lg font-medium">{name}</span>{" "}
+          {/* Always display the name */}
           <Button
             size="icon"
             variant="ghost"

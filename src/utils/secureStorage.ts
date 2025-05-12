@@ -1,11 +1,11 @@
-import { fromByteArray, toByteArray } from 'base64-js';
+import { fromByteArray, toByteArray } from "base64-js";
 
 // A utility for encrypting/decrypting data with a non-extractable key
 export class SecureStorage {
   private encryptionKey: CryptoKey | null = null;
-  private readonly DB_NAME = 'secure_storage';
-  private readonly STORE_NAME = 'keys';
-  private readonly KEY_ID = 'main_key';
+  private readonly DB_NAME = "secure_storage";
+  private readonly STORE_NAME = "keys";
+  private readonly KEY_ID = "main_key";
 
   async init(): Promise<void> {
     if (this.encryptionKey) return;
@@ -20,11 +20,11 @@ export class SecureStorage {
     // Generate new key if none exists
     this.encryptionKey = await crypto.subtle.generateKey(
       {
-        name: 'AES-GCM',
+        name: "AES-GCM",
         length: 256,
       },
       false, // Key is not extractable
-      ['encrypt', 'decrypt']
+      ["encrypt", "decrypt"],
     );
 
     // Store key in IndexedDB
@@ -36,7 +36,7 @@ export class SecureStorage {
       const request = indexedDB.open(this.DB_NAME, 1);
 
       request.onerror = () => {
-        console.error('Error opening IndexedDB');
+        console.error("Error opening IndexedDB");
         resolve(null);
       };
 
@@ -49,12 +49,12 @@ export class SecureStorage {
 
       request.onsuccess = () => {
         const db = request.result;
-        const transaction = db.transaction(this.STORE_NAME, 'readonly');
+        const transaction = db.transaction(this.STORE_NAME, "readonly");
         const store = transaction.objectStore(this.STORE_NAME);
         const keyRequest = store.get(this.KEY_ID);
 
         keyRequest.onerror = () => {
-          console.error('Error retrieving key from IndexedDB');
+          console.error("Error retrieving key from IndexedDB");
           resolve(null);
         };
 
@@ -69,15 +69,16 @@ export class SecureStorage {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.DB_NAME, 1);
 
-      request.onerror = () => reject(new Error('Failed to open IndexedDB'));
+      request.onerror = () => reject(new Error("Failed to open IndexedDB"));
 
       request.onsuccess = () => {
         const db = request.result;
-        const transaction = db.transaction(this.STORE_NAME, 'readwrite');
+        const transaction = db.transaction(this.STORE_NAME, "readwrite");
         const store = transaction.objectStore(this.STORE_NAME);
         const keyRequest = store.put(key, this.KEY_ID);
 
-        keyRequest.onerror = () => reject(new Error('Failed to store key in IndexedDB'));
+        keyRequest.onerror = () =>
+          reject(new Error("Failed to store key in IndexedDB"));
         keyRequest.onsuccess = () => resolve();
       };
     });
@@ -93,11 +94,11 @@ export class SecureStorage {
 
     const encryptedData = await crypto.subtle.encrypt(
       {
-        name: 'AES-GCM',
+        name: "AES-GCM",
         iv,
       },
       this.encryptionKey!,
-      encodedData
+      encodedData,
     );
 
     // Combine IV and encrypted data
@@ -121,17 +122,17 @@ export class SecureStorage {
 
       const decrypted = await crypto.subtle.decrypt(
         {
-          name: 'AES-GCM',
+          name: "AES-GCM",
           iv,
         },
         this.encryptionKey!,
-        data
+        data,
       );
 
       return new TextDecoder().decode(decrypted);
     } catch (error) {
-      console.error('Decryption failed:', error);
-      throw new Error('Failed to decrypt data');
+      console.error("Decryption failed:", error);
+      throw new Error("Failed to decrypt data");
     }
   }
 }

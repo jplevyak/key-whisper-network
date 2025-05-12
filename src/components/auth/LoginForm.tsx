@@ -1,14 +1,22 @@
-
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Fingerprint } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Fingerprint } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const LoginForm = () => {
-  const [username, setUsername] = useState<string>(localStorage.getItem('username') || '');
+  const [username, setUsername] = useState<string>(
+    localStorage.getItem("username") || "",
+  );
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const { login, hasPasskey, supportsBiometric, supportsPasskeys } = useAuth();
 
@@ -25,11 +33,13 @@ const LoginForm = () => {
         <div className="flex justify-center mb-4">
           <Fingerprint className="h-12 w-12 text-primary" />
         </div>
-        <CardTitle className="text-3xl font-bold text-center text-foreground">CCred</CardTitle>
+        <CardTitle className="text-3xl font-bold text-center text-foreground">
+          CCred
+        </CardTitle>
         <CardDescription className="text-center text-muted-foreground">
           {hasPasskey
-            ? 'Secure access to your encrypted communication'
-            : 'Create a secure communication account'}
+            ? "Secure access to your encrypted communication"
+            : "Create a secure communication account"}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -47,13 +57,14 @@ const LoginForm = () => {
               className="bg-muted/30 border-white/20 focus:ring-primary focus:border-primary"
             />
           </div>
-          
+
           {!supportsPasskeys && (
             <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-              Your browser doesn't support passkeys. Please use a modern browser like Chrome, Edge, or Safari.
+              Your browser doesn't support passkeys. Please use a modern browser
+              like Chrome, Edge, or Safari.
             </div>
           )}
-          
+
           {supportsPasskeys && supportsBiometric && (
             <div className="p-3 bg-accent/10 text-accent-foreground rounded-md flex items-center gap-2 text-sm">
               <Fingerprint className="h-5 w-5" />
@@ -63,17 +74,16 @@ const LoginForm = () => {
         </CardContent>
 
         <CardFooter>
-          <Button 
-            type="submit" 
-            className="w-full" 
+          <Button
+            type="submit"
+            className="w-full"
             disabled={isLoggingIn || !username || !supportsPasskeys}
           >
-            {isLoggingIn 
-              ? 'Authenticating...' 
-              : hasPasskey 
-                ? 'Secure Sign In' 
-                : 'Create Secure Account'
-            }
+            {isLoggingIn
+              ? "Authenticating..."
+              : hasPasskey
+                ? "Secure Sign In"
+                : "Create Secure Account"}
           </Button>
         </CardFooter>
       </form>

@@ -1,9 +1,15 @@
-
-import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/use-toast';
+import React, { useEffect, useRef, useState } from "react";
+import { Html5Qrcode } from "html5-qrcode";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 
 interface QRCodeScannerProps {
   onScanSuccess: (data: string) => void;
@@ -13,40 +19,44 @@ interface QRCodeScannerProps {
 const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [cameraId, setCameraId] = useState<string>('');
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const [cameraId, setCameraId] = useState<string>("");
+  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>(
+    [],
+  );
   const { toast } = useToast();
 
   useEffect(() => {
     // Initialize the scanner
-    scannerRef.current = new Html5Qrcode('qr-reader');
+    scannerRef.current = new Html5Qrcode("qr-reader");
 
     // Get available cameras
     Html5Qrcode.getCameras()
       .then((devices) => {
         if (devices && devices.length) {
           // Try to find back camera
-          const backCamera = devices.find(device => 
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('rear')
+          const backCamera = devices.find(
+            (device) =>
+              device.label.toLowerCase().includes("back") ||
+              device.label.toLowerCase().includes("rear"),
           );
           // Use back camera if found, otherwise use first available camera
           setCameraId(backCamera ? backCamera.id : devices[0].id);
           setCameras(devices);
         } else {
           toast({
-            title: 'No Camera Found',
-            description: 'Please ensure your device has a camera and you have granted permission.',
-            variant: 'destructive',
+            title: "No Camera Found",
+            description:
+              "Please ensure your device has a camera and you have granted permission.",
+            variant: "destructive",
           });
         }
       })
       .catch((error) => {
-        console.error('Error getting cameras', error);
+        console.error("Error getting cameras", error);
         toast({
-          title: 'Camera Error',
-          description: 'Could not access your device camera',
-          variant: 'destructive',
+          title: "Camera Error",
+          description: "Could not access your device camera",
+          variant: "destructive",
         });
       });
 
@@ -55,7 +65,7 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
       if (scannerRef.current && isScanning) {
         scannerRef.current
           .stop()
-          .catch((error) => console.error('Error stopping scanner', error));
+          .catch((error) => console.error("Error stopping scanner", error));
       }
     };
   }, [toast]);
@@ -80,15 +90,15 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
         (errorMessage) => {
           // Error while scanning
           console.log(errorMessage);
-        }
+        },
       )
       .catch((error) => {
-        console.error('Error starting scanner', error);
+        console.error("Error starting scanner", error);
         setIsScanning(false);
         toast({
-          title: 'Scanner Error',
-          description: 'Could not start the QR code scanner',
-          variant: 'destructive',
+          title: "Scanner Error",
+          description: "Could not start the QR code scanner",
+          variant: "destructive",
         });
       });
   };
@@ -101,7 +111,7 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
           setIsScanning(false);
         })
         .catch((error) => {
-          console.error('Error stopping scanner', error);
+          console.error("Error stopping scanner", error);
         });
     }
   };
@@ -116,7 +126,10 @@ const QRCodeScanner = ({ onScanSuccess, onClose }: QRCodeScannerProps) => {
       </CardHeader>
       <CardContent>
         <div className="flex flex-col space-y-4">
-          <div id="qr-reader" className="w-full h-64 bg-muted/50 rounded-lg overflow-hidden" />
+          <div
+            id="qr-reader"
+            className="w-full h-64 bg-muted/50 rounded-lg overflow-hidden"
+          />
 
           {cameras.length > 0 && (
             <select

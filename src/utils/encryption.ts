@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for encryption/decryption using AES-256
  */
@@ -11,7 +10,7 @@ export const generateAESKey = async (): Promise<CryptoKey> => {
       length: 256,
     },
     true, // extractable
-    ["encrypt", "decrypt"]
+    ["encrypt", "decrypt"],
   );
 };
 
@@ -32,39 +31,39 @@ export const importKey = async (keyData: string): Promise<CryptoKey> => {
       length: 256,
     },
     true,
-    ["encrypt", "decrypt"]
+    ["encrypt", "decrypt"],
   );
 };
 
 // Encrypt a message
 export const encryptMessage = async (
   message: string,
-  key: CryptoKey
+  key: CryptoKey,
 ): Promise<string> => {
   const encodedMessage = new TextEncoder().encode(message);
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  
+
   const encryptedData = await window.crypto.subtle.encrypt(
     {
       name: "AES-GCM",
       iv,
     },
     key,
-    encodedMessage
+    encodedMessage,
   );
 
   // Combine IV and encrypted data
   const combined = new Uint8Array(iv.length + encryptedData.byteLength);
   combined.set(iv);
   combined.set(new Uint8Array(encryptedData), iv.length);
-  
+
   return arrayBufferToBase64(combined);
 };
 
 // Decrypt a message
 export const decryptMessage = async (
   encryptedMessage: string,
-  key: CryptoKey
+  key: CryptoKey,
 ): Promise<string> => {
   try {
     const encryptedBuffer = base64ToArrayBuffer(encryptedMessage);
@@ -77,7 +76,7 @@ export const decryptMessage = async (
         iv,
       },
       key,
-      data
+      data,
     );
 
     return new TextDecoder().decode(decryptedData);
@@ -90,29 +89,28 @@ export const decryptMessage = async (
 // Better, URL-safe base64 encoding/decoding functions
 export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
   // Use URL-safe base64 encoding
-  return window.btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+  return window
+    .btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 };
 
 export const base64ToArrayBuffer = (base64: string): Uint8Array => {
   // Restore non-URL safe characters and padding
-  const base64Std = base64
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  
+  const base64Std = base64.replace(/-/g, "+").replace(/_/g, "/");
+
   // Add padding if needed
   const padding = base64Std.length % 4;
-  const paddedBase64 = padding ? 
-    base64Std + '='.repeat(4 - padding) : 
-    base64Std;
-  
+  const paddedBase64 = padding
+    ? base64Std + "=".repeat(4 - padding)
+    : base64Std;
+
   try {
     const binaryString = window.atob(paddedBase64);
     const bytes = new Uint8Array(binaryString.length);
@@ -128,9 +126,13 @@ export const base64ToArrayBuffer = (base64: string): Uint8Array => {
 };
 
 // Define WebAuthn types to match the expected types
-type AuthenticatorTransport = 'usb' | 'nfc' | 'ble' | 'internal';
-type AttestationConveyancePreference = 'none' | 'indirect' | 'direct' | 'enterprise';
-type UserVerificationRequirement = 'required' | 'preferred' | 'discouraged';
+type AuthenticatorTransport = "usb" | "nfc" | "ble" | "internal";
+type AttestationConveyancePreference =
+  | "none"
+  | "indirect"
+  | "direct"
+  | "enterprise";
+type UserVerificationRequirement = "required" | "preferred" | "discouraged";
 
 // Generate a new passkey
 export const createPasskey = async (username: string): Promise<boolean> => {
@@ -179,12 +181,12 @@ export const createPasskey = async (username: string): Promise<boolean> => {
       // Store the credential ID in localStorage using URL-safe base64
       const credentialIdBase64 = arrayBufferToBase64(
         // @ts-ignore - Access raw ID from credential
-        new Uint8Array(credential.rawId)
+        new Uint8Array(credential.rawId),
       );
       localStorage.setItem("passkey-credential-id", credentialIdBase64);
       return true;
     }
-    
+
     return false;
   } catch (error) {
     console.error("Error creating passkey", error);
@@ -237,7 +239,7 @@ export const isPasskeySupported = (): boolean => {
 // Check if biometric authentication is supported
 export const isBiometricSupported = async (): Promise<boolean> => {
   if (!window.PublicKeyCredential) return false;
-  
+
   // @ts-ignore - TypeScript doesn't recognize the isUserVerifyingPlatformAuthenticatorAvailable method
   return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
 };
@@ -245,7 +247,7 @@ export const isBiometricSupported = async (): Promise<boolean> => {
 // Generate a stable request ID based on key and context string using SHA-256
 export const generateStableRequestId = async (
   userGeneratedKey: boolean,
-  key: CryptoKey
+  key: CryptoKey,
 ): Promise<string> => {
   try {
     // 1. Determine the context string
@@ -264,7 +266,10 @@ export const generateStableRequestId = async (
     combinedBytes.set(keyBytes, contextBytes.length);
 
     // 5. Compute the SHA-256 hash
-    const hashBuffer = await window.crypto.subtle.digest("SHA-256", combinedBytes);
+    const hashBuffer = await window.crypto.subtle.digest(
+      "SHA-256",
+      combinedBytes,
+    );
 
     // 6. Encode the hash digest using URL-safe base64
     return arrayBufferToBase64(hashBuffer);
@@ -274,4 +279,3 @@ export const generateStableRequestId = async (
     throw new Error("Failed to generate stable request ID");
   }
 };
-

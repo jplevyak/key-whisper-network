@@ -1,12 +1,11 @@
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  createPasskey, 
-  verifyPasskey, 
-  isPasskeySupported, 
-  isBiometricSupported 
-} from '@/utils/encryption';
-import { useToast } from '@/components/ui/use-toast';
+import React, { createContext, useContext, useState, useEffect } from "react";
+import {
+  createPasskey,
+  verifyPasskey,
+  isPasskeySupported,
+  isBiometricSupported,
+} from "@/utils/encryption";
+import { useToast } from "@/components/ui/use-toast";
 
 type AuthContextType = {
   isAuthenticated: boolean;
@@ -35,18 +34,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const checkSupport = async () => {
       const passkeysSupported = isPasskeySupported();
       setSupportsPasskeys(passkeysSupported);
-      
+
       if (passkeysSupported) {
         const biometricSupported = await isBiometricSupported();
         setSupportsBiometric(biometricSupported);
       }
-      
+
       // Check if user has a passkey
-      const storedCredentialId = localStorage.getItem('passkey-credential-id');
+      const storedCredentialId = localStorage.getItem("passkey-credential-id");
       setHasPasskey(!!storedCredentialId);
-      
+
       // Check if user has a stored username
-      const storedUsername = localStorage.getItem('username');
+      const storedUsername = localStorage.getItem("username");
       if (storedUsername) {
         setUsername(storedUsername);
       }
@@ -66,19 +65,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (verified) {
           setIsAuthenticated(true);
           setUsername(usernameInput);
-          localStorage.setItem('username', usernameInput);
+          localStorage.setItem("username", usernameInput);
           toast({
-            title: 'Authentication Successful',
-            description: 'Welcome back!',
-            variant: 'default',
+            title: "Authentication Successful",
+            description: "Welcome back!",
+            variant: "default",
           });
           setIsLoading(false);
           return true;
         } else {
           toast({
-            title: 'Authentication Failed',
-            description: 'Could not verify your passkey',
-            variant: 'destructive',
+            title: "Authentication Failed",
+            description: "Could not verify your passkey",
+            variant: "destructive",
           });
           setIsLoading(false);
           return false;
@@ -86,18 +85,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         // If this is the first time, prompt to create a passkey
         toast({
-          title: 'Creating Account',
-          description: 'Please set up a passkey to continue',
+          title: "Creating Account",
+          description: "Please set up a passkey to continue",
         });
         const registered = await registerPasskey(usernameInput);
         return registered;
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error("Login error:", error);
       toast({
-        title: 'Authentication Error',
-        description: 'An error occurred during authentication',
-        variant: 'destructive',
+        title: "Authentication Error",
+        description: "An error occurred during authentication",
+        variant: "destructive",
       });
       setIsLoading(false);
       return false;
@@ -112,29 +111,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsAuthenticated(true);
         setUsername(usernameInput);
         setHasPasskey(true);
-        localStorage.setItem('username', usernameInput);
+        localStorage.setItem("username", usernameInput);
         toast({
-          title: 'Registration Successful',
-          description: 'Your secure passkey has been created',
-          variant: 'default',
+          title: "Registration Successful",
+          description: "Your secure passkey has been created",
+          variant: "default",
         });
         setIsLoading(false);
         return true;
       } else {
         toast({
-          title: 'Registration Failed',
-          description: 'Could not create a passkey',
-          variant: 'destructive',
+          title: "Registration Failed",
+          description: "Could not create a passkey",
+          variant: "destructive",
         });
         setIsLoading(false);
         return false;
       }
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error("Registration error:", error);
       toast({
-        title: 'Registration Error',
-        description: 'An error occurred during registration',
-        variant: 'destructive',
+        title: "Registration Error",
+        description: "An error occurred during registration",
+        variant: "destructive",
       });
       setIsLoading(false);
       return false;
@@ -145,8 +144,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsAuthenticated(false);
     // We don't remove the username or passkey credentials on logout
     toast({
-      title: 'Logged out',
-      description: 'You have been securely logged out',
+      title: "Logged out",
+      description: "You have been securely logged out",
     });
   };
 
@@ -172,7 +171,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

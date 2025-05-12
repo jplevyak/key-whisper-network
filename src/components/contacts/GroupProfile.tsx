@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,15 +19,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { useContacts, Contact, Group } from '@/contexts/ContactsContext';
-import { useMessages } from '@/contexts/MessagesContext';
-import { useToast } from '@/hooks/use-toast';
-import ContactNameEdit from './shared/ContactNameEdit'; // Reusing for name input
-import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useContacts, Contact, Group } from "@/contexts/ContactsContext";
+import { useMessages } from "@/contexts/MessagesContext";
+import { useToast } from "@/hooks/use-toast";
+import ContactNameEdit from "./shared/ContactNameEdit"; // Reusing for name input
+import { Separator } from "@/components/ui/separator";
 
 interface GroupProfileProps {
   group: Group;
@@ -42,10 +42,14 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
 
   const [tempGroupName, setTempGroupName] = useState(group.name);
   const [isNameEditing, setIsNameEditing] = useState(false);
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(group.memberIds);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(
+    group.memberIds,
+  );
 
   // Filter out non-contact items to get a list of all actual contacts
-  const availableContacts = listItems.filter(item => item.itemType === 'contact') as Contact[];
+  const availableContacts = listItems.filter(
+    (item) => item.itemType === "contact",
+  ) as Contact[];
 
   useEffect(() => {
     if (isOpen) {
@@ -64,11 +68,11 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
 
   const handleSaveName = (): boolean => {
     const trimmedName = tempGroupName.trim();
-    if (trimmedName === '') {
+    if (trimmedName === "") {
       toast({
-        title: 'Invalid Name',
-        description: 'Group name cannot be empty.',
-        variant: 'destructive',
+        title: "Invalid Name",
+        description: "Group name cannot be empty.",
+        variant: "destructive",
       });
       return false;
     }
@@ -78,10 +82,10 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
   };
 
   const handleMemberSelection = (contactId: string) => {
-    setSelectedMemberIds(prev =>
+    setSelectedMemberIds((prev) =>
       prev.includes(contactId)
-        ? prev.filter(id => id !== contactId)
-        : [...prev, contactId]
+        ? prev.filter((id) => id !== contactId)
+        : [...prev, contactId],
     );
   };
 
@@ -93,24 +97,28 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
 
     if (!finalName) {
       toast({
-        title: 'Required Field',
-        description: 'Group name cannot be empty.',
-        variant: 'destructive',
+        title: "Required Field",
+        description: "Group name cannot be empty.",
+        variant: "destructive",
       });
       return;
     }
     if (selectedMemberIds.length === 0) {
       toast({
-        title: 'No Members Selected',
-        description: 'A group must have at least one member.',
-        variant: 'destructive',
+        title: "No Members Selected",
+        description: "A group must have at least one member.",
+        variant: "destructive",
       });
       return;
     }
 
     if (!updateGroup) {
-        toast({ title: 'Error', description: 'Update function not available.', variant: 'destructive' });
-        return;
+      toast({
+        title: "Error",
+        description: "Update function not available.",
+        variant: "destructive",
+      });
+      return;
     }
 
     const success = await updateGroup(group.id, {
@@ -120,10 +128,17 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
     });
 
     if (success) {
-      toast({ title: 'Group Updated', description: `${finalName} has been updated.` });
+      toast({
+        title: "Group Updated",
+        description: `${finalName} has been updated.`,
+      });
       onClose();
     } else {
-      toast({ title: 'Update Failed', description: 'Could not update group details.', variant: 'destructive' });
+      toast({
+        title: "Update Failed",
+        description: "Could not update group details.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -132,7 +147,7 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
     // The toast for deletion is handled within deleteContact context function
     onClose(); // Close the main profile dialog
   };
-  
+
   const resetAndClose = () => {
     // Reset state to original group details before closing
     setTempGroupName(group.name);
@@ -144,24 +159,34 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
   const selectedMemberCount = selectedMemberIds.length;
 
   const groupMessages = messages[group.id] || [];
-  const sentCount = groupMessages.filter(msg => msg.sent).length;
-  const receivedCount = groupMessages.filter(msg => !msg.sent).length;
-  const unreadCount = groupMessages.filter(msg => !msg.sent && !msg.read).length;
+  const sentCount = groupMessages.filter((msg) => msg.sent).length;
+  const receivedCount = groupMessages.filter((msg) => !msg.sent).length;
+  const unreadCount = groupMessages.filter(
+    (msg) => !msg.sent && !msg.read,
+  ).length;
 
-  const lastMessageTimestamp = groupMessages.length > 0
-    ? groupMessages.reduce((latest, msg) => {
-        return new Date(msg.timestamp) > new Date(latest) ? msg.timestamp : latest;
-      }, groupMessages[0].timestamp)
-    : null;
+  const lastMessageTimestamp =
+    groupMessages.length > 0
+      ? groupMessages.reduce((latest, msg) => {
+          return new Date(msg.timestamp) > new Date(latest)
+            ? msg.timestamp
+            : latest;
+        }, groupMessages[0].timestamp)
+      : null;
 
-  const hasChanges = tempGroupName.trim() !== group.name ||
-                     selectedMemberIds.length !== group.memberIds.length ||
-                     !selectedMemberIds.every(id => group.memberIds.includes(id)) ||
-                     !group.memberIds.every(id => selectedMemberIds.includes(id));
-
+  const hasChanges =
+    tempGroupName.trim() !== group.name ||
+    selectedMemberIds.length !== group.memberIds.length ||
+    !selectedMemberIds.every((id) => group.memberIds.includes(id)) ||
+    !group.memberIds.every((id) => selectedMemberIds.includes(id));
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) resetAndClose(); }}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) resetAndClose();
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Group Profile</DialogTitle>
@@ -173,7 +198,7 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             onNameChange={setTempGroupName}
             onSave={handleSaveName} // Saves to temp state, actual update on main save
             onEditToggle={handleToggleNameEdit}
-            onClear={() => setTempGroupName('')}
+            onClear={() => setTempGroupName("")}
           />
 
           <div className="grid grid-cols-2 gap-4 bg-muted p-4 rounded-lg">
@@ -192,7 +217,9 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             <div>
               <div className="text-sm text-muted-foreground">Last Active</div>
               <div className="text-sm">
-                {lastMessageTimestamp ? new Date(lastMessageTimestamp).toLocaleDateString() : 'Never'}
+                {lastMessageTimestamp
+                  ? new Date(lastMessageTimestamp).toLocaleDateString()
+                  : "Never"}
               </div>
             </div>
           </div>
@@ -201,12 +228,19 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             <Label htmlFor="group-members" className="text-lg font-medium">
               Group Members ({selectedMemberCount})
             </Label>
-            <div className="w-full rounded-md border p-2 max-h-[200px] overflow-y-auto"> {/* Retain scroll for member list if it's very long, but remove fixed height for the container */}
+            <div className="w-full rounded-md border p-2 max-h-[200px] overflow-y-auto">
+              {" "}
+              {/* Retain scroll for member list if it's very long, but remove fixed height for the container */}
               {availableContacts.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">No contacts available.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No contacts available.
+                </p>
               )}
-              {availableContacts.map(contact => (
-                <div key={contact.id} className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded-md">
+              {availableContacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  className="flex items-center space-x-3 p-2 hover:bg-muted/50 rounded-md"
+                >
                   <Checkbox
                     id={`profile-member-${contact.id}`}
                     checked={selectedMemberIds.includes(contact.id)}
@@ -214,9 +248,16 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
                   />
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={contact.avatar} alt={contact.name} />
-                    <AvatarFallback>{contact.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback>
+                      {contact.name.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
                   </Avatar>
-                  <Label htmlFor={`profile-member-${contact.id}`} className="flex-1 cursor-pointer">{contact.name}</Label>
+                  <Label
+                    htmlFor={`profile-member-${contact.id}`}
+                    className="flex-1 cursor-pointer"
+                  >
+                    {contact.name}
+                  </Label>
                 </div>
               ))}
             </div>
@@ -231,12 +272,15 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the group "{group.name}" and remove it from your list.
+                  This action cannot be undone. This will permanently delete the
+                  group "{group.name}" and remove it from your list.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleConfirmDelete}>Confirm Delete</AlertDialogAction>
+                <AlertDialogAction onClick={handleConfirmDelete}>
+                  Confirm Delete
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -244,7 +288,12 @@ const GroupProfile = ({ group, isOpen, onClose }: GroupProfileProps) => {
             <Button variant="outline" onClick={resetAndClose}>
               Cancel
             </Button>
-            <Button onClick={handleSaveChanges} disabled={!hasChanges || isNameEditing || selectedMemberIds.length === 0}>
+            <Button
+              onClick={handleSaveChanges}
+              disabled={
+                !hasChanges || isNameEditing || selectedMemberIds.length === 0
+              }
+            >
               Save Changes
             </Button>
           </div>

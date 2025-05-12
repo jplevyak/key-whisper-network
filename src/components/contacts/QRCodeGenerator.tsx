@@ -1,8 +1,14 @@
-
-import React from 'react';
-import { QRCodeSVG } from 'qrcode.react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import React from "react";
+import { QRCodeSVG } from "qrcode.react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface QRCodeGeneratorProps {
   data: string;
@@ -12,12 +18,18 @@ interface QRCodeGeneratorProps {
   onAccept: (key: string) => void;
 }
 
-const QRCodeGenerator = ({ data, title, description, onClose, onAccept }: QRCodeGeneratorProps) => {
+const QRCodeGenerator = ({
+  data,
+  title,
+  description,
+  onClose,
+  onAccept,
+}: QRCodeGeneratorProps) => {
   const handleAccept = () => {
     try {
       onAccept(data);
     } catch (error) {
-      console.error('Error accepting key:', error);
+      console.error("Error accepting key:", error);
     }
   };
 
@@ -29,16 +41,13 @@ const QRCodeGenerator = ({ data, title, description, onClose, onAccept }: QRCode
       </CardHeader>
       <CardContent className="flex justify-center">
         <div className="bg-white p-4 rounded-lg">
-          <QRCodeSVG 
-            value={data}
-            size={256}
-            level="H"
-            includeMargin={true}
-          />
+          <QRCodeSVG value={data} size={256} level="H" includeMargin={true} />
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2">
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
         <Button onClick={handleAccept}>Accept</Button>
       </CardFooter>
     </Card>

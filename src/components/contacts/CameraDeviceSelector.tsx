@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,7 @@ const CameraDeviceSelector = ({
   devices,
   onDeviceSelect,
   onClose,
-  isOpen
+  isOpen,
 }: CameraDeviceSelectorProps) => {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
