@@ -128,44 +128,6 @@ const ChatInterface = () => {
     );
   }
 
-  const inputRef = useRef(null);
-
-  const scrollToTop = () => {
-    window.scrollTo(0, 0);
-  };
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      window.scrollTo(0, 0);
-    }, 10); // Scroll every 10 milliseconds
-
-    // Cleanup function to clear the interval when the component unmounts
-    return () => clearInterval(intervalId);
-  }, []); // Empty dependency array ensures this effect runs only once
-
-  useEffect(() => {
-    const inputElement = inputRef.current;
-
-    if (inputElement) {
-      const handleFocus = () => {
-        scrollToTop();
-      };
-
-      const handleInput = () => {
-        scrollToTop();
-      };
-
-      inputElement.addEventListener('focusin', handleFocus);
-      inputElement.addEventListener('input', handleInput);
-
-      // Cleanup function to remove event listeners when the component unmounts
-      return () => {
-        inputElement.removeEventListener('focusin', handleFocus);
-        inputElement.removeEventListener('input', handleInput);
-      };
-    }
-  }, []); 
-
   return (
     <div className="h-full flex flex-col">
       {/* Fixed Chat Header */}
@@ -258,8 +220,8 @@ const ChatInterface = () => {
         <form onSubmit={handleSendMessage} className="flex space-x-2">
           <Input
             value={newMessage}
-            ref={inputRef}
             onChange={(e) => setNewMessage(e.target.value)}
+            onFocus={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
             placeholder="Type a secure message..."
             className="flex-1"
           />
