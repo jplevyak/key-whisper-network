@@ -97,9 +97,11 @@ const IndexContent = () => {
       if (appElement) { // Ensure appElement is still valid
         if (isMobile && window.visualViewport) {
           appElement.style.height = `${window.visualViewport.height}px`;
+          console.log("Updated app height to visualViewport height:", window.visualViewport.height);
         } else {
           // Fallback for desktop or mobile without visualViewport support
           appElement.style.height = `${window.innerHeight}px`;
+          console.log("Updated app height to window.innerHeight:", window.innerHeight);
         }
       }
     };
