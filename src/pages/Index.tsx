@@ -25,6 +25,7 @@ import { requestNotificationPermissionAndSubscribe, unsubscribeFromNotifications
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Import Tooltip components
 
 const IndexContent = () => {
+  const appContainerRef = React.useRef<HTMLDivElement>(null);
   const { isAuthenticated, isLoading, logout, username } = useAuth();
   const { activeItem: activeContact, setActiveItem } = useContacts(); // Correctly destructure and get setActiveItem
   const [showAddContact, setShowAddContact] = useState(false);
@@ -51,19 +52,6 @@ const IndexContent = () => {
       document.documentElement.style.setProperty('--input-height', '4rem'); // Set input height var
     }
 
-    // Effect to set viewport height for mobile devices
-    const setVh = () => {
-      const vh = window.innerHeight * 0.01;
-      document.documentElement.style.setProperty('--vh', `${vh}px`);
-    };
-    setVh();
-    window.addEventListener('resize', setVh);
-    window.addEventListener('orientationchange', setVh);
-
-    return () => {
-      window.removeEventListener('resize', setVh);
-      window.removeEventListener('orientationchange', setVh);
-    };
   }, [isMobile]);
 
   // Manage showContacts state based on isMobile and activeContact
@@ -99,6 +87,42 @@ const IndexContent = () => {
     // as the subscription should persist. We'll handle unsubscription
     // explicitly in the logout function if needed.
   }, [isAuthenticated, notificationsSupported, notificationPermission]); // Run when auth status, support, or permission state changes
+
+  // Effect to manage app height, especially for mobile visual viewport
+  useEffect(() => {
+    const appElement = appContainerRef.current;
+    if (!appElement) return; // Early exit if ref not attached
+
+    const updateAppHeight = () => {
+      if (isMobile && window.visualViewport) {
+        appElement.style.height = `${window.visualViewport.height}px`;
+      } else {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+        // Ensure the style is applied/reverted if not using visualViewport
+        appElement.style.height = `calc(var(--vh, 1vh) * 100)`;
+      }
+    };
+
+    updateAppHeight(); // Set initial height
+
+    // Add event listeners
+    window.addEventListener('resize', updateAppHeight);
+    window.addEventListener('orientationchange', updateAppHeight);
+    if (isMobile && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateAppHeight);
+    }
+
+    // Cleanup function
+    return () => {
+      window.removeEventListener('resize', updateAppHeight);
+      window.removeEventListener('orientationchange', updateAppHeight);
+      if (isMobile && window.visualViewport) {
+        // Check visualViewport again in case it became undefined
+        window.visualViewport?.removeEventListener('resize', updateAppHeight);
+      }
+    };
+  }, [isMobile]); // Dependency: re-run if isMobile changes
 
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
@@ -148,9 +172,10 @@ const IndexContent = () => {
   };
 
   return (
-    <div 
+    <div
+      ref={appContainerRef}
       className="bg-background flex flex-col overflow-hidden"
-      style={{ height: 'calc(var(--vh, 1vh) * 100)' }}
+      style={{ height: 'calc(var(--vh, 1vh) * 100)' }} // Initial/fallback height
     >
       {/* Fixed Header */}
       <header className="bg-card p-4 border-b flex justify-between items-center shrink-0">
