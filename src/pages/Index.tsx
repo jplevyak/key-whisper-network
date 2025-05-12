@@ -175,9 +175,7 @@ const IndexContent = () => {
                   <div
                     onClick={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
                     onTouchStart={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-primary h-8 w-8" // Consistent icon button styling
+                    className="text-muted-foreground hover:text-primary h-8 w-8 flex items-center justify-center cursor-pointer" // Added flex properties and cursor
                   >
                     {notificationPermission === "granted" ? (
                       <Bell className="h-5 w-5" />
