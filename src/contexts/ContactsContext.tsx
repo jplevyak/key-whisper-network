@@ -239,11 +239,6 @@ export const ContactsProvider = ({
 
       setListItems((prev) => [...prev, newContact]);
 
-      toast({
-        title: "Contact Added",
-        description: `${name} has been added to your contacts`,
-      });
-
       return true;
     } catch (error) {
       console.error("Error adding contact:", error);
@@ -273,10 +268,6 @@ export const ContactsProvider = ({
       setListItems((prev) => [...prev, newGroup]);
       // Persistence is handled by the useEffect watching listItems
 
-      toast({
-        title: "Group Created",
-        description: `${name} has been created.`,
-      });
       return newGroup;
     } catch (error) {
       console.error("Error creating group:", error);
