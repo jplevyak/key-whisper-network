@@ -171,13 +171,17 @@ const IndexContent = () => {
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                <Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-primary h-8 w-8" // Consistent icon button styling
+                  >
                     {notificationPermission === "granted" ? (
                       <Bell className="h-5 w-5" />
                     ) : (
                       <BellOff className="h-5 w-5" />
                     )}
-                </Button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>
                   {notificationPermission === "granted"
