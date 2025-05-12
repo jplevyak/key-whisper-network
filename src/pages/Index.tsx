@@ -215,7 +215,7 @@ const IndexContent = () => {
               </DialogHeader>
               <div className="grid gap-4 py-4 text-sm">
                 <p>
-                  CCred Network provides a secure way to exchange messages using end-to-end encryption, featuring quantum-safe AES to protect your communications.
+                  CCred Network provides a secure way to exchange messages using quantum-safe AES end-to-end encryption to protect your communications.
                 </p>
                 <h4 className="font-semibold mt-2">Security:</h4>
                 <p>
@@ -231,7 +231,7 @@ const IndexContent = () => {
                 </ul>
                 <h4 className="font-semibold mt-2">Understanding Groups:</h4>
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>Groups in CCred are essentially labels or tags you create to easily send the same message to multiple existing contacts at once.</li>
+                  <li>Groups in CCred are tags you create to easily send the same message to multiple existing contacts at once.</li>
                   <li>When you send a message "via" a group name to a contact, they receive the message with that group name attached.</li>
                   <li>The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.</li>
                   <li>It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.</li>
