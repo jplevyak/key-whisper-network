@@ -279,7 +279,7 @@ const IndexContent = () => {
       <div className="flex-1 flex overflow-hidden">
         {(!isMobile || (isMobile && showContacts)) && (
           <div
-            className={`${isMobile ? "w-full" : "w-80"} border-r bg-card overflow-y-auto`}
+            className={`${isMobile ? "w-full" : "w-80"} border-r bg-card flex-1 flex overflow-y-auto`}
           >
             <ContactsList
               onAddContact={() => setShowAddContact(true)}
