@@ -90,41 +90,59 @@ const IndexContent = () => {
 
   // Effect to manage app height, especially for mobile visual viewport
   useEffect(() => {
-    const appElement = appContainerRef.current;
-    if (!appElement) return; // Early exit if ref not attached
+    console.log(`Height effect RUNNING. isMobile: ${isMobile}`);
+    const appElementAtEffectTime = appContainerRef.current; // Capture ref value at the time effect runs
+
+    if (!appElementAtEffectTime) {
+      console.log("Height effect: appContainerRef.current is NULL when effect runs. Listeners NOT added.");
+      return; // Early exit if ref not attached
+    }
+    console.log("Height effect: appContainerRef.current is FOUND. Proceeding to define handler and add listeners.");
 
     const updateAppHeight = () => {
-      console.log('updateAppHeight triggered'); // Log if the handler is called at all
-      if (appElement) {
+      console.log('updateAppHeight triggered'); // This is where your breakpoint should be.
+      const currentAppElement = appContainerRef.current; // Access current ref value inside handler
+      if (currentAppElement) {
         if (isMobile && window.visualViewport) {
-          appElement.style.height = `${window.visualViewport.height}px`;
+          currentAppElement.style.height = `${window.visualViewport.height}px`;
           console.log("Updated app height to visualViewport height:", window.visualViewport.height, "isMobile:", isMobile);
         } else {
           // Fallback for desktop or mobile without visualViewport support
-          appElement.style.height = `${window.innerHeight}px`;
+          currentAppElement.style.height = `${window.innerHeight}px`;
           console.log("Updated app height to window.innerHeight:", window.innerHeight, "isMobile:", isMobile);
         }
       } else {
-        console.log('updateAppHeight triggered, but appElement is null or undefined.');
+        console.log('updateAppHeight triggered, but appContainerRef.current is now null.');
       }
     };
 
     updateAppHeight(); // Set initial height
 
-    // Add event listeners
+    console.log("Height effect: Adding 'resize' listener to window.");
     window.addEventListener('resize', updateAppHeight);
+    console.log("Height effect: Adding 'orientationchange' listener to window.");
     window.addEventListener('orientationchange', updateAppHeight);
+
+    let visualViewportListenerActuallyAttached = false;
     if (isMobile && window.visualViewport) {
+      console.log("Height effect: Adding 'resize' listener to visualViewport.");
       window.visualViewport.addEventListener('resize', updateAppHeight);
+      visualViewportListenerActuallyAttached = true;
     }
 
     // Cleanup function
     return () => {
+      // Log with the isMobile value captured at the time this cleanup function was defined.
+      console.log(`Height effect CLEANUP. isMobile (at time of setup): ${isMobile}`);
+      console.log("Height effect: Removing 'resize' listener from window.");
       window.removeEventListener('resize', updateAppHeight);
+      console.log("Height effect: Removing 'orientationchange' listener from window.");
       window.removeEventListener('orientationchange', updateAppHeight);
-      if (isMobile && window.visualViewport) {
-        // Check visualViewport again in case it became undefined
+      if (visualViewportListenerActuallyAttached && window.visualViewport) {
+        console.log("Height effect: Removing 'resize' listener from visualViewport.");
         window.visualViewport?.removeEventListener('resize', updateAppHeight);
+      } else if (visualViewportListenerActuallyAttached) {
+        console.log("Height effect: visualViewport listener was attached, but visualViewport is now null during cleanup.");
       }
     };
   }, [isMobile]); // Dependency: re-run if isMobile changes
