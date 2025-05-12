@@ -117,10 +117,16 @@ const IndexContent = () => {
       const currentAppElement = appContainerRef.current; 
       if (currentAppElement) {
         if (isMobile && window.visualViewport) {
+          currentAppElement.parentElement.parentElement.parentElement.style.height = `${window.visualViewport.height}px`;
+          currentAppElement.parentElement.parentElement.style.height = `${window.visualViewport.height}px`;
+          currentAppElement.parentElement.style.height = `${window.visualViewport.height}px`;
           currentAppElement.style.height = `${window.visualViewport.height}px`;
           console.log("Updated app height to visualViewport height:", window.visualViewport.height, "isMobile:", isMobile);
         } else {
           // Fallback for desktop or mobile without visualViewport support
+          currentAppElement.parentElement.parentElement.parentElement.style.height = `${window.innerHeight}px`;
+          currentAppElement.parentElement.parentElement.style.height = `${window.innerHeight}px`;
+          currentAppElement.parentElement.style.height = `${window.innerHeight}px`;
           currentAppElement.style.height = `${window.innerHeight}px`;
           console.log("Updated app height to window.innerHeight:", window.innerHeight, "isMobile:", isMobile);
         }
@@ -209,7 +215,7 @@ const IndexContent = () => {
   return (
     <div
       ref={appContainerRef}
-      className="bg-background flex flex-col overflow-hidden"
+      className="bg-background absolute top-0 left-0 flex flex-col overflow-hidden"
       style={{ height: '100dvh' }} // Default height, JS will override dynamically
     >
       {/* Fixed Header */}
