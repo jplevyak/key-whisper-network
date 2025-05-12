@@ -76,10 +76,22 @@ const ChatInterface = () => {
     }
   }, [activeItem, activeMessages, markAsRead]);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeMessages]); // activeMessages dependency is correct
+  };
+
+  // Scroll to bottom when messages change or active item changes
+  useEffect(() => {
+    scrollToBottom();
+  }, [activeMessages, activeItem]); // Added activeItem to scroll when chat initially loads
+
+  // Scroll to bottom on window resize
+  useEffect(() => {
+    window.addEventListener("resize", scrollToBottom);
+    return () => {
+      window.removeEventListener("resize", scrollToBottom);
+    };
+  }, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +233,7 @@ const ChatInterface = () => {
           <Input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onFocus={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+            onFocus={scrollToBottom} // Use the new scrollToBottom function
             placeholder="Type a secure message..."
             className="flex-1"
           />
