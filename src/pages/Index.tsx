@@ -94,13 +94,13 @@ const IndexContent = () => {
     if (!appElement) return; // Early exit if ref not attached
 
     const updateAppHeight = () => {
-      if (isMobile && window.visualViewport) {
-        appElement.style.height = `${window.visualViewport.height}px`;
-      } else {
-        const vh = window.innerHeight * 0.01;
-        document.documentElement.style.setProperty('--vh', `${vh}px`);
-        // Ensure the style is applied/reverted if not using visualViewport
-        appElement.style.height = `calc(var(--vh, 1vh) * 100)`;
+      if (appElement) { // Ensure appElement is still valid
+        if (isMobile && window.visualViewport) {
+          appElement.style.height = `${window.visualViewport.height}px`;
+        } else {
+          // Fallback for desktop or mobile without visualViewport support
+          appElement.style.height = `${window.innerHeight}px`;
+        }
       }
     };
 
@@ -175,7 +175,7 @@ const IndexContent = () => {
     <div
       ref={appContainerRef}
       className="bg-background flex flex-col overflow-hidden"
-      style={{ height: 'calc(var(--vh, 1vh) * 100)' }} // Initial/fallback height
+      style={{ height: '100dvh' }} // Default height, JS will override dynamically
     >
       {/* Fixed Header */}
       <header className="bg-card p-4 border-b flex justify-between items-center shrink-0">
