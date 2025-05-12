@@ -94,15 +94,18 @@ const IndexContent = () => {
     if (!appElement) return; // Early exit if ref not attached
 
     const updateAppHeight = () => {
-      if (appElement) { // Ensure appElement is still valid
+      console.log('updateAppHeight triggered'); // Log if the handler is called at all
+      if (appElement) {
         if (isMobile && window.visualViewport) {
           appElement.style.height = `${window.visualViewport.height}px`;
-          console.log("Updated app height to visualViewport height:", window.visualViewport.height);
+          console.log("Updated app height to visualViewport height:", window.visualViewport.height, "isMobile:", isMobile);
         } else {
           // Fallback for desktop or mobile without visualViewport support
           appElement.style.height = `${window.innerHeight}px`;
-          console.log("Updated app height to window.innerHeight:", window.innerHeight);
+          console.log("Updated app height to window.innerHeight:", window.innerHeight, "isMobile:", isMobile);
         }
+      } else {
+        console.log('updateAppHeight triggered, but appElement is null or undefined.');
       }
     };
 
