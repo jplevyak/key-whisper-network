@@ -59,18 +59,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = async (usernameInput: string) => {
     setIsLoading(true);
     try {
-      // If there's a passkey, verify it
       if (hasPasskey) {
         const verified = await verifyPasskey();
         if (verified) {
           setIsAuthenticated(true);
           setUsername(usernameInput);
           localStorage.setItem("username", usernameInput);
-          toast({
-            title: "Authentication Successful",
-            description: "Welcome back!",
-            variant: "default",
-          });
           setIsLoading(false);
           return true;
         } else {
