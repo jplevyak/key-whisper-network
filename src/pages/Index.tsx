@@ -122,7 +122,7 @@ const IndexContent = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-dvh flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <div className="animate-pulse">
             <Fingerprint className="h-16 w-16 mx-auto text-primary" />
@@ -135,7 +135,7 @@ const IndexContent = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="min-h-dvh flex items-center justify-center bg-background p-4">
         <LoginForm />
       </div>
     );
