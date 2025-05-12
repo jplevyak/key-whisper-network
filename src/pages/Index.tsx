@@ -149,29 +149,8 @@ const IndexContent = () => {
 
     updateAppHeight(); // Set initial height
 
-    const scrollBack = (event) => {
-      const focusedElement = event.target;
-      const viewportHeight =
-        window.innerHeight || document.documentElement.clientHeight;
-      const elementRect = focusedElement.getBoundingClientRect();
-      const isNearBottom = elementRect.bottom > viewportHeight;
-
-      if (
-        focusedElement.tagName === "INPUT" ||
-        focusedElement.tagName === "TEXTAREA"
-      ) {
-        if (isNearBottom) {
-          // Prevent the default scroll behavior
-          setTimeout(() => {
-            window.scrollTo(0, 0); // Immediately scroll back to the top
-          }, 0);
-        }
-      }
-    };
-
     window.addEventListener("resize", updateAppHeight);
     window.addEventListener("orientationchange", updateAppHeight);
-    window.addEventListener("focusin", scrollBack);
 
     let visualViewportListenerActuallyAttached = false;
     if (isMobile && window.visualViewport) {
@@ -183,7 +162,6 @@ const IndexContent = () => {
     return () => {
       window.removeEventListener("resize", updateAppHeight);
       window.removeEventListener("orientationchange", updateAppHeight);
-      window.removeEventListener("focusin", scrollBack);
       if (visualViewportListenerActuallyAttached && window.visualViewport) {
         window.visualViewport?.removeEventListener("resize", updateAppHeight);
       }
