@@ -129,9 +129,9 @@ const IndexContent = () => {
     setNotificationPermission(currentPermission);
     // Optionally show a toast message based on the result
     if (currentPermission === "granted") {
-      // toast({ title: "Notifications Enabled", description: "Push notifications are now active." });
+      toast({ title: "Notifications Enabled", description: "Push notifications are now active." });
     } else if (currentPermission === "denied") {
-      // toast({ title: "Notifications Blocked", description: "Please enable notifications in browser settings.", variant: "destructive" });
+      toast({ title: "Notifications Blocked", description: "Please enable notifications in browser settings.", variant: "destructive" });
     }
   };
 
