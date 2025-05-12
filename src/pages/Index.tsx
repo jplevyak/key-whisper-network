@@ -115,59 +115,6 @@ const IndexContent = () => {
     // explicitly in the logout function if needed.
   }, [isAuthenticated, notificationsSupported, notificationPermission]); // Run when auth status, support, or permission state changes
 
-  // Effect to manage app height, especially for mobile visual viewport
-  useEffect(() => {
-    // If still loading or not authenticated, the ref's element might not exist yet.
-    // The effect will run again when these states change.
-    if (isLoading || !isAuthenticated) {
-      return;
-    }
-
-    const appElement = appContainerRef.current; // Capture ref value
-
-    if (!appElement) {
-      // This case should ideally not be hit if isLoading is false and isAuthenticated is true,
-      // as the div with the ref should be rendered.
-      return;
-    }
-
-    const updateAppHeight = () => {
-      console.log("updateAppHeight triggered");
-      // Access current ref value inside handler, as appElement might be stale if the effect re-runs
-      // and re-defines updateAppHeight, but an old listener is somehow still active.
-      // However, with proper cleanup, appContainerRef.current should be equivalent to appElement here.
-      const currentAppElement = appContainerRef.current;
-      if (currentAppElement) {
-        if (isMobile && window.visualViewport) {
-          currentAppElement.style.height = `${window.visualViewport.height}px`;
-        } else {
-          // Fallback for desktop or mobile without visualViewport support
-          currentAppElement.style.height = `${window.innerHeight}px`;
-        }
-      }
-    };
-
-    updateAppHeight(); // Set initial height
-
-    window.addEventListener("resize", updateAppHeight);
-    window.addEventListener("orientationchange", updateAppHeight);
-
-    let visualViewportListenerActuallyAttached = false;
-    if (isMobile && window.visualViewport) {
-      window.visualViewport.addEventListener("resize", updateAppHeight);
-      visualViewportListenerActuallyAttached = true;
-    }
-
-    // Cleanup function
-    return () => {
-      window.removeEventListener("resize", updateAppHeight);
-      window.removeEventListener("orientationchange", updateAppHeight);
-      if (visualViewportListenerActuallyAttached && window.visualViewport) {
-        window.visualViewport?.removeEventListener("resize", updateAppHeight);
-      }
-    };
-  }, [isMobile, isLoading, isAuthenticated]); // Dependencies: re-run if isMobile, isLoading, or isAuthenticated changes
-
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
     // unsubscribeFromNotifications(); // Uncomment if you want to remove subscription on logout
@@ -218,8 +165,7 @@ const IndexContent = () => {
   return (
     <div
       ref={appContainerRef}
-      className="bg-background fixed top-0 left-0 w-full flex flex-col overflow-hidden" // Use fixed positioning and ensure full width
-      style={{ height: "100dvh" }} // Default height, JS will override dynamically
+      className="bg-background h-dvh w-full flex flex-col overflow-hidden" // Use fixed positioning and ensure full width
     >
       {/* Fixed Header */}
       <header className="bg-card p-4 border-b flex justify-between items-center shrink-0">
