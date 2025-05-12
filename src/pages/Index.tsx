@@ -90,18 +90,31 @@ const IndexContent = () => {
 
   // Effect to manage app height, especially for mobile visual viewport
   useEffect(() => {
-    console.log(`Height effect RUNNING. isMobile: ${isMobile}`);
-    const appElementAtEffectTime = appContainerRef.current; // Capture ref value at the time effect runs
+    console.log(`Height effect RUNNING. isMobile: ${isMobile}, isLoading: ${isLoading}, isAuthenticated: ${isAuthenticated}`);
 
-    if (!appElementAtEffectTime) {
-      console.log("Height effect: appContainerRef.current is NULL when effect runs. Listeners NOT added.");
-      return; // Early exit if ref not attached
+    // If still loading or not authenticated, the ref's element might not exist yet.
+    // The effect will run again when these states change.
+    if (isLoading || !isAuthenticated) {
+      console.log("Height effect: Still loading or not authenticated. Ref might not be available. Aborting listener setup for now.");
+      return;
+    }
+
+    const appElement = appContainerRef.current; // Capture ref value
+
+    if (!appElement) {
+      // This case should ideally not be hit if isLoading is false and isAuthenticated is true,
+      // as the div with the ref should be rendered.
+      console.error("Height effect: appContainerRef.current is NULL even though component is loaded and authenticated. Listeners NOT added.");
+      return; 
     }
     console.log("Height effect: appContainerRef.current is FOUND. Proceeding to define handler and add listeners.");
 
     const updateAppHeight = () => {
-      console.log('updateAppHeight triggered'); // This is where your breakpoint should be.
-      const currentAppElement = appContainerRef.current; // Access current ref value inside handler
+      console.log('updateAppHeight triggered'); 
+      // Access current ref value inside handler, as appElement might be stale if the effect re-runs
+      // and re-defines updateAppHeight, but an old listener is somehow still active.
+      // However, with proper cleanup, appContainerRef.current should be equivalent to appElement here.
+      const currentAppElement = appContainerRef.current; 
       if (currentAppElement) {
         if (isMobile && window.visualViewport) {
           currentAppElement.style.height = `${window.visualViewport.height}px`;
@@ -132,8 +145,7 @@ const IndexContent = () => {
 
     // Cleanup function
     return () => {
-      // Log with the isMobile value captured at the time this cleanup function was defined.
-      console.log(`Height effect CLEANUP. isMobile (at time of setup): ${isMobile}`);
+      console.log(`Height effect CLEANUP. isMobile: ${isMobile}, isLoading: ${isLoading}, isAuthenticated: ${isAuthenticated} (values at time of cleanup setup)`);
       console.log("Height effect: Removing 'resize' listener from window.");
       window.removeEventListener('resize', updateAppHeight);
       console.log("Height effect: Removing 'orientationchange' listener from window.");
@@ -145,7 +157,7 @@ const IndexContent = () => {
         console.log("Height effect: visualViewport listener was attached, but visualViewport is now null during cleanup.");
       }
     };
-  }, [isMobile]); // Dependency: re-run if isMobile changes
+  }, [isMobile, isLoading, isAuthenticated]); // Dependencies: re-run if isMobile, isLoading, or isAuthenticated changes
 
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
