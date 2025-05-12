@@ -168,7 +168,7 @@ const IndexContent = () => {
           {/* Adjusted spacing for smaller screens */}
           {/* Notification Status/Toggle Button */}
           {notificationsSupported && (
-            <TooltipProvider delayDuration={100}>
+            <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
