@@ -43,6 +43,7 @@ const IndexContent = () => {
   const [notificationsSupported, setNotificationsSupported] = useState(false);
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
+  const [notificationTooltipOpen, setNotificationTooltipOpen] = React.useState(false);
 
   // Check notification support and initial permission on mount
   useEffect(() => {
@@ -168,10 +169,12 @@ const IndexContent = () => {
           {/* Adjusted spacing for smaller screens */}
           {/* Notification Status/Toggle Button */}
           {notificationsSupported && (
-            <TooltipProvider>
-              <Tooltip>
+            <TooltipProvider delayDuration={0}>
+              <Tooltip open={notificationTooltipOpen}>
                 <TooltipTrigger asChild>
-                  <Button
+                  <div
+                    onClick={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
+                    onTouchStart={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
                     variant="ghost"
                     size="icon"
                     className="text-muted-foreground hover:text-primary h-8 w-8" // Consistent icon button styling
@@ -181,7 +184,7 @@ const IndexContent = () => {
                     ) : (
                       <BellOff className="h-5 w-5" />
                     )}
-                  </Button>
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent>
                   {notificationPermission === "granted"
