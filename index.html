@@ -17,22 +17,13 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
     <style>
-        html, body {
-            height: 100dvh;
-            width: 100%;
+        html, body, #root {
+            height: 100%; /* Allow elements to fill their parent, ultimately the viewport */
             margin: 0;
             padding: 0;
-            position: absolute;
-            top: 0;
-            left: 0;
-            overflow: hidden;
         }
-        #root {
-            height: 100dvh;
-            width: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
+        body {
+            overflow: hidden; /* Prevent the body itself from scrolling */
         }
     </style>
   </head>
