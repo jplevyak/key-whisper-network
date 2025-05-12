@@ -121,20 +121,6 @@ const IndexContent = () => {
     logout();
   };
 
-  const handleNotificationIconClick = async () => {
-    if (!notificationsSupported) return;
-
-    console.log("Notification icon clicked, requesting permission...");
-    const currentPermission = await requestNotificationPermissionAndSubscribe();
-    setNotificationPermission(currentPermission);
-    // Optionally show a toast message based on the result
-    if (currentPermission === "granted") {
-      toast({ title: "Notifications Enabled", description: "Push notifications are now active." });
-    } else if (currentPermission === "denied") {
-      toast({ title: "Notifications Blocked", description: "Please enable notifications in browser settings.", variant: "destructive" });
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-background">
@@ -185,23 +171,13 @@ const IndexContent = () => {
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-primary h-8 w-8"
-                    onClick={handleNotificationIconClick}
-                    aria-label={
-                      notificationPermission === "granted"
-                        ? "Notifications enabled"
-                        : "Enable notifications"
-                    }
-                  >
+                <Button>
                     {notificationPermission === "granted" ? (
                       <Bell className="h-5 w-5" />
                     ) : (
                       <BellOff className="h-5 w-5" />
                     )}
-                  </Button>
+                </Button>
                 </TooltipTrigger>
                 <TooltipContent>
                   {notificationPermission === "granted"
