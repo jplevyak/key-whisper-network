@@ -169,11 +169,13 @@ export const useMessagePolling = ({
               continue;
             }
             let groupName: String | undefined = undefined;
+            let groupId: String | undefined = undefined;
             try {
               const msg = JSON.parse(
                 await decryptMessage(receivedMsg.message, keyForDecryption),
               );
               groupName = msg.group;
+              groupId = msg.groupId;
             } catch (decryptError) {
               console.error(
                 `Failed to decrypt message for contactId ${contactId} (will store anyway):`,
@@ -181,10 +183,9 @@ export const useMessagePolling = ({
               );
             }
 
-            console.log("Group name from decrypted message:", groupName);
-            if (groupName) {
+            if (groupId) {
               const group = listItems.find(
-                (item) => item.itemType === "group" && item.name === groupName,
+                (item) => item.itemType === "group" && item.id === groupId,
               );
 
               if (group) {
@@ -195,6 +196,7 @@ export const useMessagePolling = ({
                 // Scenario 2: Group does not exist (or serverSenderInGroupId missing), message is from directSenderContactId but with a group context name.
                 // Message goes into the direct sender's chat.
                 messageForStorage.groupContextName = groupName;
+                messageForStorage.groupContextId = groupId;
               }
             }
 

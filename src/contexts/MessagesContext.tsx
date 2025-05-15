@@ -25,6 +25,7 @@ import { useMessagePolling } from "@/hooks/useMessagePolling";
 export interface MessageContent {
   message: string;
   group?: string; // Optional: name of the group if it's a group message
+  groupId?: string; // Optional: id of the group if it's a group message
 }
 
 // Export the Message interface
@@ -33,6 +34,7 @@ export interface Message {
   contactId: string;
   groupId?: string; // If message is part of an existing group chat, this is the group's ID.
   groupContextName?: string; // If message is received from a contact with a group context, this is the group name.
+  groupContextId?: string; // If message is received from a contact with a group context, this is the group id.
   content: string; // Encrypted MessageContent (JSON stringified)
   timestamp: string;
   sent: boolean; // true if sent by user, false if received
@@ -58,7 +60,6 @@ interface MessagesContextType {
   moveContextualMessagesToGroup: (
     sourceContactId: string,
     targetGroup: Group,
-    originalGroupContextName: string,
   ) => Promise<void>;
   deleteMessagesFromSenderInGroups: (senderContactId: string) => void;
   reEncryptMessagesForKeyChange: (
@@ -255,6 +256,7 @@ export const MessagesProvider = ({
       const groupMessageContent: MessageContent = {
         message: textContent,
         group: group.name,
+        groupId: group.id,
       };
       const localEncryptedMessage = await encryptMessage(
         JSON.stringify(groupMessageContent),
@@ -305,6 +307,7 @@ export const MessagesProvider = ({
           const memberMessageContent: MessageContent = {
             message: textContent,
             group: group.name,
+            groupId: group.id,
           };
           const encryptedContentForMember = await encryptMessage(
             JSON.stringify(memberMessageContent),
@@ -737,11 +740,11 @@ export const MessagesProvider = ({
       const remainingSourceMessages: Message[] = [];
 
       for (const msg of sourceMessages) {
-        // We'll rely on msg.groupContextName for identification
-        if (msg.groupContextName === originalGroupContextName) {
+        if (msg.groupContextId === targetGroup.id) {
           const movedMessage = { ...msg };
           movedMessage.groupId = targetGroup.id;
           delete movedMessage.groupContextName; // Clear the context name
+          delete movedMessage.groupContextId; // Clear the context id
 
           if (movedMessage.sent) {
             // Message sent by current user

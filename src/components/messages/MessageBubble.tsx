@@ -12,7 +12,7 @@ interface MessageBubbleProps {
   onGroupContextClick?: (
     groupName: string,
     contactId: string,
-    groupContextId?: string,
+    groupId: string,
   ) => void;
 }
 

@@ -38,7 +38,7 @@ import { Group } from "@/contexts/ContactsContext"; // Import Group type
 interface InitialGroupData {
   groupName: string;
   contactId: string;
-  groupContextId?: string;
+  groupId?: string;
 }
 
 const ChatInterface = () => {
@@ -119,9 +119,9 @@ const ChatInterface = () => {
   const handleGroupContextClick = (
     groupName: string,
     contactId: string,
-    groupContextId?: string,
+    groupId: string,
   ) => {
-    setInitialGroupDataForModal({ groupName, contactId, groupContextId });
+    setInitialGroupDataForModal({ groupName, contactId, groupId });
     setIsAddGroupModalOpen(true);
   };
 
@@ -282,7 +282,6 @@ const ChatInterface = () => {
               await moveContextualMessagesToGroup(
                 initialGroupDataForModal.contactId,
                 createdGroup,
-                initialGroupDataForModal.groupName,
               );
               // Optionally, switch active chat to the new group
               setActiveItem(createdGroup);
@@ -296,7 +295,7 @@ const ChatInterface = () => {
               ? [initialGroupDataForModal.contactId]
               : []
           }
-          initialGroupId={initialGroupDataForModal?.groupContextId} // Pass groupContextId as initialGroupId
+          initialGroupId={initialGroupDataForModal?.groupId} // Pass groupId as initialGroupId
         />
       )}
     </div>
