@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Fingerprint, Info, Bell, BellOff } from "lucide-react"; // Import Bell icons
+import { Fingerprint, Info, Bell, BellOff, RefreshCw } from "lucide-react"; // Import Bell icons and RefreshCw
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   requestNotificationPermissionAndSubscribe,
@@ -45,6 +45,7 @@ const IndexContent = () => {
     useState<NotificationPermission>("default");
   // const [notificationTooltipOpen, setNotificationTooltipOpen] = React.useState(false); // Tooltip will be hover/focus triggered
   const [isPWA, setIsPWA] = useState(false);
+  const [serviceWorkerWaiting, setServiceWorkerWaiting] = useState<ServiceWorker | null>(null);
 
   const openAboutAndScrollToNotifications = () => {
     setIsAboutDialogOpen(true);
@@ -130,6 +131,84 @@ const IndexContent = () => {
     // as the subscription should persist. We'll handle unsubscription
     // explicitly in the logout function if needed.
   }, [isAuthenticated, notificationsSupported, notificationPermission]); // Run when auth status, support, or permission state changes
+
+  // Effect to detect waiting service worker
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) {
+      console.log("Service Worker not supported.");
+      return;
+    }
+
+    let registration: ServiceWorkerRegistration | null = null;
+
+    const setupSWListeners = async () => {
+      try {
+        registration = await navigator.serviceWorker.ready;
+        
+        if (registration.waiting) {
+          console.log("Initial check: Service worker waiting.", registration.waiting);
+          setServiceWorkerWaiting(registration.waiting);
+        }
+
+        const handleUpdateFound = () => {
+          if (registration && registration.installing) {
+            const newWorker = registration.installing;
+            console.log("Service worker update found. New worker:", newWorker);
+            
+            const handleStateChange = () => {
+              if (newWorker.state === 'installed') {
+                console.log("New service worker installed and waiting.", newWorker);
+                setServiceWorkerWaiting(newWorker);
+                newWorker.removeEventListener('statechange', handleStateChange);
+              } else if (newWorker.state === 'redundant') {
+                console.log("New service worker became redundant.");
+                newWorker.removeEventListener('statechange', handleStateChange);
+              }
+            };
+            newWorker.addEventListener('statechange', handleStateChange);
+          }
+        };
+
+        if (registration) {
+            registration.addEventListener('updatefound', handleUpdateFound);
+        }
+        
+      } catch (error) {
+        console.error("Service Worker registration failed:", error);
+      }
+    };
+
+    setupSWListeners();
+
+    const handleControllerChange = () => {
+      console.log("Controller changed, new SW active. Clearing waiting state.");
+      setServiceWorkerWaiting(null);
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
+    return () => {
+      // Note: Removing 'updatefound' listener from registration can be tricky
+      // if handleUpdateFound is not a stable reference.
+      // Listeners on newWorker instances are cleaned up in handleStateChange.
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      console.log("Cleaned up SW controllerchange listener for IndexContent unmount.");
+    };
+  }, []);
+
+  const handleUpdateApp = () => {
+    if (serviceWorkerWaiting) {
+      console.log("Sending SKIP_WAITING to service worker.");
+      
+      const onControllerChange = () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+        window.location.reload();
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+      
+      serviceWorkerWaiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+  };
 
   const handleLogout = () => {
     // Optional: Unsubscribe from push notifications on logout
@@ -307,8 +386,13 @@ const IndexContent = () => {
                 </p>
               </div>
               <DialogFooter>
+                {serviceWorkerWaiting && (
+                  <Button type="button" variant="default" onClick={handleUpdateApp}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Update App
+                  </Button>
+                )}
                 <DialogClose asChild>
-                  <Button type="button">Close</Button>
+                  <Button type="button" variant="outline">Close</Button>
                 </DialogClose>
               </DialogFooter>
             </DialogContent>
