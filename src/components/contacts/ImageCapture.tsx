@@ -64,14 +64,8 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
   };
 
   const handleRetakeClick = () => {
-    // Clear both local and parent state
-    //setLocalImage('');
-    //onImageCapture('');
-
-    // Need to add a small delay to ensure state is updated before starting camera
-    setTimeout(() => {
-      startCamera(); // Start the camera after clearing the image
-    }, 10);
+    // Directly start the camera. The existing image remains until a new one is captured.
+    startCamera();
   };
 
   return (
@@ -82,13 +76,7 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
           isPlaceholder && !isCameraActive ? handlePlaceholderClick : undefined
         }
       >
-        {!isPlaceholder ? (
-          <img
-            src={localImage}
-            alt="Contact"
-            className="w-full h-full object-cover"
-          />
-        ) : (
+        {isCameraActive ? (
           <video
             ref={videoRef}
             autoPlay
@@ -96,14 +84,32 @@ const ImageCapture = ({ onImageCapture, capturedImage }: ImageCaptureProps) => {
             muted
             className="w-full h-full object-cover"
           />
+        ) : !isPlaceholder ? (
+          <img
+            src={localImage}
+            alt="Contact"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          // Placeholder view (e.g., initial state or when image cleared)
+          // Uses videoRef so camera can start here if handlePlaceholderClick is used
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover" // Will be blank or show placeholder styling
+          />
         )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-          {!isPlaceholder ? (
-            <CameraOff className="w-8 h-8 text-white" />
-          ) : (
-            <Camera className="w-8 h-8 text-white" />
-          )}
-        </div>
+        {!isCameraActive && ( // Only show overlay icons if camera is not active
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!isPlaceholder ? (
+              <CameraOff className="w-8 h-8 text-white" /> // Icon for "has image, retake?"
+            ) : (
+              <Camera className="w-8 h-8 text-white" /> // Icon for "no image, open camera?"
+            )}
+          </div>
+        )}
       </div>
       <canvas ref={canvasRef} className="hidden" />
 
