@@ -201,12 +201,23 @@ const IndexContent = () => {
       console.log("Sending SKIP_WAITING to service worker.");
       
       const onControllerChange = () => {
+        console.log("handleUpdateApp: Controller changed. Preparing to reload.");
         navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
-        window.location.reload();
+        
+        // Close the About dialog first, as the button is inside it.
+        setIsAboutDialogOpen(false); 
+        
+        // Brief timeout to allow UI changes (like dialog closing) and then reload.
+        setTimeout(() => {
+          console.log("handleUpdateApp: Reloading window now.");
+          window.location.reload();
+        }, 100); // 100ms delay, adjust if needed
       };
       navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
       
+      console.log("handleUpdateApp: Sending SKIP_WAITING to service worker.", serviceWorkerWaiting);
       serviceWorkerWaiting.postMessage({ type: 'SKIP_WAITING' });
+      console.log("handleUpdateApp: SKIP_WAITING message sent.");
     }
   };
 
