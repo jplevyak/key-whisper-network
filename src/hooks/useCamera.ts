@@ -40,10 +40,8 @@ export const useCamera = () => {
   const startCamera = useCallback(
     async (deviceId?: string) => {
       try {
-        if (!videoRef.current) return;
-
         // Stop any existing stream first
-        stopCamera();
+        stopCamera(); // This sets isCameraActive(false) and clears videoRef.current.srcObject
 
         const constraints = {
           video: deviceId ? { deviceId } : { facingMode: "environment" },
@@ -51,11 +49,11 @@ export const useCamera = () => {
         };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-        setIsCameraActive(true);
+        streamRef.current = stream; // Store the stream
+        setIsCameraActive(true); // Trigger re-render and useEffect
         setShowDeviceSelector(false);
       } catch (error) {
+        // Attempt to fallback to device selection if initial attempt fails
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices
@@ -84,6 +82,27 @@ export const useCamera = () => {
     },
     [stopCamera, toast],
   );
+
+  // Effect to manage attaching/detaching stream to video element
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isCameraActive && streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch(err => {
+          console.warn("Video play() failed, possibly due to autoplay policy:", err);
+        });
+      } else {
+        // Ensure srcObject is cleared if camera is not active or no stream
+        // stopCamera also handles this, but this is an additional safeguard
+        if (videoRef.current.srcObject) {
+          videoRef.current.srcObject = null;
+        }
+      }
+    }
+    // This effect should run when isCameraActive changes.
+    // streamRef.current is updated before isCameraActive is set to true in startCamera.
+    // videoRef.current is updated by React's render cycle triggered by isCameraActive change.
+  }, [isCameraActive]);
 
   const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return "";
