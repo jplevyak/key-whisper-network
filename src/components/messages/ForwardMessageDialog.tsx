@@ -25,16 +25,16 @@ const ForwardMessageDialog = ({
   isOpen,
   onClose,
 }: ForwardMessageDialogProps) => {
-  const { contacts } = useContacts();
+  const { listItems } = useContacts(); // Changed contacts to listItems
   const { forwardMessage, getDecryptedContent } = useMessages();
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [forwardingInProgress, setForwardingInProgress] = useState(false);
   const { toast } = useToast();
 
-  // Filter out the original contact
-  const availableContacts = contacts.filter(
-    (contact) => contact.id !== message.contactId,
-  );
+  // Filter listItems to get only contacts, then exclude the original sender
+  const availableContacts = (listItems || []) // Added fallback for listItems
+    .filter((item): item is Contact => item.itemType === "contact")
+    .filter((contact) => contact.id !== message.contactId);
 
   const handleForwardMessage = async () => {
     if (!selectedContact) return;
