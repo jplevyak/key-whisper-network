@@ -23,6 +23,7 @@ interface AddGroupModalProps {
   onClose: (createdGroup?: Group) => void; // Updated to pass Group object
   initialGroupName?: string;
   initialSelectedMemberIds?: string[];
+  initialGroupId?: string; // Added initialGroupId
   // initialGroupContextId?: string; // Not directly used for creation logic yet, but can be passed
 }
 
@@ -31,6 +32,7 @@ const AddGroupModal = ({
   onClose,
   initialGroupName,
   initialSelectedMemberIds,
+  initialGroupId, // Added initialGroupId
 }: AddGroupModalProps) => {
   const haikunator = useMemo(() => new Haikunator(), []);
   const { listItems, addGroup } = useContacts();
@@ -128,7 +130,9 @@ const AddGroupModal = ({
     // const defaultGroupAvatar = '/icons/group-avatar-default.svg'; // Example path
     const newGroup = await addGroup(
       groupName,
-      selectedMemberIds /*, defaultGroupAvatar */,
+      selectedMemberIds,
+      undefined, // For avatar, keeping it undefined as per existing logic
+      initialGroupId, // Pass initialGroupId
     );
     if (newGroup) {
       onClose(newGroup); // Pass the new group on successful creation

@@ -41,6 +41,7 @@ interface ContactsContextType {
     name: string,
     memberIds: string[],
     avatar?: string,
+    groupId?: string, // Added optional groupId
   ) => Promise<Group | null>; // Return Group or null
   getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
   generateContactKey: () => Promise<string>; // For contacts
@@ -255,10 +256,11 @@ export const ContactsProvider = ({
     name: string,
     memberIds: string[],
     avatar?: string,
+    groupId?: string, // Added groupId parameter
   ): Promise<Group | null> => {
     try {
       const newGroup: Group = {
-        id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        id: groupId || `group-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Use provided groupId or generate new
         name,
         avatar: avatar,
         itemType: "group",

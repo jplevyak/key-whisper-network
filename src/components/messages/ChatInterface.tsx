@@ -296,7 +296,7 @@ const ChatInterface = () => {
               ? [initialGroupDataForModal.contactId]
               : []
           }
-          // initialGroupContextId={initialGroupDataForModal?.groupContextId} // Pass if needed by AddGroupModal
+          initialGroupId={initialGroupDataForModal?.groupContextId} // Pass groupContextId as initialGroupId
         />
       )}
     </div>
