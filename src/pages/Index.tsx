@@ -43,10 +43,25 @@ const IndexContent = () => {
   const [notificationsSupported, setNotificationsSupported] = useState(false);
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission>("default");
-  const [notificationTooltipOpen, setNotificationTooltipOpen] = React.useState(false);
+  // const [notificationTooltipOpen, setNotificationTooltipOpen] = React.useState(false); // Tooltip will be hover/focus triggered
+  const [isPWA, setIsPWA] = useState(false);
 
-  // Check notification support and initial permission on mount
+  const openAboutAndScrollToNotifications = () => {
+    setIsAboutDialogOpen(true);
+    setTimeout(() => {
+      const section = document.getElementById("notifications-section");
+      if (section) {
+        section.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 100); // Timeout to allow dialog to render
+  };
+
+  // Check notification support, initial permission, and PWA status on mount
   useEffect(() => {
+    // Check PWA status
+    const runningAsPWA = window.matchMedia('(display-mode: standalone)').matches;
+    setIsPWA(runningAsPWA);
+
     const isSupported =
       "Notification" in window &&
       "PushManager" in window &&
@@ -167,33 +182,40 @@ const IndexContent = () => {
         <div className="flex items-center space-x-1 sm:space-x-2">
           {" "}
           {/* Adjusted spacing for smaller screens */}
-          {/* Notification Status/Toggle Button */}
-          {notificationsSupported && (
-            <TooltipProvider delayDuration={0}>
-              <Tooltip open={notificationTooltipOpen}>
-                <TooltipTrigger asChild>
-                  <div
-                    onClick={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
-                    onTouchStart={() => { setNotificationTooltipOpen(!notificationTooltipOpen); }}
-                    className="text-muted-foreground hover:text-primary h-8 w-8 flex items-center justify-center cursor-pointer" // Added flex properties and cursor
-                  >
-                    {notificationPermission === "granted" ? (
-                      <Bell className="h-5 w-5" />
-                    ) : (
-                      <BellOff className="h-5 w-5" />
-                    )}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {notificationPermission === "granted"
-                    ? "Push notifications are enabled"
+          {/* Notification Status/Toggle Button - Always shown */}
+          <TooltipProvider delayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  onClick={async () => {
+                    if (notificationsSupported && notificationPermission === "default") {
+                      const perm = await requestNotificationPermissionAndSubscribe();
+                      setNotificationPermission(perm);
+                    } else if (notificationPermission === "denied" || !notificationsSupported) {
+                      openAboutAndScrollToNotifications();
+                    }
+                    // Tooltip will show on hover/focus, click is for action.
+                  }}
+                  className="text-muted-foreground hover:text-primary h-8 w-8 flex items-center justify-center cursor-pointer"
+                >
+                  {notificationPermission === "granted" ? (
+                    <Bell className="h-5 w-5" />
+                  ) : (
+                    <BellOff className="h-5 w-5" />
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {notificationPermission === "granted"
+                  ? "Push notifications are enabled."
+                  : !notificationsSupported
+                    ? "Notifications not available. Click for setup info (PWA install & settings may be required)."
                     : notificationPermission === "denied"
-                      ? "Notifications blocked (click to retry, may require browser settings change)"
-                      : "Click to enable push notifications"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+                      ? "Notifications blocked. Click for setup info (may require browser/OS settings change)."
+                      : "Click to enable push notifications."}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           {/* About Dialog Trigger */}
           <Dialog open={isAboutDialogOpen} onOpenChange={setIsAboutDialogOpen}>
             <DialogTrigger asChild>
@@ -217,11 +239,28 @@ const IndexContent = () => {
                 <p>
                   CCred Network provides a secure way to exchange messages using quantum-safe AES end-to-end encryption to protect your communications.
                 </p>
+                {(!isPWA || notificationPermission !== "granted") && (
+                  <p className="mb-2 text-center">
+                    <a
+                      href="#notifications-section"
+                      className="text-red-500 font-semibold underline hover:text-red-600"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const section = document.getElementById("notifications-section");
+                        if (section) {
+                          section.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                      }}
+                    >
+                      Install and Enable Notifications
+                    </a>
+                  </p>
+                )}
                 <h4 className="font-semibold mt-2">Security:</h4>
                 <p>
                   Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages.
                 </p>
-                <h4 className="font-semibold mt-2">How to Use:</h4>
+                <h4 id="how-to-use-section" className="font-semibold mt-2">How to Use:</h4>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Add contacts by scanning their QR code or generating your own for them to scan.</li>
                   <li>Select a contact to start a conversation.</li>
@@ -236,7 +275,7 @@ const IndexContent = () => {
                   <li>The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.</li>
                   <li>It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.</li>
                 </ul>
-                <h4 className="font-semibold mt-2">Enabling Notifications:</h4>
+                <h4 id="notifications-section" className="font-semibold mt-2 scroll-mt-4">Enabling Notifications:</h4>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>
                     <strong>iOS (Safari):</strong>
