@@ -236,6 +236,33 @@ const IndexContent = () => {
                   <li>The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.</li>
                   <li>It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.</li>
                 </ul>
+                <h4 className="font-semibold mt-2">Enabling Notifications:</h4>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>
+                    <strong>iOS (Safari):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Ensure notifications are enabled in your device settings: Go to Settings &gt; Safari &gt; Advanced &gt; Notifications (toggle ON).</li>
+                      <li>Install CCred as a Progressive Web App (PWA): Tap the Share icon in Safari, then select "Add to Home Screen".</li>
+                      <li>Open the app from your Home Screen and agree to the notification permission prompt when it appears.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Android (Chrome):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>When prompted by the app or browser, tap "Allow" to enable notifications.</li>
+                      <li>If you initially denied permission, you can change this by going to Chrome Settings &gt; Site Settings &gt; Notifications, find CCred, and allow notifications.</li>
+                      <li>You can also install CCred as a PWA by tapping the "Install" button in Chrome's menu or when prompted.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Desktop (Chrome on Windows/macOS/Linux):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Click the lock icon in the address bar next to the CCred URL.</li>
+                      <li>Find "Notifications" in the dropdown and set it to "Allow".</li>
+                      <li>You may need to refresh the page for changes to take effect.</li>
+                    </ul>
+                  </li>
+                </ul>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Remember: Keep your device secure. Lost access means lost messages.
                 </p>
