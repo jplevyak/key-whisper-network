@@ -148,7 +148,117 @@ cargo build
 
 ### Setup
 
+The initial server setup involves creating a dedicated user and group for the backend service, along with the necessary directories. This is typically done once.
+
+Below is the content of the `simple-message-backend.service` file, which should be placed in a standard systemd service directory (e.g., `/etc/systemd/system/`). This service file configures how the backend application is run, managed, and secured. It ensures the backend runs as a non-privileged user (`msgsvc`) and includes various security hardening options.
+
+```systemd
+[Unit]
+Description=Simple Message Backend Service
+Documentation=https://example.com/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# --- User and Permissions ---
+# It's highly recommended to run as a non-privileged user.
+# Create this user and group first if they don't exist:
+#   sudo groupadd --system msgsvc
+#   sudo useradd --system --no-create-home --gid msgsvc -s /bin/false msgsvc
+User=msgsvc
+Group=msgsvc
+
+# Set the working directory for the service.
+# This should typically be where your executable and database directory reside.
+WorkingDirectory=/opt/simple-message-backend
+
+# --- Execution Settings ---
+# Set the full path to your compiled Rust binary.
+ExecStart=/opt/simple-message-backend/simple-message-backend
+#ExecStart=/usr/bin/strace -f -o /opt/simple-message-backend/service_startup_trace.txt /opt/simple-message-backend/simple-message-backend
+
+# --- Process Management ---
+# Restart the service automatically if it fails.
+Restart=on-failure
+# Wait 5 seconds before attempting a restart.
+RestartSec=5s
+# Set a reasonable timeout for stopping the service.
+TimeoutStopSec=10s
+
+# --- Environment Variables ---
+# Set environment variables needed by your application.
+# Example: Logging level (uses RUST_LOG standard).
+Environment="RUST_LOG=info"
+# Example: If you make the DB path configurable via env var:
+# Environment="DATABASE_PATH=/opt/simple-message-backend/message_db"
+# Example: If you make the listen address/port configurable:
+# Environment="LISTEN_ADDR=0.0.0.0:3000"
+
+# --- Security Hardening (Recommended) ---
+# Prevent the service from writing to /usr, /boot, /etc.
+#ProtectSystem=strict
+# Provide a private /tmp directory.
+PrivateTmp=true
+# Prevent privilege escalation.
+NoNewPrivileges=true
+# Restrict access to physical devices.
+PrivateDevices=true
+# Protect kernel tuning parameters (/proc/sys, /sys).
+ProtectKernelTunables=true
+# Protect control groups (/sys/fs/cgroup).
+ProtectControlGroups=true
+# Protect the kernel modules system.
+ProtectKernelModules=true
+# Protect home directories (if not needed). Consider 'read-only' if needed.
+ProtectHome=true
+# Limit the capabilities the process retains (drop most).
+CapabilityBoundingSet=~CAP_SYS_ADMIN CAP_NET_ADMIN CAP_NET_BIND_SERVICE # Adjust if specific caps needed, e.g. CAP_NET_BIND_SERVICE if binding to port < 1024 as non-root
+
+# --- Standard Output/Error Logging ---
+# Redirect stdout and stderr to the systemd journal. Use `journalctl` to view.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Enable the service to start automatically during multi-user system startup.
+WantedBy=multi-user.target
+```
+
+After creating the service file (e.g., at `/etc/systemd/system/simple-message-backend.service`), you would typically enable and start it with commands like:
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable simple-message-backend.service
+sudo systemctl start simple-message-backend.service
+```
+
+To perform the initial user and directory setup required by the service, execute the following script as root or with `sudo`:
+
+```sh
+#!/bin/bash
+sudo addgroup msgsvc
+sudo useradd --system --no-create-home --gid msgsvc -s /bin/false msgsvc
+sudo mkdir /opt/simple-message-backend
+sudo mkdir /opt/simple-message-backend/message_db
+sudo mkdir /opt/simple-message-backend/message_db/journals
+sudo chown -R msgsvc:msgsvc /opt/simple-message-backend
+```
+
 ### Install
+
+To deploy or update the application, run the following script. It builds the Rust backend, copies the new backend executable, restarts the backend service, deploys the frontend static assets to the web server directory, compresses them, and reloads the web server (Nginx in this example).
+
+```sh
+#!/bin/bash
+. "$HOME/.cargo/env"
+cargo build --release
+sudo systemctl stop simple-message-backend.service
+sudo cp target/release/simple-message-backend /opt/simple-message-backend/
+sudo systemctl start simple-message-backend.service
+sudo rm -rf /var/www/ccred/*
+sudo cp -r dist/* /var/www/ccred/
+sudo gzip -9 -k /var/www/ccred/assets/*
+sudo service nginx reload
+```
 
 ## This project is built with:
 
