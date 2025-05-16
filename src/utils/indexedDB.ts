@@ -1,5 +1,5 @@
 import { secureStorage } from "./secureStorage";
-import { importKey, arrayBufferToBase64, base64ToArrayBuffer } from "./encryption"; // Added importKey
+import { importKey } from "./encryption"; // Removed arrayBufferToBase64, base64ToArrayBuffer
 
 interface DBSchema {
   contacts: {
@@ -12,9 +12,8 @@ interface DBSchema {
   };
   keys: {
     id: string;
-    // value will be a base64 string representing the IV + wrapped CryptoKey,
-    // where wrapping is done using secureStorage's internal key.
-    value: string;
+    // value can be a CryptoKey (new format) or an encrypted string (old format)
+    value: CryptoKey | string;
   };
   groups: {
     // New store for groups
@@ -73,28 +72,14 @@ class IndexedDBManager {
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
 
-    let valueToStore: string;
+    let valueToStore: CryptoKey | string;
 
     if (store === "keys") {
-      const cryptoKeyToWrap = value as CryptoKey;
-      const wrappingKey = await secureStorage.getInternalKey();
-      if (!wrappingKey) {
-        throw new Error("SecureStorage internal key not available for wrapping contact key.");
+      // Store CryptoKey directly for the "keys" store
+      if (!(value instanceof CryptoKey)) {
+        throw new Error(`Invalid value type for store ${store}. Expected CryptoKey.`);
       }
-
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      // cryptoKeyToWrap is now non-extractable, so use "jwk" format for wrapping
-      const wrappedKeyBuffer = await window.crypto.subtle.wrapKey(
-        "jwk", // Use JSON Web Key format for non-extractable keys
-        cryptoKeyToWrap,
-        wrappingKey,
-        { name: "AES-GCM", iv }, // Algorithm used for wrapping
-      );
-
-      const combinedBuffer = new Uint8Array(iv.length + wrappedKeyBuffer.byteLength);
-      combinedBuffer.set(iv);
-      combinedBuffer.set(new Uint8Array(wrappedKeyBuffer), iv.length);
-      valueToStore = arrayBufferToBase64(combinedBuffer);
+      valueToStore = value;
     } else {
       // For other stores, encrypt the string value
       if (typeof value !== 'string') {
@@ -106,6 +91,8 @@ class IndexedDBManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(store, "readwrite");
       const objectStore = transaction.objectStore(store);
+      // For "keys", valueToStore is CryptoKey; for others, it's an encrypted string.
+      // IndexedDB can store CryptoKey objects directly.
       const request = objectStore.put({ id, value: valueToStore });
 
       request.onerror = () => reject(request.error);
@@ -134,66 +121,42 @@ class IndexedDBManager {
           return;
         }
 
-        const retrievedValue = request.result.value;
+        const storedRecordValue = request.result.value;
 
         if (store === "keys") {
-          if (typeof retrievedValue !== "string") {
-            console.error(`Corrupted data in store ${store} for id ${id}: expected base64 wrapped key string.`);
-            resolve(null);
-            return;
-          }
-          try {
-            const wrappingKey = await secureStorage.getInternalKey();
-            if (!wrappingKey) {
-              throw new Error("SecureStorage internal key not available for unwrapping contact key.");
-            }
-
-            const combinedBuffer = base64ToArrayBuffer(retrievedValue);
-            if (combinedBuffer.length < 12) { // Basic check for IV presence
-              console.error(`Corrupted wrapped key in store ${store} for id ${id}: too short.`);
-              resolve(null);
-              return;
-            }
-            const iv = combinedBuffer.slice(0, 12);
-            const wrappedKeyBuffer = combinedBuffer.slice(12);
-
-            const cryptoKey = await window.crypto.subtle.unwrapKey(
-              "jwk",
-              wrappedKeyBuffer,
-              wrappingKey,
-              { name: "AES-GCM", iv },
-              { name: "AES-GCM", length: 256 },
-              false,
-              ["encrypt", "decrypt"],
-            );
-            resolve({ cryptoKey } as any); // New format successfully unwrapped
-          } catch (jwkError) {
-            // JWK unwrap failed, assume it's an old-style encrypted string
-            console.warn(`JWK unwrap failed for key ${id} (may be old format):`, jwkError);
+          if (storedRecordValue instanceof CryptoKey) {
+            // New format: CryptoKey stored directly
+            resolve({ cryptoKey: storedRecordValue } as any);
+          } else if (typeof storedRecordValue === 'string') {
+            // Old format: encrypted keyDataString
+            console.warn(`Key ${id} is in old string format. Attempting decryption and import.`);
             try {
-              const keyDataString = await secureStorage.decrypt(retrievedValue);
+              const keyDataString = await secureStorage.decrypt(storedRecordValue);
               if (keyDataString) {
-                const importedOldKey = await importKey(keyDataString); // from '@/utils/encryption'
-                resolve({ cryptoKey: importedOldKey, keyDataString } as any); // Old format decrypted and imported
+                const importedOldKey = await importKey(keyDataString);
+                resolve({ cryptoKey: importedOldKey, keyDataString } as any);
               } else {
-                console.error(`Failed to decrypt old format key ${id} after JWK unwrap failure.`);
+                console.error(`Failed to decrypt old format key string for ${id}.`);
                 resolve(null);
               }
             } catch (decryptError) {
-              console.error(`Both JWK unwrap and old format decryption failed for key ${id}:`, decryptError);
+              console.error(`Error decrypting old format key string for ${id}:`, decryptError);
               resolve(null);
             }
+          } else {
+            console.error(`Unexpected data type in 'keys' store for id ${id}:`, typeof storedRecordValue);
+            resolve(null);
           }
         } else {
-          // For other stores (contacts, messages, groups), decrypt the string value
-          if (typeof retrievedValue !== "string") {
-            console.error(`Corrupted data in store ${store} for id ${id}: expected encrypted string.`);
+          // For other stores (contacts, messages, groups), value should be an encrypted string
+          if (typeof storedRecordValue !== "string") {
+            console.error(`Corrupted data in store ${store} for id ${id}: expected encrypted string, got ${typeof storedRecordValue}.`);
             resolve(null);
             return;
           }
           try {
-            const decryptedValue = await secureStorage.decrypt(retrievedValue);
-            resolve(decryptedValue as any); // Cast to satisfy complex conditional type
+            const decryptedValue = await secureStorage.decrypt(storedRecordValue);
+            resolve(decryptedValue as any);
           } catch (error) {
             console.error(`Error decrypting value from store ${store} for id ${id}:`, error);
             resolve(null);

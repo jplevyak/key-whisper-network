@@ -158,13 +158,6 @@ export class SecureStorage {
       throw new Error("Failed to decrypt data");
     }
   }
-
-  async getInternalKey(): Promise<CryptoKey | null> {
-    if (!this.encryptionKey) {
-      await this.init(); // Ensure key is loaded or generated
-    }
-    return this.encryptionKey;
-  }
 }
 
 export const secureStorage = new SecureStorage();
