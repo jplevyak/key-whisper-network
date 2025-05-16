@@ -17,7 +17,7 @@ type AuthContextType = {
   login: (username: string) => Promise<boolean>;
   logout: () => void;
   registerPasskey: (username: string) => Promise<boolean>;
-  getDerivedKey: string | null;
+  derivedKey: CryptoKey | null; // Changed from getDerivedKey and string to CryptoKey
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [hasPasskey, setHasPasskey] = useState<boolean>(false);
   const [supportsBiometric, setSupportsBiometric] = useState<boolean>(false);
   const [supportsPasskeys, setSupportsPasskeys] = useState<boolean>(false);
-  const [derivedKey, setDerivedKey] = useState<string | null>(null);
+  const [derivedKey, setDerivedKey] = useState<CryptoKey | null>(null); // Changed type
   const { toast } = useToast();
 
   useEffect(() => {
@@ -72,10 +72,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const extensionResults = assertion.getClientExtensionResults();
           if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
             const prfSecret = new Uint8Array(extensionResults.prf.results.first);
-            const derivedKey = deriveEncryptionKeyFromPrf(prfSecret);
-            setDerivedKey(derivedKey);
+            const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
+            if (saltForKeyGenString) {
+              const key = await deriveEncryptionKeyFromPrf(prfSecret, saltForKeyGenString);
+              setDerivedKey(key);
+              if (key) {
+                await secureStorage.initializeWithKey(key);
+                toast({
+                  title: "Secure Storage Enhanced",
+                  description: "Database encryption upgraded with your passkey.",
+                  variant: "default",
+                });
+              }
+            } else {
+              console.warn("Salt for key generation not found. Cannot derive encryption key for DB.");
+              toast({
+                title: "Security Notice",
+                description: "Could not enhance database security with passkey. Using standard protection.",
+                variant: "default", // Or "warning" if you have one
+              });
+            }
+          } else {
+            toast({
+              title: "Standard Security",
+              description: "Passkey login successful. Using standard database protection.",
+              variant: "default",
+            });
           }
-
           return true;
         } else {
           toast({
@@ -165,7 +188,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       login,
       logout,
       registerPasskey,
-      getDerivedKey,
+      derivedKey, // Changed from getDerivedKey
     }}
     >
     {children}

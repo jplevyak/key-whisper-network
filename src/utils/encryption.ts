@@ -147,7 +147,7 @@ export const createPasskey = async (username: string): Promise<boolean> => {
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
     const saltForPrfEnable = window.crypto.getRandomValues(new Uint8Array(32));
-    const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32));
+    const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32)); // This is a Uint8Array
 
     // Create the publicKey options with correct types
     const publicKeyOptions: PublicKeyCredentialCreationOptions = {
@@ -195,7 +195,8 @@ export const createPasskey = async (username: string): Promise<boolean> => {
         new Uint8Array(credential.rawId),
       );
       localStorage.setItem("passkey-credential-id", credentialIdBase64);
-      localStorage.setItem("passkey-saltForKeyGen", saltForKeyGen);
+      // Store salt as a base64 string
+      localStorage.setItem("passkey-saltForKeyGen", arrayBufferToBase64(saltForKeyGen.buffer));
 
       const extensionResults = credential.getClientExtensionResults();
       if (extensionResults.prf) {
@@ -219,15 +220,24 @@ export const createPasskey = async (username: string): Promise<boolean> => {
   }
 };
 
-export const deriveEncryptionKeyFromPrf = async (prfSecret) {
-  if (!prfSecret) return null;
-
-  const info = "encryption-key";
-  const salt = localStorage.getItem("passkey-saltForKeyGen");
-  if (!salt) {
-    console.error("No salt for key generation found");
+export const deriveEncryptionKeyFromPrf = async (
+  prfSecret: Uint8Array,
+  saltForKeyGenString: string,
+): Promise<CryptoKey | null> => {
+  if (!prfSecret || !saltForKeyGenString) {
+    console.error("PRF secret or salt for key generation is missing.");
     return null;
   }
+
+  const info = "encryption-key";
+  const saltForHkdfExtract = base64ToArrayBuffer(saltForKeyGenString);
+
+  if (saltForHkdfExtract.length === 0 && saltForKeyGenString.length > 0) {
+    console.error("Failed to decode salt for key generation.");
+    return null; // Error during base64 decoding
+  }
+
+
   try {
     // 1. Import the PRF secret as an HMAC key for HKDF's extract phase
     const hmacKey = await crypto.subtle.importKey(
@@ -245,7 +255,7 @@ export const deriveEncryptionKeyFromPrf = async (prfSecret) {
     const prk = await crypto.subtle.sign(
       "HMAC",
       hmacKey,
-      salt // A salt for HKDF, can be an empty Uint8Array or a specific value
+      saltForHkdfExtract,
     );
 
     // 3. HKDF Expand phase: Derives the actual encryption key of desired length
@@ -261,10 +271,10 @@ export const deriveEncryptionKeyFromPrf = async (prfSecret) {
       },
       await crypto.subtle.importKey("raw", prk, "HKDF", false, ["deriveKey"]), // Import PRK for deriveKey
       { name: "AES-GCM", length: keyLengthBytes * 8 }, // Algorithm and length for the derived key
-      true, // Allow key to be exportable (false if you never need to export it)
+      false, // Make non-exportable, consistent with SecureStorage's own keys
       ["encrypt", "decrypt"] // Key usages
     );
-    console.log("Derived encryption key:", derivedKey);
+    console.log("Derived encryption key (non-exportable):", derivedKey);
     return derivedKey;
   } catch (err) {
     console.error("Key derivation failed:", err);
@@ -313,9 +323,8 @@ export const getPasskey = async () => {
 
     let prfSecret = null;
     if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
-      prfSecret = new Uint8Array(extensionResults.prf.results.first);
-      console.log("PRF Secret (first) received:", prfSecret);
-      const derivedKey = deriveEncryptionKeyFromPrf(prfSecret, salt);
+      // prfSecret will be extracted and used by AuthContext to call deriveEncryptionKeyFromPrf
+      console.log("PRF Secret (first) received and available in extensionResults.");
     }
 
     return assertion;

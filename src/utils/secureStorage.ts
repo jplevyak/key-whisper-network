@@ -3,13 +3,31 @@ import { fromByteArray, toByteArray } from "base64-js";
 // A utility for encrypting/decrypting data with a non-extractable key
 export class SecureStorage {
   private encryptionKey: CryptoKey | null = null;
-  private readonly DB_NAME = "secure_storage";
+  private readonly DB_NAME = "secure_storage"; // This DB is only for the "main_key" if used
   private readonly STORE_NAME = "keys";
   private readonly KEY_ID = "main_key";
+  private isUsingDerivedKey = false;
+
+  async initializeWithKey(key: CryptoKey): Promise<void> {
+    this.encryptionKey = key;
+    this.isUsingDerivedKey = true;
+    console.log("SecureStorage initialized with derived PRF key.");
+  }
 
   async init(): Promise<void> {
-    if (this.encryptionKey) return;
+    // If encryptionKey is already set (e.g., by initializeWithKey or a previous init), don't re-initialize.
+    if (this.encryptionKey) {
+      if (this.isUsingDerivedKey) {
+        console.log("SecureStorage.init called, but already initialized with a derived key.");
+      } else {
+        console.log("SecureStorage.init called, but already initialized with a standard key.");
+      }
+      return;
+    }
 
+    // This part will only run if encryptionKey is null, meaning neither
+    // initializeWithKey nor a previous standard init has run.
+    console.log("SecureStorage.init: Initializing with standard key mechanism.");
     // Try to get existing key from IndexedDB
     const storedKey = await this.getStoredKey();
     if (storedKey) {

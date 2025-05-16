@@ -28,8 +28,13 @@ const STORES = ["contacts", "messages", "keys", "groups"] as const;
 class IndexedDBManager {
   private db: IDBDatabase | null = null;
 
-  async init(): Promise<void> {
+  async init(): Promise<void> { // Removed derivedKey parameter
     if (this.db) return;
+
+    // SecureStorage must be initialized before any DB operations.
+    // If AuthContext called secureStorage.initializeWithKey(), it's already set up with the derived key.
+    // Otherwise, this secureStorage.init() will set up secureStorage with its default "main_key".
+    await secureStorage.init();
 
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
