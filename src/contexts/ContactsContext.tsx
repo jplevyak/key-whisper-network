@@ -234,8 +234,10 @@ export const ContactsProvider = ({
       return false;
     }
     try {
-      // Import the key as non-extractable for general use and caching
-      const cryptoKey = await importKey(keyData);
+      // Import key as extractable for DB storage (wrapping requires extractable "raw" key)
+      const extractableCryptoKey = await importRawKey(keyData); 
+      // Import key as non-extractable for in-memory cache and general use
+      const nonExtractableCryptoKey = await importKey(keyData);
 
       // Generate request IDs using the original keyData string
       const putRequestId = await generateStableRequestId(userGeneratedKey, keyData);
@@ -243,8 +245,8 @@ export const ContactsProvider = ({
       
       const contactId = `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // Store the original keyData string in IndexedDB, db.set will handle encryption
-      await db.set("keys", contactId, keyData);
+      // Store the extractable CryptoKey in IndexedDB; db.set will handle wrapping
+      await db.set("keys", contactId, extractableCryptoKey);
 
       // Create the new contact
       const newContact: Contact = {
@@ -258,7 +260,7 @@ export const ContactsProvider = ({
         getRequestId,
       };
 
-      setContactKeys((prev) => new Map(prev).set(newContact.id, cryptoKey));
+      setContactKeys((prev) => new Map(prev).set(newContact.id, nonExtractableCryptoKey));
       setListItems((prev) => [...prev, newContact]);
 
       return true;
@@ -329,32 +331,37 @@ export const ContactsProvider = ({
       return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
     }
 
-    const keyResultFromDb = await db.get("keys", contact.id);
-    if (keyResultFromDb) {
-      cryptoKey = keyResultFromDb.cryptoKey;
-      keyDataStringToUse = keyResultFromDb.keyDataString;
+    const keyResultFromDb = await db.get("keys", contact.id); // Returns { cryptoKey }
+    if (keyResultFromDb && keyResultFromDb.cryptoKey) {
+      cryptoKey = keyResultFromDb.cryptoKey; // This key is non-extractable
+      // keyDataStringToUse is not available from db.get("keys") anymore.
+      // Request IDs must come from the contact object or be generated during upgrade.
       if (!contactKeys.has(contact.id)) {
         setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
       }
     }
 
-    // Step 2: If key not found by contact.id, or IDs missing, attempt upgrade using contact.keyId
+    // Step 2: If key not found by contact.id, or IDs missing from contact, attempt upgrade using contact.keyId
+    // The primary goal of upgrade here is to get the key into the new store format and ensure IDs are on the contact.
     if ((!cryptoKey || !currentPutId || !currentGetId) && contact.keyId) {
       const oldKeyId = contact.keyId;
-      const rawOldValue = await db.getRawValue("keys", oldKeyId); // Fetch raw old data
+      console.log(`Attempting upgrade for contact ${contact.name} (ID: ${contact.id}) from old keyId ${oldKeyId}`);
+      const rawOldValue = await db.getRawValue("keys", oldKeyId);
 
       if (rawOldValue) {
-        let upgraded = false;
-        // Case 1: Old data was StoredKeyData object (not encrypted by secureStorage at this level)
+        let successfullyUpgradedKeyAndGotData = false;
+        let tempKeyDataStringForIdGeneration: string | null = null;
+
+        // Case 1: Old data was StoredKeyData object (not encrypted by secureStorage at this level in that old scheme)
         if (typeof rawOldValue === "object" && rawOldValue.key && rawOldValue.putRequestId && rawOldValue.getRequestId) {
           const oldData = rawOldValue as OldStoredKeyData;
-          keyDataStringToUse = oldData.key;
-          cryptoKey = await importKey(keyDataStringToUse);
-          currentPutId = oldData.putRequestId;
+          tempKeyDataStringForIdGeneration = oldData.key;
+          currentPutId = oldData.putRequestId; // Use existing IDs
           currentGetId = oldData.getRequestId;
-          upgraded = true;
+          successfullyUpgradedKeyAndGotData = true;
+          console.log(`Upgrading from StoredKeyData object for ${contact.name}`);
         }
-        // Case 2: Old data was an encrypted string (raw key or JSON of StoredKeyData)
+        // Case 2: Old data was an encrypted string (could be raw key string, or JSON of StoredKeyData)
         else if (typeof rawOldValue === "string") {
           const decryptedString = await secureStorage.decrypt(rawOldValue);
           if (decryptedString) {
@@ -362,50 +369,79 @@ export const ContactsProvider = ({
               // Try parsing as StoredKeyData JSON
               const parsedJson = JSON.parse(decryptedString) as OldStoredKeyData;
               if (parsedJson.key && parsedJson.putRequestId && parsedJson.getRequestId) {
-                keyDataStringToUse = parsedJson.key;
-                currentPutId = parsedJson.putRequestId;
+                tempKeyDataStringForIdGeneration = parsedJson.key;
+                currentPutId = parsedJson.putRequestId; // Use existing IDs
                 currentGetId = parsedJson.getRequestId;
+                console.log(`Upgrading from decrypted JSON StoredKeyData for ${contact.name}`);
               } else { // Assume it's just the raw key string
-                keyDataStringToUse = decryptedString;
+                tempKeyDataStringForIdGeneration = decryptedString;
+                console.log(`Upgrading from decrypted raw key string for ${contact.name}`);
+                // IDs will need to be generated below if not already on contact
               }
             } catch (e) { // Parsing failed, assume it's the raw key string
-              keyDataStringToUse = decryptedString;
+              tempKeyDataStringForIdGeneration = decryptedString;
+              console.log(`Upgrading from decrypted raw key string (parse failed) for ${contact.name}`);
+              // IDs will need to be generated below if not already on contact
             }
-            cryptoKey = await importKey(keyDataStringToUse!);
-            upgraded = true;
+            successfullyUpgradedKeyAndGotData = true;
+          } else {
+            console.error(`Failed to decrypt old key data for keyId ${oldKeyId} during upgrade.`);
           }
         }
 
-        if (upgraded && cryptoKey && keyDataStringToUse) {
-          await db.set("keys", contact.id, keyDataStringToUse); // Save in new format
-          await db.delete("keys", oldKeyId); // Delete old entry
+        if (successfullyUpgradedKeyAndGotData && tempKeyDataStringForIdGeneration) {
+          const extractableKeyForDb = await importRawKey(tempKeyDataStringForIdGeneration);
+          await db.set("keys", contact.id, extractableKeyForDb); // Save in new wrapped format
+          
+          // The key for the cache should be non-extractable.
+          // We can either get it from db.get (which returns non-extractable) or re-import.
+          const nonExtractableKeyForCache = await importKey(tempKeyDataStringForIdGeneration);
+          cryptoKey = nonExtractableKeyForCache; // Use this for the current operation and cache
+
           if (!contactKeys.has(contact.id)) {
             setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
           }
-          console.log(`Contact ${contact.name} (ID: ${contact.id}) upgraded from old keyId ${oldKeyId}.`);
+          await db.delete("keys", oldKeyId); // Delete old entry
+          console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded from old keyId ${oldKeyId}.`);
+          
+          // Ensure keyDataStringToUse is set for ID generation if needed
+          keyDataStringToUse = tempKeyDataStringForIdGeneration;
+        } else if (!successfullyUpgradedKeyAndGotData) {
+          console.warn(`Could not retrieve or understand old key data for keyId ${oldKeyId}.`);
         }
+      } else {
+        console.warn(`No raw old value found for keyId ${oldKeyId} during upgrade attempt.`);
       }
     }
 
+
     if (!cryptoKey) {
-      toast({ title: "Key Error", description: `Could not load encryption key for ${contact.name}.`, variant: "destructive" });
+      // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
+      toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
       return null;
     }
 
-    // Step 3: Generate IDs if still missing (e.g. after raw key string upgrade or if contact object was partial)
-    if ((!currentPutId || !currentGetId) && keyDataStringToUse) {
+    // Step 3: Generate IDs if still missing AND we have the keyDataString from an upgrade.
+    // If keyDataStringToUse is null here, it means we didn't go through an upgrade path that provided it,
+    // or the contact is new and IDs should already be on the contact object.
+    if ((!currentPutId || !currentGetId) && keyDataStringToUse) { // keyDataStringToUse is primarily from upgrade path
+      console.log(`Generating missing request IDs for ${contact.name} using key data from upgrade.`);
       currentPutId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
       currentGetId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
-    }
-
-    if (!currentPutId || !currentGetId) {
-         console.error(`Failed to obtain put/get request IDs for contact ${contact.name}`);
-         toast({ title: "ID Error", description: `Could not generate request IDs for ${contact.name}.`, variant: "destructive" });
-         return null;
+    } else if (!currentPutId || !currentGetId) {
+      // If IDs are still missing, and we don't have keyDataStringToUse (e.g. normal path, but contact object is incomplete)
+      // This indicates a problem, as we cannot regenerate IDs from a non-extractable cryptoKey without its original string form.
+      console.error(`Critical: Request IDs missing for contact ${contact.name} and cannot regenerate without original key data string.`);
+      toast({ title: "ID Error", description: `Request IDs missing for ${contact.name}. Data might be corrupted.`, variant: "destructive" });
+      return null;
     }
     
-    // Step 4: Update contact in listItems state if IDs changed or keyId was present
-    if (contact.putRequestId !== currentPutId || contact.getRequestId !== currentGetId || contact.keyId) {
+    // Step 4: Update contact in listItems state if IDs changed or keyId was present (indicating an upgrade occurred)
+    const needsContactUpdateInList = contact.putRequestId !== currentPutId ||
+                                   contact.getRequestId !== currentGetId ||
+                                   (contact as any).keyId; // Check if keyId was present
+
+    if (needsContactUpdateInList) {
       setListItems((prevListItems) =>
         prevListItems.map((item) => {
           if (item.id === contact.id && item.itemType === "contact") {
@@ -611,19 +647,24 @@ export const ContactsProvider = ({
       }
       const contact = contactItem as Contact; // Type assertion
 
-      let oldKey: CryptoKey | null = null;
-      let newCryptoKey: CryptoKey | null = null;
+      let oldKey: CryptoKey | null = null; // This will be non-extractable
+      let newNonExtractableCryptoKey: CryptoKey | null = null;
 
       try {
-        oldKey = await getContactKey(contactId); // Get OLD key before updating
+        oldKey = await getContactKey(contactId); // Get OLD key (non-extractable) before updating
 
-        newCryptoKey = await importKey(newKeyData); // Import new key (non-extractable)
+        // Import new key as extractable for DB storage
+        const newExtractableCryptoKey = await importRawKey(newKeyData);
+        // Import new key as non-extractable for cache and return
+        newNonExtractableCryptoKey = await importKey(newKeyData);
 
-        // Update the key in memory
-        setContactKeys((prev) => new Map(prev).set(contact.id, newCryptoKey!));
 
-        // Store the newKeyData string in DB
-        await db.set("keys", contact.id, newKeyData);
+        // Store the extractable CryptoKey in DB; db.set handles wrapping
+        await db.set("keys", contact.id, newExtractableCryptoKey);
+        
+        // Update the key in memory cache with the non-extractable version
+        setContactKeys((prev) => new Map(prev).set(contact.id, newNonExtractableCryptoKey!));
+
 
         // Generate new request IDs using the newKeyData string
         const newPutRequestId = await generateStableRequestId(
@@ -653,19 +694,15 @@ export const ContactsProvider = ({
         }
 
         console.log(`Key updated successfully for contact ${contact.name}`);
-
-        // Message re-encryption will be handled by the calling component (e.g., ContactProfile)
-                      // Removed: await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
-
-                      if (!oldKey) {
-                        // This toast is relevant if it's the first time a key is set.
-                        // If oldKey existed, re-encryption toasts will be shown by MessagesContext.
-                        toast({
-                          title: "Contact Key Set",
-                          description: `The encryption key for ${contact.name} has been set.`,
-                        });
-                      }
-                      return { success: true, oldKey, newKey: newCryptoKey };
+        
+        if (!oldKey) {
+          toast({
+            title: "Contact Key Set",
+            description: `The encryption key for ${contact.name} has been set.`,
+          });
+        }
+        // Message re-encryption logic (if any) is handled by the caller.
+        return { success: true, oldKey, newKey: newNonExtractableCryptoKey };
       } catch (error) {
         console.error(`Error updating key for contact ${contactId}:`, error);
         toast({
@@ -673,7 +710,7 @@ export const ContactsProvider = ({
           description: "Could not import or save the new encryption key.",
           variant: "destructive",
         });
-        return { success: false, oldKey, newKey: newCryptoKey };
+        return { success: false, oldKey, newKey: newNonExtractableCryptoKey };
       }
   };
 
