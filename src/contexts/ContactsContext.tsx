@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { generateAESKey, exportKey, importKey } from "@/utils/encryption";
+import {
+  generateAESKey,
+  exportKey,
+  importKey,
+  generateStableRequestId,
+} from "@/utils/encryption";
 import { useToast } from "@/components/ui/use-toast";
 import { db } from "@/utils/indexedDB";
 // Removed: import { useMessages } from './MessagesContext';
@@ -26,6 +31,13 @@ export interface Group extends BaseListItem {
 }
 
 export type ContactOrGroup = Contact | Group;
+
+// New interface for the stored key data
+interface StoredKeyData {
+  key: string; // The original exported key string (base64)
+  putRequestId: string; // For sending messages TO this contact, generated with contact.userGeneratedKey
+  getRequestId: string; // For fetching messages FROM this contact, generated with !contact.userGeneratedKey
+}
 
 interface ContactsContextType {
   listItems: ContactOrGroup[];
@@ -224,8 +236,18 @@ export const ContactsProvider = ({
       const keyId = `key-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       setContactKeys((prev) => new Map(prev).set(keyId, key));
 
-      // Save key data in IndexedDB - db.set handles encryption
-      await db.set("keys", keyId, keyData);
+      // Generate request IDs
+      const putRequestId = await generateStableRequestId(userGeneratedKey, key);
+      const getRequestId = await generateStableRequestId(!userGeneratedKey, key);
+
+      const storedKeyObject: StoredKeyData = {
+        key: keyData, // keyData is the exported string representation of the key
+        putRequestId,
+        getRequestId,
+      };
+
+      // Save structured key data in IndexedDB - db.set handles encryption
+      await db.set("keys", keyId, storedKeyObject);
 
       // Create the new contact
       const newContact: Contact = {
@@ -306,15 +328,66 @@ export const ContactsProvider = ({
         return contactKeys.get(contact.keyId) || null;
       }
 
-      const encryptedKeyData = await db.get("keys", contact.keyId); // keyData is decrypted by db.get
-      if (!encryptedKeyData) return null;
+      const storedData = await db.get("keys", contact.keyId); // Data is decrypted by db.get
 
-      // keyData is already decrypted by db.get
-      const key = await importKey(encryptedKeyData);
+      if (!storedData) {
+        console.warn(`No key data found in DB for keyId: ${contact.keyId}`);
+        return null;
+      }
 
-      setContactKeys((prev) => new Map(prev).set(contact.keyId, key));
+      let cryptoKey: CryptoKey;
 
-      return key;
+      if (typeof storedData === "string") {
+        // Old format: raw key string, needs upgrade
+        console.log(`Upgrading key format for keyId: ${contact.keyId}`);
+        const rawKeyData = storedData;
+        cryptoKey = await importKey(rawKeyData);
+
+        // Generate request IDs for the new structure
+        const putRequestId = await generateStableRequestId(
+          contact.userGeneratedKey,
+          cryptoKey,
+        );
+        const getRequestId = await generateStableRequestId(
+          !contact.userGeneratedKey,
+          cryptoKey,
+        );
+
+        const newStoredKey: StoredKeyData = {
+          key: rawKeyData,
+          putRequestId,
+          getRequestId,
+        };
+
+        // Save the upgraded structure back to DB
+        await db.set("keys", contact.keyId, newStoredKey);
+        console.log(`Key ${contact.keyId} upgraded and saved.`);
+      } else {
+        // New format: StoredKeyData object
+        const keyObject = storedData as StoredKeyData;
+        // Ensure the object has the 'key' property and it's a string before importing
+        if (!keyObject || typeof keyObject.key !== 'string' || typeof keyObject.putRequestId !== 'string' || typeof keyObject.getRequestId !== 'string') {
+            console.error(`Invalid key object structure for keyId: ${contact.keyId}`, keyObject);
+            toast({
+                title: "Key Error",
+                description: "Corrupted key data found in local storage. Please try re-adding the contact or their key.",
+                variant: "destructive",
+            });
+            // Attempt to delete the corrupted key to prevent repeated errors.
+            try {
+                await db.delete("keys", contact.keyId);
+                console.log(`Deleted corrupted key ${contact.keyId} from DB.`);
+            } catch (deleteError) {
+                console.error(`Failed to delete corrupted key ${contact.keyId}:`, deleteError);
+            }
+            return null;
+        }
+        cryptoKey = await importKey(keyObject.key);
+      }
+
+      setContactKeys((prev) => new Map(prev).set(contact.keyId, cryptoKey));
+
+      return cryptoKey;
     } catch (error) {
       console.error("Error getting contact key:", error);
       return null;
@@ -481,7 +554,24 @@ export const ContactsProvider = ({
       setContactKeys((prev) =>
         new Map(prev).set(contact.keyId, newImportedKey!),
       ); // newImportedKey won't be null if importKey succeeds
-      await db.set("keys", contact.keyId, newKeyData); // db.set handles encryption
+
+      // Generate new request IDs for the updated key
+      const putRequestId = await generateStableRequestId(
+        contact.userGeneratedKey,
+        newImportedKey!,
+      );
+      const getRequestId = await generateStableRequestId(
+        !contact.userGeneratedKey,
+        newImportedKey!,
+      );
+
+      const updatedStoredKey: StoredKeyData = {
+        key: newKeyData, // newKeyData is the exported string representation of the new key
+        putRequestId,
+        getRequestId,
+      };
+
+      await db.set("keys", contact.keyId, updatedStoredKey); // db.set handles encryption
       console.log(`Key updated successfully for contact ${contact.name}`);
 
       // Message re-encryption will be handled by the calling component (e.g., ContactProfile)
