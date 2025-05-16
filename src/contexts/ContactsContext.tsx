@@ -323,8 +323,12 @@ export const ContactsProvider = ({
     let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
 
     // Step 1: Try to get key and IDs using the new system (contact.id)
-    if (cryptoKey)
-      return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
+    if (cryptoKey) {
+      // Only return early if cryptoKey AND request IDs are already present and valid
+      if (contact.putRequestId && contact.getRequestId) {
+        return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
+      }
+      // If cryptoKey is cached but IDs are missing, proceed to potentially upgrade/generate them.
     }
 
     // Try fetching key using contact.id (new system)
@@ -332,8 +336,14 @@ export const ContactsProvider = ({
       const keyResult = await db.get("keys", contact.id); // Returns { cryptoKey } or { cryptoKey, keyDataString }
       if (keyResult && keyResult.cryptoKey) {
         cryptoKey = keyResult.cryptoKey;
-        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-        return { key: cryptoKey, putRequestId: contact.currentPutId, getRequestId: contact.currentGetId };
+        if (!contactKeys.has(contact.id)) { // Cache if not already present
+           setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+        }
+        // Only return early if cryptoKey AND request IDs are already present and valid
+        if (contact.putRequestId && contact.getRequestId) {
+          return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
+        }
+        // If cryptoKey is fetched but IDs are missing, proceed to potentially upgrade/generate them.
       }
     }
     
