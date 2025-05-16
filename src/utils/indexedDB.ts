@@ -203,30 +203,6 @@ class IndexedDBManager {
     });
   }
 
-  async getRawValue<T extends keyof DBSchema>(
-    store: T,
-    id: string,
-  ): Promise<any | null> {
-    await this.init();
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(store, "readonly");
-      const objectStore = transaction.objectStore(store);
-      const request = objectStore.get(id);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        if (!request.result || request.result.value === undefined) {
-          resolve(null);
-        } else {
-          // Resolve with the raw value from DB, which includes the { id, value } wrapper
-          resolve(request.result.value);
-        }
-      };
-    });
-  }
-
   async delete<T extends keyof DBSchema>(store: T, id: string): Promise<void> {
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
