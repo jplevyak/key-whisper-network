@@ -137,17 +137,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const registered = await createPasskey(usernameInput);
       if (registered) {
-        setIsAuthenticated(true);
+        // Do not set isAuthenticated to true here. User must log in.
         setUsername(usernameInput);
         setHasPasskey(true);
         localStorage.setItem("username", usernameInput);
         toast({
           title: "Registration Successful",
-          description: "Your secure passkey has been created",
+          description: "Your secure passkey has been created. Please log in to continue.",
           variant: "default",
         });
         setIsLoading(false);
-        return true;
+        return true; // Still return true to indicate successful registration
       } else {
         toast({
           title: "Registration Failed",
