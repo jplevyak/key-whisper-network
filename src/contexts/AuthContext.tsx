@@ -60,47 +60,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     checkSupport();
   }, []);
 
+  const setPrfStorageKeyIfAvailable = async (credential) => {
+    const extensionResults = credential.getClientExtensionResults();
+    if (extensionResult.prf &&ionResults.prf.results.firstextensionResults.prf.results && extensionResults.prf.results.first) {
+      const prfSecret = new Uint8Array(extensionResults.prf.results.first);
+      const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
+      if (saltForKeyGenString) {
+        const key = await deriveEncryptionKeyFromPrf(prfSecret, saltForKeyGenString);
+        setDerivedKey(key);
+        if (key) {
+          await secureStorage.initializeWithKey(key);
+          toast({
+            title: "Secure Storage Enhanced",
+            description: "Database encryption upgraded with your passkey.",
+            variant: "default",
+          });
+        }
+      } else {
+        console.warn("Salt for key generation not found. Cannot derive encryption key for DB.");
+        toast({
+          title: "Security Notice",
+          description: "Could not enhance database security with passkey. Using standard protection.",
+          variant: "default", // Or "warning" if you have one
+        });
+      }
+    } else {
+      console.warn("Prf security unavailable, extensionResults:", extensionResults);
+      toast({
+        title: "Standard Security",
+        description: "Passkey login successful. Using standard database protection.",
+        variant: "default",
+      });
+    }
+  };
+
   const login = async (usernameInput: string) => {
     setIsLoading(true);
     try {
       if (hasPasskey) {
-        const assertion = await getPasskey();
-        if (assertion) {
+        const credential = await getPasskey();
+        if (credential) {
           setIsAuthenticated(true);
           setUsername(usernameInput);
           localStorage.setItem("username", usernameInput);
           setIsLoading(false);
-
-          const extensionResults = assertion.getClientExtensionResults();
-          if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
-            const prfSecret = new Uint8Array(extensionResults.prf.results.first);
-            const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
-            if (saltForKeyGenString) {
-              const key = await deriveEncryptionKeyFromPrf(prfSecret, saltForKeyGenString);
-              setDerivedKey(key);
-              if (key) {
-                await secureStorage.initializeWithKey(key);
-                toast({
-                  title: "Secure Storage Enhanced",
-                  description: "Database encryption upgraded with your passkey.",
-                  variant: "default",
-                });
-              }
-            } else {
-              console.warn("Salt for key generation not found. Cannot derive encryption key for DB.");
-              toast({
-                title: "Security Notice",
-                description: "Could not enhance database security with passkey. Using standard protection.",
-                variant: "default", // Or "warning" if you have one
-              });
-            }
-          } else {
-            toast({
-              title: "Standard Security",
-              description: "Passkey login successful. Using standard database protection.",
-              variant: "default",
-            });
-          }
+          await setPrfStorageKeyIfAvailable(credential);
           return true;
         } else {
           toast({
@@ -135,12 +139,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const registerPasskey = async (usernameInput: string) => {
     setIsLoading(true);
     try {
-      const registered = await createPasskey(usernameInput);
-      if (registered) {
+      const credential = await createPasskey(usernameInput);
+      if (credential) {
         setIsAuthenticated(true);
         setUsername(usernameInput);
         setHasPasskey(true);
         localStorage.setItem("username", usernameInput);
+        await setPrfStorageKeyIfAvailable(credential);
         toast({
           title: "Registration Successful",
           description: "Your secure passkey has been created",

@@ -26,7 +26,7 @@ interface UseMessagePollingOptions {
   minPollIntervalMs?: number; // Minimum time between the start of polls
 }
 
-const MIN_POLL_INTERVAL_MS = 1000; // Default minimum interval of 1 second
+const MIN_POLL_INTERVAL_MS = 30000; // Default minimum interval of 30 seconds
 
 export const useMessagePolling = ({
   setMessages,
