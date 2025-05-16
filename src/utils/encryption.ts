@@ -433,7 +433,7 @@ export const isBiometricSupported = async (): Promise<boolean> => {
 // Generate a stable request ID based on key and context string using SHA-256
 export const generateStableRequestId = async (
   userGeneratedKey: boolean,
-  key: CryptoKey,
+  keyData: string, // Changed from CryptoKey to string
 ): Promise<string> => {
   try {
     // 1. Determine the context string
@@ -442,8 +442,9 @@ export const generateStableRequestId = async (
     // 2. Encode the context string to bytes
     const contextBytes = new TextEncoder().encode(contextString);
 
-    // 3. Export the raw key bytes
-    const exportedKeyBuffer = await window.crypto.subtle.exportKey("raw", key);
+    // 3. Import the key as extractable for this operation, then export its raw bytes
+    const tempKey = await importRawKey(keyData); // Imports as extractable
+    const exportedKeyBuffer = await window.crypto.subtle.exportKey("raw", tempKey);
     const keyBytes = new Uint8Array(exportedKeyBuffer);
 
     // 4. Concatenate context string bytes and key bytes
