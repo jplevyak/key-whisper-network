@@ -82,12 +82,12 @@ class IndexedDBManager {
       }
 
       const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      // The cryptoKeyToWrap MUST be extractable for "raw" format wrapKey
+      // cryptoKeyToWrap is now non-extractable, so use "jwk" format for wrapping
       const wrappedKeyBuffer = await window.crypto.subtle.wrapKey(
-        "raw",
+        "jwk", // Use JSON Web Key format for non-extractable keys
         cryptoKeyToWrap,
         wrappingKey,
-        { name: "AES-GCM", iv },
+        { name: "AES-GCM", iv }, // Algorithm used for wrapping
       );
 
       const combinedBuffer = new Uint8Array(iv.length + wrappedKeyBuffer.byteLength);
@@ -157,17 +157,17 @@ class IndexedDBManager {
             const wrappedKeyBuffer = combinedBuffer.slice(12);
 
             const cryptoKey = await window.crypto.subtle.unwrapKey(
-              "raw",
+              "jwk", // Use JSON Web Key format for non-extractable keys
               wrappedKeyBuffer,
               wrappingKey,
-              { name: "AES-GCM", iv },
-              { name: "AES-GCM", length: 256 }, // Algorithm of the key to unwrap
+              { name: "AES-GCM", iv }, // Algorithm used for unwrapping
+              { name: "AES-GCM", length: 256 }, // Algorithm of the key that was wrapped
               false, // Make the unwrapped key non-extractable
               ["encrypt", "decrypt"],
             );
             resolve({ cryptoKey } as any); // Cast to satisfy complex conditional type
           } catch (error) {
-            console.error(`Error processing wrapped key from store ${store} for id ${id}:`, error);
+            console.error(`Error processing wrapped JWK key from store ${store} for id ${id}:`, error);
             resolve(null);
           }
         } else {

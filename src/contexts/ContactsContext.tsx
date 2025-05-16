@@ -234,9 +234,8 @@ export const ContactsProvider = ({
       return false;
     }
     try {
-      // Import key as extractable for DB storage (wrapping requires extractable "raw" key)
-      const extractableCryptoKey = await importRawKey(keyData); 
-      // Import key as non-extractable for in-memory cache and general use
+      // Import key as non-extractable for in-memory cache and for DB storage.
+      // db.set will handle wrapping this non-extractable key using "jwk" format.
       const nonExtractableCryptoKey = await importKey(keyData);
 
       // Generate request IDs using the original keyData string
@@ -245,8 +244,8 @@ export const ContactsProvider = ({
       
       const contactId = `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // Store the extractable CryptoKey in IndexedDB; db.set will handle wrapping
-      await db.set("keys", contactId, extractableCryptoKey);
+      // Store the non-extractable CryptoKey in IndexedDB; db.set will handle wrapping.
+      await db.set("keys", contactId, nonExtractableCryptoKey);
 
       // Create the new contact
       const newContact: Contact = {
@@ -378,11 +377,11 @@ export const ContactsProvider = ({
           }
 
           if (successfullyProcessedOldData && keyDataStringToUse) {
-            const extractableKeyForDb = await importRawKey(keyDataStringToUse);
-            await db.set("keys", contact.id, extractableKeyForDb); // Save in new wrapped format
+            // Import as non-extractable for both DB (via "jwk" wrapping) and cache
+            const nonExtractableKeyForDbAndCache = await importKey(keyDataStringToUse);
+            await db.set("keys", contact.id, nonExtractableKeyForDbAndCache); // Save in new wrapped format
             
-            const nonExtractableKeyForCache = await importKey(keyDataStringToUse);
-            cryptoKey = nonExtractableKeyForCache; // Use this for the current operation and cache
+            cryptoKey = nonExtractableKeyForDbAndCache; // Use this for the current operation and cache
 
             if (!contactKeys.has(contact.id)) {
               setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
@@ -640,14 +639,11 @@ export const ContactsProvider = ({
       try {
         oldKey = await getContactKey(contactId); // Get OLD key (non-extractable) before updating
 
-        // Import new key as extractable for DB storage
-        const newExtractableCryptoKey = await importRawKey(newKeyData);
-        // Import new key as non-extractable for cache and return
+        // Import new key as non-extractable for cache, return, and DB storage (via "jwk" wrapping)
         newNonExtractableCryptoKey = await importKey(newKeyData);
 
-
-        // Store the extractable CryptoKey in DB; db.set handles wrapping
-        await db.set("keys", contact.id, newExtractableCryptoKey);
+        // Store the non-extractable CryptoKey in DB; db.set handles wrapping.
+        await db.set("keys", contact.id, newNonExtractableCryptoKey!);
         
         // Update the key in memory cache with the non-extractable version
         setContactKeys((prev) => new Map(prev).set(contact.id, newNonExtractableCryptoKey!));
