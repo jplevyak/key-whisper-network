@@ -146,6 +146,8 @@ export const createPasskey = async (username: string): Promise<boolean> => {
     // Create a random user ID
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
+    const saltForPrfEnable = window.crypto.getRandomValues(new Uint8Array(32));
+    const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32));
 
     // Create the publicKey options with correct types
     const publicKeyOptions: PublicKeyCredentialCreationOptions = {
@@ -169,6 +171,15 @@ export const createPasskey = async (username: string): Promise<boolean> => {
         requireResidentKey: true,
       },
       timeout: 60000,
+      extensions: {
+        // Attempt to evaluate PRF during creation to check for support
+        // This also helps some authenticators "initialize" the PRF capability for the credential
+        prf: {
+          eval: {
+            first: saltForPrfEnable,
+          }
+        }
+      },
       attestation: "none" as AttestationConveyancePreference,
     };
 
@@ -184,6 +195,20 @@ export const createPasskey = async (username: string): Promise<boolean> => {
         new Uint8Array(credential.rawId),
       );
       localStorage.setItem("passkey-credential-id", credentialIdBase64);
+      localStorage.setItem("passkey-saltForKeyGen", saltForKeyGen);
+
+      const extensionResults = credential.getClientExtensionResults();
+      if (extensionResults.prf) {
+          console.log("PRF extension was processed during registration.");
+          if (extensionResults.prf.enabled) { // Some interpretations suggest an 'enabled' field
+              console.log("PRF capability explicitly enabled for this credential.");
+          }
+          if (extensionResults.prf.results && extensionResults.prf.results.first) {
+              console.log("PRF value obtained during registration (used for checking support).");
+          }
+      } else {
+          console.log("PRF extension not supported or not evaluated during registration by this authenticator.");
+      }
       return true;
     }
 
@@ -194,17 +219,71 @@ export const createPasskey = async (username: string): Promise<boolean> => {
   }
 };
 
-// Verify a passkey
-export const verifyPasskey = async (): Promise<boolean> => {
+export const deriveEncryptionKeyFromPrf = async (prfSecret) {
+  if (!prfSecret) return null;
+
+  const info = "encryption-key";
+  const salt = localStorage.getItem("passkey-saltForKeyGen");
+  if (!salt) {
+    console.error("No salt for key generation found");
+    return null;
+  }
+  try {
+    // 1. Import the PRF secret as an HMAC key for HKDF's extract phase
+    const hmacKey = await crypto.subtle.importKey(
+      "raw",
+      prfSecret,
+      { name: "HMAC", hash: "SHA-256" },
+      false, // not extractable
+      ["sign"] // usage for HMAC
+    );
+
+    // 2. HKDF Extract phase: Creates a pseudo-random key (PRK)
+    // The 'salt' here is for the HKDF itself, not the PRF salt.
+    // You can use a fixed salt for HKDF or a randomly generated one.
+    // If prfSecret is already cryptographically strong, salt might be optional or an all-zero array.
+    const prk = await crypto.subtle.sign(
+      "HMAC",
+      hmacKey,
+      salt // A salt for HKDF, can be an empty Uint8Array or a specific value
+    );
+
+    // 3. HKDF Expand phase: Derives the actual encryption key of desired length
+    // The 'info' parameter provides context, ensuring different keys are generated for different purposes
+    // even from the same PRK.
+    const keyLengthBytes = 32; // For AES-256
+    const derivedKey = await crypto.subtle.deriveKey(
+      {
+        name: "HKDF",
+        salt: new Uint8Array(), // Salt for expand phase (often empty if extract used salt)
+        info: new TextEncoder().encode(info), // Context-specific info
+        hash: "SHA-256",
+      },
+      await crypto.subtle.importKey("raw", prk, "HKDF", false, ["deriveKey"]), // Import PRK for deriveKey
+      { name: "AES-GCM", length: keyLengthBytes * 8 }, // Algorithm and length for the derived key
+      true, // Allow key to be exportable (false if you never need to export it)
+      ["encrypt", "decrypt"] // Key usages
+    );
+    console.log("Derived encryption key:", derivedKey);
+    return derivedKey;
+  } catch (err) {
+    console.error("Key derivation failed:", err);
+    return null;
+  }
+}
+
+// Get a passkey
+export const getPasskey = async () => {
   try {
     // Get the credential ID from localStorage
     const credentialId = localStorage.getItem("passkey-credential-id");
     if (!credentialId) {
       console.error("No passkey credential found");
-      return false;
+      return null;
     }
 
     // Create the publicKey options for authentication with correct types
+    const salt1 = crypto.getRandomValues(new Uint8Array(32)); // Salt for deriving the local encryption key
     const publicKeyOptions: PublicKeyCredentialRequestOptions = {
       challenge: window.crypto.getRandomValues(new Uint8Array(32)),
       rpId: window.location.hostname,
@@ -215,6 +294,13 @@ export const verifyPasskey = async (): Promise<boolean> => {
           transports: ["internal"] as AuthenticatorTransport[],
         },
       ],
+      extensions: {
+        prf: {
+          eval: {
+            first: salt1,
+          },
+        },
+      },
       timeout: 60000,
       userVerification: "preferred" as UserVerificationRequirement,
     };
@@ -223,11 +309,19 @@ export const verifyPasskey = async (): Promise<boolean> => {
     const assertion = await navigator.credentials.get({
       publicKey: publicKeyOptions,
     });
+    const extensionResults = assertion.getClientExtensionResults();
 
-    return !!assertion;
+    let prfSecret = null;
+    if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
+      prfSecret = new Uint8Array(extensionResults.prf.results.first);
+      console.log("PRF Secret (first) received:", prfSecret);
+      const derivedKey = deriveEncryptionKeyFromPrf(prfSecret, salt);
+    }
+
+    return assertion;
   } catch (error) {
-    console.error("Error verifying passkey", error);
-    return false;
+    console.error("Error getting passkey", error);
+    return null;
   }
 };
 

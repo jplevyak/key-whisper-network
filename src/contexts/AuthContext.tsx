@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import {
   createPasskey,
-  verifyPasskey,
+  getPasskey,
   isPasskeySupported,
   isBiometricSupported,
 } from "@/utils/encryption";
@@ -17,6 +17,7 @@ type AuthContextType = {
   login: (username: string) => Promise<boolean>;
   logout: () => void;
   registerPasskey: (username: string) => Promise<boolean>;
+  getDerivedKey: string | null;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [hasPasskey, setHasPasskey] = useState<boolean>(false);
   const [supportsBiometric, setSupportsBiometric] = useState<boolean>(false);
   const [supportsPasskeys, setSupportsPasskeys] = useState<boolean>(false);
+  const [derivedKey, setDerivedKey] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -60,12 +62,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(true);
     try {
       if (hasPasskey) {
-        const verified = await verifyPasskey();
-        if (verified) {
+        const assertion = await getPasskey();
+        if (assertion) {
           setIsAuthenticated(true);
           setUsername(usernameInput);
           localStorage.setItem("username", usernameInput);
           setIsLoading(false);
+
+          const extensionResults = assertion.getClientExtensionResults();
+          if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
+            const prfSecret = new Uint8Array(extensionResults.prf.results.first);
+            const derivedKey = deriveEncryptionKeyFromPrf(prfSecret);
+            setDerivedKey(derivedKey);
+          }
+
           return true;
         } else {
           toast({
@@ -145,19 +155,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        isLoading,
-        username,
-        hasPasskey,
-        supportsBiometric,
-        supportsPasskeys,
-        login,
-        logout,
-        registerPasskey,
-      }}
+    value={{
+      isAuthenticated,
+      isLoading,
+      username,
+      hasPasskey,
+      supportsBiometric,
+      supportsPasskeys,
+      login,
+      logout,
+      registerPasskey,
+      getDerivedKey,
+    }}
     >
-      {children}
+    {children}
     </AuthContext.Provider>
   );
 };
