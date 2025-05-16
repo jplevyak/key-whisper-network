@@ -146,7 +146,6 @@ export const createPasskey = async (username: string) => {
     // Create a random user ID
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
-    const saltForPrfEnable = window.crypto.getRandomValues(new Uint8Array(32));
     const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32));
 
     // Create the publicKey options with correct types
@@ -176,7 +175,7 @@ export const createPasskey = async (username: string) => {
         // This also helps some authenticators "initialize" the PRF capability for the credential
         prf: {
           eval: {
-            first: saltForPrfEnable,
+            first: saltForKeyGen,
           }
         }
       },
