@@ -14,6 +14,34 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 - **Push Notifications**: Stay updated with new messages through push notifications (requires PWA installation and user permission on some platforms).
 - **Progressive Web App (PWA)**: Installable as a PWA for a more native app-like experience on supported devices.
 
+## Installation
+
+CCred Network is a Progressive Web App (PWA). For the best experience, including features like push notifications, it's recommended to install it to your device.
+
+### PWA Installation and Enabling Notifications
+
+-   **iOS (Safari):**
+    -   To install as a PWA: Tap the Share icon in Safari, then select "Add to Home Screen".
+    -   To enable notifications:
+        -   First, ensure notifications are enabled for Safari in your device settings: Go to Settings > Safari > Advanced > Experimental Features, and ensure "Notifications" is toggled ON. (Note: iOS PWA notification support can vary).
+        -   Open the installed app from your Home Screen. If prompted for notification permission, please accept.
+        -   You may also need to enable notifications for the specific "web app" in Settings > Notifications.
+
+-   **Android (Chrome):**
+    -   To install as a PWA: Look for an "Install app" option in Chrome's menu (three dots) or an install prompt that may appear.
+    -   To enable notifications:
+        -   When prompted by the app or browser, tap "Allow".
+        -   If you initially denied permission, you can change this by going to Chrome Settings > Site Settings > Notifications, find CCred, and allow notifications.
+
+-   **Desktop (Chrome, Edge on Windows/macOS/Linux):**
+    -   To install as a PWA: Look for an install icon (often a computer with a down arrow) in the address bar or in the browser's menu.
+    -   To enable notifications:
+        -   Click the lock icon in the address bar next to the CCred URL.
+        -   Find "Notifications" in the permissions dropdown and set it to "Allow".
+        -   You may need to refresh the page for changes to take effect.
+
+*Note: The exact steps for PWA installation and enabling notifications can vary slightly depending on your operating system version and browser.*
+
 ## How can I edit this code?
 
 There are several ways of editing this application:
