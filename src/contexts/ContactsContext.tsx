@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import {
   generateAESKey,
   exportKey,
@@ -92,6 +92,7 @@ export const ContactsProvider = ({
   const { toast } = useToast();
   // Removed: const messagesContext = useMessages();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
+  const processingContactIdsRef = useRef<Set<string>>(new Set());
 
   // Initialize DB
   useEffect(() => {
@@ -315,12 +316,22 @@ export const ContactsProvider = ({
   const _getOrUpgradeContactData = async (
     contact: Contact & { keyId?: string }, // Allow keyId for upgrade
   ): Promise<{ key: CryptoKey; putRequestId: string; getRequestId: string } | null> => {
-    if (!isDbInitialized) {
-      toast({ title: "Database Not Ready", description: "Please wait and try again.", variant: "destructive" });
+    if (processingContactIdsRef.current.has(contact.id)) {
+      console.warn(`_getOrUpgradeContactData already processing contact ID: ${contact.id}. Aborting concurrent call.`);
+      // Optionally, you could implement a queue or retry mechanism here,
+      // but for now, we'll just prevent concurrent execution.
       return null;
     }
 
-    let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
+    processingContactIdsRef.current.add(contact.id);
+
+    try {
+      if (!isDbInitialized) {
+        toast({ title: "Database Not Ready", description: "Please wait and try again.", variant: "destructive" });
+        return null;
+      }
+
+      let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
 
     // Step 1: Try to get key and IDs using the new system (contact.id)
     if (cryptoKey) {
@@ -391,8 +402,27 @@ export const ContactsProvider = ({
     }
 
     // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
-    toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
-    return null;
+    // This path should ideally only be reached if the contact.keyId path also fails to produce a key.
+    if (!cryptoKey) { // Check if cryptoKey is still null after all attempts
+      toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
+      return null;
+    }
+    // If cryptoKey is found, but request IDs are still missing (e.g. contact object was incomplete and no keyDataString for regeneration)
+    if (!contact.putRequestId || !contact.getRequestId) {
+        // This situation should be rare if the upgrade path correctly populates IDs,
+        // or if new contacts always have IDs.
+        // If keyDataString was available from an old key, IDs should have been generated.
+        // If it's a new key format and IDs are missing from the contact object, it's an issue.
+        console.error(`Critical: Request IDs missing for contact ${contact.name} after key retrieval/upgrade.`);
+        toast({ title: "ID Error", description: `Request IDs missing for ${contact.name}. Data might be corrupted.`, variant: "destructive" });
+        return null;
+    }
+
+    return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
+
+    } finally {
+      processingContactIdsRef.current.delete(contact.id);
+    }
   };
 
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
