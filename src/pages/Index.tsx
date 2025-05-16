@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
-import { Fingerprint, Info, Bell, BellOff, RefreshCw } from "lucide-react"; // Import Bell icons and RefreshCw
+import { Fingerprint, Info, Bell, BellOff, RefreshCw, Github } from "lucide-react"; // Import Bell icons, RefreshCw, and Github
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   requestNotificationPermissionAndSubscribe,
@@ -396,15 +396,26 @@ const IndexContent = () => {
                   Remember: Keep your device secure. Lost access means lost messages.
                 </p>
               </div>
-              <DialogFooter>
-                {serviceWorkerWaiting && (
-                  <Button type="button" variant="default" onClick={handleUpdateApp}>
-                    <RefreshCw className="mr-2 h-4 w-4" /> Update App
-                  </Button>
-                )}
-                <DialogClose asChild>
-                  <Button type="button" variant="outline">Close</Button>
-                </DialogClose>
+              <DialogFooter className="sm:justify-between items-center"> {/* Ensure vertical alignment and space-between */}
+                <a
+                  href="https://github.com/jplevyak/key-whisper-network"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-primary mr-auto" // Pushes to the left
+                  aria-label="View source code on GitHub"
+                >
+                  <Github className="h-5 w-5" />
+                </a>
+                <div className="flex gap-2 items-center"> {/* Group buttons and ensure alignment */}
+                  {serviceWorkerWaiting && (
+                    <Button type="button" variant="default" onClick={handleUpdateApp}>
+                      <RefreshCw className="mr-2 h-4 w-4" /> Update App
+                    </Button>
+                  )}
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">Close</Button>
+                  </DialogClose>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>
