@@ -393,10 +393,6 @@ export const ContactsProvider = ({
 
     const contactData = await _getOrUpgradeContactData(contactItem);
     return contactData ? contactData.key : null;
-    } catch (error) {
-      console.error(`Error getting contact key for ${contactId}:`, error);
-      return null;
-    }
   };
 
   const getGetRequestId = async (contactId: string): Promise<string | null> => {
@@ -421,10 +417,6 @@ export const ContactsProvider = ({
 
     const contactData = await _getOrUpgradeContactData(contactItem);
     return contactData ? contactData.putRequestId : null;
-    } catch (error) {
-      console.error(`Error getting PUT request ID for ${contactId}:`, error);
-      return null;
-    }
   };
 
   const deleteContact = async (itemId: string) => {
