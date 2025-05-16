@@ -28,9 +28,9 @@ export const importKey = async (keyData: string): Promise<CryptoKey> => {
     keyBuffer,
     {
       name: "AES-GCM",
-      length: 256,
+      // length: 256, // Length is inferred from the keyData for "raw" format
     },
-    true,
+    false, // Make the imported key non-extractable
     ["encrypt", "decrypt"],
   );
 };
