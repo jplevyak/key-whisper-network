@@ -333,7 +333,6 @@ export const ContactsProvider = ({
     const keyResultFromDb = await db.get("keys", contact.id); // Returns { cryptoKey }
     if (keyResultFromDb && keyResultFromDb.cryptoKey) {
       cryptoKey = keyResultFromDb.cryptoKey; // This key is non-extractable
-      // keyDataStringToUse is not available from db.get("keys") anymore.
       // Request IDs must come from the contact object or be generated during upgrade.
       if (!contactKeys.has(contact.id)) {
         setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
