@@ -41,7 +41,7 @@ A key security enhancement used by CCred Network is the passkey's PRF (Pseudo-Ra
 
 *   **Why is PRF important?** It means that even if someone gained access to your device's raw storage, they still couldn't decrypt your sensitive contact keys without authenticating via your passkey (and thus invoking the PRF). This significantly hardens the security of your encrypted communications. The key derived via PRF never leaves the authenticator (e.g., your phone's secure enclave or a hardware security key).
 
-**PRF Support (as of May 2024 - based on general WebAuthn PRF adoption trends):**
+**PRF Support (as of May 2025 - based on general WebAuthn PRF adoption trends):**
 
 The availability of the PRF extension depends on the operating system, browser, and the type of authenticator used:
 
