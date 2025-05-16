@@ -73,29 +73,19 @@ export const useMessagePolling = ({
           // Get the stable request ID using the new context function
           try {
             const requestId = await getGetRequestId(contact.id);
-            if (!requestId) {
-              // console.warn(
-              //   `Could not get request ID for contact ${contact.id}. Skipping.`,
-              // );
-              continue;
-            }
             requestIdsToSend.push(requestId);
             // Map the generated stable ID back to the contactId to process the response
             requestIdToContactIdMap.set(requestId, contact.id);
           } catch (error) {
-            // console.error(
-            //   `Error fetching request ID for contact ${contact.id}:`,
-            //   error,
-            // );
+            console.error(
+              `Error fetching request ID for contact ${contact.id}:`,
+              error,
+            );
             continue;
           }
         }
 
-        // Log the populated map
-        //console.log('Populated requestIdToContactIdMap:', requestIdToContactIdMap);
-
         if (requestIdsToSend.length === 0) {
-          //console.log('No valid contacts/keys to fetch messages for.');
           return;
         }
 

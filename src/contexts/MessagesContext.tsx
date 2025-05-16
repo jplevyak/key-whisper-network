@@ -160,15 +160,6 @@ export const MessagesProvider = ({
           key,
         );
         const requestId = await getPutRequestId(contact.id);
-        if (!requestId) {
-          // toast({
-          //   title: "Error",
-          //   description: `Could not generate request ID for ${contact.name}. Message not sent.`,
-          //   variant: "destructive",
-          // });
-          return false;
-        }
-
         let messageSentToServer = false;
         try {
           const response = await fetch("/api/put-message", {
@@ -316,19 +307,6 @@ export const MessagesProvider = ({
             memberKey,
           );
           const requestId = await getPutRequestId(memberContact.id);
-          if (!requestId) {
-            // console.warn(
-            //   `Could not get PUT request ID for group member ${memberContact.name}. Skipping send.`,
-            // );
-            // toast({
-            //   title: "Partial Send Error",
-            //   description: `No request ID for ${memberContact.name}.`,
-            //   variant: "warning",
-            // });
-            allSendsSuccessful = false;
-            continue;
-          }
-
           const response = await fetch("/api/put-message", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -568,12 +546,6 @@ export const MessagesProvider = ({
         for (const message of pendingMessagesInItem) {
           try {
             const requestId = await getPutRequestId(contact.id);
-            if (!requestId) {
-              // console.error(
-              //   `Retry: Could not get PUT request ID for contact ${contact.name}. Skipping message ${message.id}.`,
-              // );
-              continue;
-            }
             const response = await fetch("/api/put-message", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -668,13 +640,6 @@ export const MessagesProvider = ({
                 memberKey,
               );
               const requestId = await getPutRequestId(memberContact.id);
-              if (!requestId) {
-                // console.error(
-                //   `Retry: Could not get PUT request ID for group member ${memberContact.name}. Skipping send for this member for message ${message.id}.`,
-                // );
-                allMemberSendsSuccessful = false;
-                continue;
-              }
               const response = await fetch("/api/put-message", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
