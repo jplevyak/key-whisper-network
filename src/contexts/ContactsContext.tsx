@@ -5,6 +5,7 @@ import {
   importKey,
   generateStableRequestId,
 } from "@/utils/encryption";
+import { secureStorage } from "@/utils/secureStorage";
 import { useToast } from "@/components/ui/use-toast";
 import { db } from "@/utils/indexedDB";
 // Removed: import { useMessages } from './MessagesContext';
