@@ -47,6 +47,16 @@ const IndexContent = () => {
   const [isPWA, setIsPWA] = useState(false);
   const [serviceWorkerWaiting, setServiceWorkerWaiting] = useState<ServiceWorker | null>(null);
 
+  const openAboutAndScrollToNotifications = () => {
+    setIsAboutDialogOpen(true);
+    setTimeout(() => {
+      const section = document.getElementById("notifications-section");
+      if (section) {
+        section.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 100); // Timeout to allow dialog to render
+  };
+
   // Check notification support, initial permission, and PWA status on mount
   useEffect(() => {
     // Check PWA status
@@ -272,7 +282,7 @@ const IndexContent = () => {
                       const perm = await requestNotificationPermissionAndSubscribe();
                       setNotificationPermission(perm);
                     } else if (notificationPermission === "denied" || !notificationsSupported) {
-                      setIsAboutDialogOpen(true); // Open About dialog for more info
+                      openAboutAndScrollToNotifications();
                     }
                     // Tooltip will show on hover/focus, click is for action.
                   }}
@@ -319,6 +329,23 @@ const IndexContent = () => {
                 <p>
                   CCred Network provides a secure way to exchange messages using quantum-safe AES end-to-end encryption to protect your communications.
                 </p>
+                {(!isPWA || notificationPermission !== "granted") && (
+                  <p className="mb-2 text-center">
+                    <a
+                      href="#notifications-section"
+                      className="text-red-500 font-semibold underline hover:text-red-600"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const section = document.getElementById("notifications-section");
+                        if (section) {
+                          section.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                      }}
+                    >
+                      Install and Enable Notifications
+                    </a>
+                  </p>
+                )}
                 <h4 className="font-semibold mt-2">Security:</h4>
                 <p>
                   Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages. When available (e.g., on modern mobile devices, or with security keys and browsers that support it), these keys are further protected by encrypting them with a key derived via your passkey's PRF extension, significantly increasing security.
@@ -338,9 +365,33 @@ const IndexContent = () => {
                   <li>The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.</li>
                   <li>It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.</li>
                 </ul>
-                <p className="mt-3">
-                  For detailed PWA installation and notification setup instructions, please refer to the project's README file.
-                </p>
+                <h4 id="notifications-section" className="font-semibold mt-2 scroll-mt-4">Enabling Notifications:</h4>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>
+                    <strong>iOS (Safari):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Ensure notifications are enabled in your device settings: Go to Settings &gt; Safari &gt; Advanced &gt; Notifications (toggle ON).</li>
+                      <li>Install CCred as a Progressive Web App (PWA): Tap the Share icon in Safari, then select "Add to Home Screen".</li>
+                      <li>Open the app from your Home Screen and agree to the notification permission prompt when it appears.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Android (Chrome):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>When prompted by the app or browser, tap "Allow" to enable notifications.</li>
+                      <li>If you initially denied permission, you can change this by going to Chrome Settings &gt; Site Settings &gt; Notifications, find CCred, and allow notifications.</li>
+                      <li>You can also install CCred as a PWA by tapping the "Install" button in Chrome's menu or when prompted.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Desktop (Chrome on Windows/macOS/Linux):</strong>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Click the lock icon in the address bar next to the CCred URL.</li>
+                      <li>Find "Notifications" in the dropdown and set it to "Allow".</li>
+                      <li>You may need to refresh the page for changes to take effect.</li>
+                    </ul>
+                  </li>
+                </ul>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Remember: Keep your device secure. Lost access means lost messages.
                 </p>
