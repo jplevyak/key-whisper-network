@@ -4,8 +4,10 @@ import {
   getPasskey,
   isPasskeySupported,
   isBiometricSupported,
+  deriveEncryptionKeyFromPrf,
 } from "@/utils/encryption";
 import { useToast } from "@/components/ui/use-toast";
+import { secureStorage } from "@/utils/secureStorage"; // Import secureStorage
 
 type AuthContextType = {
   isAuthenticated: boolean;
