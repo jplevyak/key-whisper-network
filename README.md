@@ -136,52 +136,28 @@ This endpoint is used by clients to acknowledge receipt of specific messages, wh
 
 This design ensures that the backend remains a simple, stateless (in terms of user identity) message broker, deferring all security and interpretation of data to the end-user clients.
 
-## How can I edit this code?
-
-There are several ways of editing this application:
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Editing and building
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
+git clone git@github.com:jplevyak/ccred.git
 npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+cargo build
 ```
 
-**Edit a file directly in GitHub**
+## Deplyment
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Setup
 
-**Use GitHub Codespaces**
+### Install
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
+## This project is built with:
 
 - Vite
 - TypeScript
 - React
 - shadcn-ui
 - Tailwind CSS
+- Rust
+- Tokio
+- Tower
+- Axum
