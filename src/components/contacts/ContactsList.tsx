@@ -30,15 +30,13 @@ const ContactsList = ({ onAddContact, onItemSelect }: ContactsListProps) => {
     onItemSelect?.(item);
   };
 
-  // Function to count unread messages for a contact (groups don't have direct unread counts yet)
-  const countUnread = (contactId: string): number => {
-    const contactMessages = messages[contactId] || [];
+  const countUnread = (itemId: string): number => {
+    const contactMessages = messages[itemId] || [];
     return contactMessages.filter((m) => !m.sent && !m.read).length;
   };
 
-  // Get last message time for a contact (groups don't have this directly yet)
-  const getLastMessageTime = (contactId: string): string => {
-    const contactMessages = messages[contactId] || [];
+  const getLastMessageTime = (itemId: string): string => {
+    const contactMessages = messages[itemId] || [];
     if (contactMessages.length === 0) return "";
 
     const lastMessage = contactMessages.reduce((latest, current) =>
@@ -101,9 +99,7 @@ const ContactsList = ({ onAddContact, onItemSelect }: ContactsListProps) => {
                 item={item}
                 isActive={activeItem?.id === item.id}
                 // For groups, unreadCount and lastMessageTime might be 0 or empty
-                unreadCount={
-                  item.itemType === "contact" ? countUnread(item.id) : 0
-                }
+                unreadCount={countUnread(item.id)}
                 lastMessageTime={
                   item.itemType === "contact" ? getLastMessageTime(item.id) : ""
                 }
@@ -174,8 +170,7 @@ const ContactItem = ({
         </div>
 
         <div className="flex justify-between items-center mt-1">
-          {unreadCount > 0 &&
-            !isGroup && ( // Only show for contacts
+          {unreadCount > 0 && ( // Only show for contacts
               <div className="bg-primary text-primary-foreground text-xs rounded-full h-5 min-w-5 flex items-center justify-center px-1.5">
                 {unreadCount}
               </div>
