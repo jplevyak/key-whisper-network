@@ -31,6 +31,37 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 -   The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.
 -   It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.
 
+### Creating a Passkey
+
+CCred Network utilizes passkeys for user authentication, offering a more secure and user-friendly alternative to traditional passwords. Passkeys are a form of phishing-resistant credentials that are typically tied to your device (like a fingerprint or face scan) or a hardware security key.
+
+**The Power of PRF (Pseudo-Random Function)**
+
+A key security enhancement used by CCred Network is the passkey's PRF (Pseudo-Random Function) extension. When available, this allows the application to derive a unique, stable encryption key directly from your passkey. This derived key is then used to encrypt the local database where your contact-specific encryption keys are stored.
+
+*   **Why is PRF important?** It means that even if someone gained access to your device's raw storage, they still couldn't decrypt your sensitive contact keys without authenticating via your passkey (and thus invoking the PRF). This significantly hardens the security of your encrypted communications. The key derived via PRF never leaves the authenticator (e.g., your phone's secure enclave or a hardware security key).
+
+**PRF Support (as of May 2024 - based on general WebAuthn PRF adoption trends):**
+
+The availability of the PRF extension depends on the operating system, browser, and the type of authenticator used:
+
+*   **Supported (Generally Good Support for PRF):**
+    *   **iOS/iPadOS (17.5+):** Passkeys synced via iCloud Keychain generally support PRF.
+    *   **macOS (Sonoma 14.5+):** Passkeys synced via iCloud Keychain, and some hardware security keys, support PRF when used with Safari or Chrome.
+    *   **Android (14+):** Passkeys managed by Google Password Manager generally support PRF when used with Chrome.
+    *   **Hardware Security Keys:** Many modern FIDO2 hardware security keys (like YubiKey 5 series or newer) support the PRF extension when used with a compatible browser (Chrome, Safari) on a supportive OS.
+
+*   **Limited or No PRF Support:**
+    *   **Windows Hello:** As of April 2025, passkeys created and managed by Windows Hello (e.g., using fingerprint or PIN directly on a Windows machine) **do not** typically support the PRF extension.
+        *   **Workaround for Windows Users:** To get the PRF-enhanced security on Windows, you should use a **hardware security key** that supports PRF (e.g., a YubiKey) with a compatible browser like Chrome. The passkey will be stored on the hardware key itself.
+    *   **Firefox:**
+        *   On **macOS**, Firefox does not currently support PRF for passkeys.
+        *   On **Android**, Firefox's passkey implementation may also lack PRF support.
+        *   On **Windows and Linux**, Firefox's PRF support can be variable and may depend on interactions with hardware keys.
+    *   **Linux:** PRF support can vary depending on the browser, how passkeys are managed (e.g., browser-stored vs. hardware key), and the specific hardware key. Chrome with a PRF-capable hardware security key is the most likely combination to work.
+
+When you register with CCred Network, the application will attempt to use the PRF extension if your browser and authenticator support it. If PRF is not available, your local data is still encrypted, but with a key managed by the browser's standard secure storage mechanisms, which might not offer the same level of binding to your passkey authentication. For maximum security, using a platform and authenticator that supports PRF is highly recommended.
+
 ## Installation
 
 CCred Network is a Progressive Web App (PWA). For the best experience, including features like push notifications, it's recommended to install it to your device.
