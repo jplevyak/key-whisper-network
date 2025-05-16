@@ -348,7 +348,7 @@ const IndexContent = () => {
                 )}
                 <h4 className="font-semibold mt-2">Security:</h4>
                 <p>
-                  Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages.
+                  Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages. When available (e.g., on modern mobile devices, or with security keys and browsers that support it), these keys are further protected by encrypting them with a key derived via your passkey's PRF extension, significantly increasing security.
                 </p>
                 <h4 id="how-to-use-section" className="font-semibold mt-2">How to Use:</h4>
                 <ul className="list-disc pl-5 space-y-1">
