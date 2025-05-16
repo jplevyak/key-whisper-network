@@ -340,7 +340,7 @@ export const deriveEncryptionKeyFromPrf = async (
       false, // Make non-exportable, consistent with SecureStorage's own keys
       ["encrypt", "decrypt"] // Key usages
     );
-    console.log("Derived encryption key (non-exportable):", derivedKey);
+    console.log("Derived encryption key (non-exportable)");
     return derivedKey;
   } catch (err) {
     console.error("Key derivation failed:", err);
