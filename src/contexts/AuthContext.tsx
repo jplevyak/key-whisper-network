@@ -62,7 +62,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const setPrfStorageKeyIfAvailable = async (credential) => {
     const extensionResults = credential.getClientExtensionResults();
-    if (extensionResult.prf &&ionResults.prf.results.firstextensionResults.prf.results && extensionResults.prf.results.first) {
+    if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
       const prfSecret = new Uint8Array(extensionResults.prf.results.first);
       const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
       if (saltForKeyGenString) {
@@ -85,7 +85,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
     } else {
-      console.warn("Prf security unavailable, extensionResults:", extensionResults);
       toast({
         title: "Standard Security",
         description: "Passkey login successful. Using standard database protection.",
@@ -144,7 +143,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUsername(usernameInput);
         setHasPasskey(true);
         localStorage.setItem("username", usernameInput);
-        await setPrfStorageKeyIfAvailable(credential);
         toast({
           title: "Registration Successful",
           description: "Your secure passkey has been created. Please log in to continue.",
