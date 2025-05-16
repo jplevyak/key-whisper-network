@@ -4,6 +4,7 @@ import {
   exportKey,
   importKey,
   generateStableRequestId,
+  importRawKey,
 } from "@/utils/encryption";
 import { secureStorage } from "@/utils/secureStorage";
 import { useToast } from "@/components/ui/use-toast";
@@ -125,12 +126,12 @@ export const ContactsProvider = ({
           ? JSON.parse(storedContactsData)
           : [];
 
-        const storedGroupsData = await db.get("groups", "all");
-        const loadedGroups: Group[] = storedGroupsData
-          ? JSON.parse(storedGroupsData)
-          : [];
+          const storedGroupsData = await db.get("groups", "all");
+          const loadedGroups: Group[] = storedGroupsData
+            ? JSON.parse(storedGroupsData)
+            : [];
 
-        setListItems([...loadedContacts, ...loadedGroups]);
+            setListItems([...loadedContacts, ...loadedGroups]);
       } catch (error) {
         console.error("Error loading list items:", error);
         toast({
@@ -157,39 +158,39 @@ export const ContactsProvider = ({
         const currentContacts = listItems.filter(
           (item) => item.itemType === "contact",
         ) as Contact[];
-        const currentGroups = listItems.filter(
-          (item) => item.itemType === "group",
-        ) as Group[];
+          const currentGroups = listItems.filter(
+            (item) => item.itemType === "group",
+          ) as Group[];
 
-        if (
-          currentContacts.length > 0 ||
-          listItems.some((item) => item.itemType === "contact")
-        ) {
-          // Save even if it becomes empty
-          const contactsJson = JSON.stringify(currentContacts);
-          await db.set("contacts", "all", contactsJson);
-          console.log("Contacts saved successfully.");
-        } else {
-          await db.set("contacts", "all", JSON.stringify([])); // Save empty array if all contacts removed
-          console.log(
-            "No contacts to save, or all contacts removed. Saved empty array.",
-          );
-        }
+            if (
+              currentContacts.length > 0 ||
+              listItems.some((item) => item.itemType === "contact")
+            ) {
+              // Save even if it becomes empty
+              const contactsJson = JSON.stringify(currentContacts);
+              await db.set("contacts", "all", contactsJson);
+              console.log("Contacts saved successfully.");
+            } else {
+              await db.set("contacts", "all", JSON.stringify([])); // Save empty array if all contacts removed
+              console.log(
+                "No contacts to save, or all contacts removed. Saved empty array.",
+              );
+            }
 
-        if (
-          currentGroups.length > 0 ||
-          listItems.some((item) => item.itemType === "group")
-        ) {
-          // Save even if it becomes empty
-          const groupsJson = JSON.stringify(currentGroups);
-          await db.set("groups", "all", groupsJson);
-          console.log("Groups saved successfully.");
-        } else {
-          await db.set("groups", "all", JSON.stringify([])); // Save empty array if all groups removed
-          console.log(
-            "No groups to save, or all groups removed. Saved empty array.",
-          );
-        }
+            if (
+              currentGroups.length > 0 ||
+              listItems.some((item) => item.itemType === "group")
+            ) {
+              // Save even if it becomes empty
+              const groupsJson = JSON.stringify(currentGroups);
+              await db.set("groups", "all", groupsJson);
+              console.log("Groups saved successfully.");
+            } else {
+              await db.set("groups", "all", JSON.stringify([])); // Save empty array if all groups removed
+              console.log(
+                "No groups to save, or all groups removed. Saved empty array.",
+              );
+            }
       } catch (error) {
         console.error("Failed to save list items:", error);
         toast({
@@ -324,107 +325,49 @@ export const ContactsProvider = ({
     const contactItem = listItems.find(
       (item) => item.id === contactId && item.itemType === "contact",
     );
-    if (!contactItem) {
-      console.warn(`Contact not found for ID: ${contactId} in _getStoredKeyDataForContact`);
-      return null;
-    }
-    const contact = contactItem as Contact;
+      if (!contactItem) {
+        console.warn(`Contact not found for ID: ${contactId} in _getStoredKeyDataForContact`);
+        return null;
+      }
+      const contact = contactItem as Contact;
 
-    const storedData = await db.get("keys", contact.keyId);
+      const storedData = await db.get("keys", contact.keyId);
+      if (!storedData) {
+        console.warn(`No key data found in DB for keyId: ${contact.keyId}`);
+        return null;
+      }
 
-    if (!storedData) {
-      console.warn(`No key data found in DB for keyId: ${contact.keyId}`);
-      return null;
-    }
-
-    if (typeof storedData === "string") {
-      // This string could be an encrypted JSON of StoredKeyData, or a very old raw key string.
-      console.log(`Processing potentially old key format for keyId: ${contact.keyId}`);
       let keyStringToImport: string | null = null;
       let existingPutRequestId: string | null = null;
       let existingGetRequestId: string | null = null;
 
       try {
         // Attempt to decrypt it as if it's an encrypted StoredKeyData JSON string
-        const decryptedJson = await secureStorage.decrypt(storedData);
-        const parsedObject = JSON.parse(decryptedJson) as StoredKeyData;
+        const parsedObject = JSON.parse(storedData) as StoredKeyData;
 
-        if (parsedObject && typeof parsedObject.key === 'string' && typeof parsedObject.putRequestId === 'string' && typeof parsedObject.getRequestId === 'string') {
+        if (parsedObject && !!parsedObject.key && typeof parsedObject.putRequestId === 'string' && typeof parsedObject.getRequestId === 'string') {
           console.log(`Successfully decrypted and parsed StoredKeyData for keyId: ${contact.keyId}`);
-          keyStringToImport = parsedObject.key;
-          existingPutRequestId = parsedObject.putRequestId; // Use existing IDs if available
-          existingGetRequestId = parsedObject.getRequestId;
+          return parsedObject;
         } else {
           // Decrypted, but not the expected StoredKeyData structure. Fallback.
           console.warn(`Decrypted data for keyId ${contact.keyId} was not valid StoredKeyData. Assuming raw key string.`);
-          keyStringToImport = storedData; // Treat storedData itself as the raw key string
+          keyStringToImport = await secureStorage.decrypt(storedData); // Treat storedData itself as the raw key string
         }
       } catch (e) {
         // Decryption failed, assume storedData is a raw key string (oldest format)
         console.warn(`Failed to decrypt stored string for keyId ${contact.keyId}. Assuming raw key string. Error:`, e);
-        keyStringToImport = storedData;
+        keyStringToImport = await secureStorage.decrypt(storedData);
       }
 
-      if (!keyStringToImport) {
-        console.error(`Critical error: Could not determine key string to import for keyId: ${contact.keyId}`);
-        toast({ title: "Key Error", description: "Failed to process stored key.", variant: "destructive" });
-        return null;
-      }
+      const rawKey = await importRawKey(keyStringToImport);
+      const key = await importKey(keyStringToImport);
+      const putRequestId = await generateStableRequestId(contact.userGeneratedKey, rawKey);
+      const getRequestId = await generateStableRequestId(!contact.userGeneratedKey, rawKey);
+      const upgradedKeyData: StoredKeyData = { key, putRequestId, getRequestId, };
 
-      const tempCryptoKey = await importKey(keyStringToImport);
-
-      // Use existing request IDs if we parsed them, otherwise generate new ones
-      const putRequestId = existingPutRequestId ?? await generateStableRequestId(
-        contact.userGeneratedKey,
-        tempCryptoKey,
-      );
-      const getRequestId = existingGetRequestId ?? await generateStableRequestId(
-        !contact.userGeneratedKey,
-        tempCryptoKey,
-      );
-
-      const upgradedKeyData: StoredKeyData = {
-        key: keyStringToImport, // This is the actual base64 key string
-        putRequestId,
-        getRequestId,
-      };
-
-      // Save the upgraded StoredKeyData object (now unencrypted) back to the DB
-      await db.set("keys", contact.keyId, upgradedKeyData);
+      await db.set("keys", contact.keyId, JSON.stringify(upgradedKeyData));
       console.log(`Key ${contact.keyId} upgraded to new object format and saved.`);
       return upgradedKeyData;
-    } else {
-      // Current format: StoredKeyData object (retrieved directly, unencrypted)
-      const keyObject = storedData as StoredKeyData;
-      if (
-        !keyObject ||
-        typeof keyObject.key !== "string" ||
-        typeof keyObject.putRequestId !== "string" ||
-        typeof keyObject.getRequestId !== "string"
-      ) {
-        console.error(
-          `Invalid key object structure for keyId: ${contact.keyId}`,
-          keyObject,
-        );
-        toast({
-          title: "Key Error",
-          description:
-            "Corrupted key data found. Please try re-adding the contact or their key.",
-          variant: "destructive",
-        });
-        try {
-          await db.delete("keys", contact.keyId);
-          console.log(`Deleted corrupted key ${contact.keyId} from DB.`);
-        } catch (deleteError) {
-          console.error(
-            `Failed to delete corrupted key ${contact.keyId}:`,
-            deleteError,
-          );
-        }
-        return null;
-      }
-      return keyObject;
-    }
   };
 
   const getContactKey = async (
@@ -434,25 +377,25 @@ export const ContactsProvider = ({
       const contactItem = listItems.find(
         (item) => item.id === contactId && item.itemType === "contact",
       );
-      if (!contactItem) {
-        // console.warn(`Contact not found for ID: ${contactId} in getContactKey`);
-        return null;
-      }
-      const contact = contactItem as Contact; // Type assertion
+        if (!contactItem) {
+          // console.warn(`Contact not found for ID: ${contactId} in getContactKey`);
+          return null;
+        }
+        const contact = contactItem as Contact; // Type assertion
 
-      // Check in-memory cache first
-      if (contactKeys.has(contact.keyId)) {
-        return contactKeys.get(contact.keyId) || null;
-      }
+        // Check in-memory cache first
+        if (contactKeys.has(contact.keyId)) {
+          return contactKeys.get(contact.keyId) || null;
+        }
 
-      const storedKeyData = await _getStoredKeyDataForContact(contactId);
-      if (!storedKeyData || !storedKeyData.key) {
-        return null;
-      }
+        const storedKeyData = await _getStoredKeyDataForContact(contactId);
+        if (!storedKeyData || !storedKeyData.key) {
+          return null;
+        }
 
-      const cryptoKey = await importKey(storedKeyData.key);
-      setContactKeys((prev) => new Map(prev).set(contact.keyId, cryptoKey));
-      return cryptoKey;
+        const cryptoKey = await importKey(storedKeyData.key);
+        setContactKeys((prev) => new Map(prev).set(contact.keyId, cryptoKey));
+        return cryptoKey;
     } catch (error) {
       console.error(`Error getting contact key for ${contactId}:`, error);
       return null;
@@ -548,21 +491,21 @@ export const ContactsProvider = ({
   const updateContact = (contactId: string, updates: Partial<Contact>) => {
     setListItems(
       (prevListItems) =>
-        prevListItems.map((item) =>
-          item.id === contactId && item.itemType === "contact"
-            ? { ...item, ...updates }
-            : item,
-        ) as ContactOrGroup[], // Ensure the map returns the correct union type
+      prevListItems.map((item) =>
+                        item.id === contactId && item.itemType === "contact"
+                          ? { ...item, ...updates }
+                          : item,
+                       ) as ContactOrGroup[], // Ensure the map returns the correct union type
     );
 
     if (
       activeItem &&
       activeItem.id === contactId &&
-      activeItem.itemType === "contact"
+    activeItem.itemType === "contact"
     ) {
       setActiveItem((prev) =>
-        prev ? ({ ...prev, ...updates } as Contact) : null,
-      );
+                    prev ? ({ ...prev, ...updates } as Contact) : null,
+                   );
     }
   };
 
@@ -580,21 +523,21 @@ export const ContactsProvider = ({
     }
     setListItems(
       (prevListItems) =>
-        prevListItems.map((item) =>
-          item.id === groupId && item.itemType === "group"
-            ? { ...item, ...updates }
-            : item,
-        ) as ContactOrGroup[],
+      prevListItems.map((item) =>
+                        item.id === groupId && item.itemType === "group"
+                          ? { ...item, ...updates }
+                          : item,
+                       ) as ContactOrGroup[],
     );
 
     if (
       activeItem &&
       activeItem.id === groupId &&
-      activeItem.itemType === "group"
+    activeItem.itemType === "group"
     ) {
       setActiveItem((prev) =>
-        prev ? ({ ...prev, ...updates } as Group) : null,
-      );
+                    prev ? ({ ...prev, ...updates } as Group) : null,
+                   );
     }
     // Persistence is handled by the useEffect watching listItems
     return true; // Assuming success if state is set, persistence handles errors
@@ -620,92 +563,92 @@ export const ContactsProvider = ({
     const contactItem = listItems.find(
       (item) => item.id === contactId && item.itemType === "contact",
     );
-    if (!contactItem) {
-      console.error(`Contact not found for ID: ${contactId}`);
-      toast({
-        title: "Error",
-        description: "Could not find the contact to update the key.",
-        variant: "destructive",
-      });
-      return { success: false, oldKey: null, newKey: null };
-    }
-    const contact = contactItem as Contact; // Type assertion
-
-    let oldKey: CryptoKey | null = null;
-    let newImportedKey: CryptoKey | null = null;
-
-    try {
-      oldKey = await getContactKey(contactId); // Get OLD key before updating
-
-      newImportedKey = await importKey(newKeyData);
-
-      // Update the key in memory and DB
-      setContactKeys((prev) =>
-        new Map(prev).set(contact.keyId, newImportedKey!),
-      ); // newImportedKey won't be null if importKey succeeds
-
-      // Generate new request IDs for the updated key
-      const putRequestId = await generateStableRequestId(
-        contact.userGeneratedKey,
-        newImportedKey!,
-      );
-      const getRequestId = await generateStableRequestId(
-        !contact.userGeneratedKey,
-        newImportedKey!,
-      );
-
-      const updatedStoredKey: StoredKeyData = {
-        key: newKeyData, // newKeyData is the exported string representation of the new key
-        putRequestId,
-        getRequestId,
-      };
-
-      await db.set("keys", contact.keyId, updatedStoredKey); // db.set handles encryption
-      console.log(`Key updated successfully for contact ${contact.name}`);
-
-      // Message re-encryption will be handled by the calling component (e.g., ContactProfile)
-      // Removed: await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
-
-      if (!oldKey) {
-        // This toast is relevant if it's the first time a key is set.
-        // If oldKey existed, re-encryption toasts will be shown by MessagesContext.
+      if (!contactItem) {
+        console.error(`Contact not found for ID: ${contactId}`);
         toast({
-          title: "Contact Key Set",
-          description: `The encryption key for ${contact.name} has been set.`,
+          title: "Error",
+          description: "Could not find the contact to update the key.",
+          variant: "destructive",
         });
+        return { success: false, oldKey: null, newKey: null };
       }
-      // The calling component will handle toasts related to message re-encryption.
-      return { success: true, oldKey, newKey: newImportedKey };
-    } catch (error) {
-      console.error(`Error updating key for contact ${contactId}:`, error);
-      toast({
-        title: "Key Update Failed",
-        description: "Could not import or save the new encryption key.",
-        variant: "destructive",
-      });
-      return { success: false, oldKey, newKey: newImportedKey };
-    }
+      const contact = contactItem as Contact; // Type assertion
+
+      let oldKey: CryptoKey | null = null;
+      let newImportedKey: CryptoKey | null = null;
+
+      try {
+        oldKey = await getContactKey(contactId); // Get OLD key before updating
+
+        newImportedKey = await importKey(newKeyData);
+
+        // Update the key in memory and DB
+        setContactKeys((prev) =>
+                       new Map(prev).set(contact.keyId, newImportedKey!),
+                      ); // newImportedKey won't be null if importKey succeeds
+
+                      // Generate new request IDs for the updated key
+                      const putRequestId = await generateStableRequestId(
+                        contact.userGeneratedKey,
+                        newImportedKey!,
+                      );
+                      const getRequestId = await generateStableRequestId(
+                        !contact.userGeneratedKey,
+                        newImportedKey!,
+                      );
+
+                      const updatedStoredKey: StoredKeyData = {
+                        key: newKeyData, // newKeyData is the exported string representation of the new key
+                        putRequestId,
+                        getRequestId,
+                      };
+
+                      await db.set("keys", contact.keyId, updatedStoredKey); // db.set handles encryption
+                      console.log(`Key updated successfully for contact ${contact.name}`);
+
+                      // Message re-encryption will be handled by the calling component (e.g., ContactProfile)
+                      // Removed: await messagesContext.reEncryptMessagesForKeyChange(contactId, oldKey, newKey);
+
+                      if (!oldKey) {
+                        // This toast is relevant if it's the first time a key is set.
+                        // If oldKey existed, re-encryption toasts will be shown by MessagesContext.
+                        toast({
+                          title: "Contact Key Set",
+                          description: `The encryption key for ${contact.name} has been set.`,
+                        });
+                      }
+                      // The calling component will handle toasts related to message re-encryption.
+                      return { success: true, oldKey, newKey: newImportedKey };
+      } catch (error) {
+        console.error(`Error updating key for contact ${contactId}:`, error);
+        toast({
+          title: "Key Update Failed",
+          description: "Could not import or save the new encryption key.",
+          variant: "destructive",
+        });
+        return { success: false, oldKey, newKey: newImportedKey };
+      }
   };
 
   return (
     <ContactsContext.Provider
-      value={{
-        listItems,
-        activeItem,
-        setActiveItem,
-        addContact,
-        addGroup, // Expose addGroup
-        getContactKey,
-        getGetRequestId,
-        getPutRequestId,
-        generateContactKey,
-        deleteContact, // This now handles both based on itemType for deletion from listItems
-        updateContact,
-        updateGroup, // Expose updateGroup
-        updateContactKey,
-      }}
+    value={{
+      listItems,
+      activeItem,
+      setActiveItem,
+      addContact,
+      addGroup, // Expose addGroup
+      getContactKey,
+      getGetRequestId,
+      getPutRequestId,
+      generateContactKey,
+      deleteContact, // This now handles both based on itemType for deletion from listItems
+      updateContact,
+      updateGroup, // Expose updateGroup
+      updateContactKey,
+    }}
     >
-      {children}
+    {children}
     </ContactsContext.Provider>
   );
 };

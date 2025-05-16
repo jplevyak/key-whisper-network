@@ -35,6 +35,21 @@ export const importKey = async (keyData: string): Promise<CryptoKey> => {
   );
 };
 
+// Import a key from raw format (from QR code)
+export const importRawKey = async (keyData: string): Promise<CryptoKey> => {
+  const keyBuffer = base64ToArrayBuffer(keyData);
+  return await window.crypto.subtle.importKey(
+    "raw",
+    keyBuffer,
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    true,
+    ["encrypt", "decrypt"],
+  );
+};
+
 // Encrypt a message
 export const encryptMessage = async (
   message: string,
