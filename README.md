@@ -14,6 +14,23 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 - **Push Notifications**: Stay updated with new messages through push notifications (requires PWA installation and user permission on some platforms).
 - **Progressive Web App (PWA)**: Installable as a PWA for a more native app-like experience on supported devices.
 
+## Usage
+
+### How to Use
+
+-   Add contacts by scanning their QR code or generating your own for them to scan.
+-   Select a contact to start a conversation.
+-   Messages are automatically encrypted and decrypted.
+-   Use the trash icon in the chat header to clear the conversation history on your device.
+-   Forward messages securely using the forward icon on a message bubble.
+
+### Understanding Groups
+
+-   Groups in CCred are tags you create to easily send the same message to multiple existing contacts at once.
+-   When you send a message "via" a group name to a contact, they receive the message with that group name attached.
+-   The recipient can then choose to create their own local group with that name. They can associate messages tagged with this group name to their local group.
+-   It's up to each recipient to decide which of their own contacts (if any) to add to their version of the group. Group memberships are not automatically synchronized between users.
+
 ## Installation
 
 CCred Network is a Progressive Web App (PWA). For the best experience, including features like push notifications, it's recommended to install it to your device.
