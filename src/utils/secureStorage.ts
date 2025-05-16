@@ -134,12 +134,6 @@ export class SecureStorage {
 
     try {
       const combined = toByteArray(encryptedData);
-
-      if (combined.length < 12) { // Basic check for IV presence
-        console.error("Decryption failed: encrypted data is too short.");
-        throw new Error("Invalid encrypted data format.");
-      }
-
       const iv = combined.slice(0, 12);
       const data = combined.slice(12);
 

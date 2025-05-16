@@ -320,14 +320,11 @@ export const ContactsProvider = ({
       return null;
     }
 
-    let currentPutId = contact.putRequestId;
-    let currentGetId = contact.getRequestId;
     let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
-    let keyDataStringToUse: string | null = null;
 
     // Step 1: Try to get key and IDs using the new system (contact.id)
-    if (cryptoKey && currentPutId && currentGetId) {
-      return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
+    if (cryptoKey)
+      return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
     }
 
     // Try fetching key using contact.id (new system)
@@ -335,125 +332,57 @@ export const ContactsProvider = ({
       const keyResult = await db.get("keys", contact.id); // Returns { cryptoKey } or { cryptoKey, keyDataString }
       if (keyResult && keyResult.cryptoKey) {
         cryptoKey = keyResult.cryptoKey;
-        // keyDataString might be present if db.get had to fallback to old format for this ID (unlikely for contact.id)
-        if (keyResult.keyDataString && !keyDataStringToUse) {
-            keyDataStringToUse = keyResult.keyDataString;
-        }
-        if (!contactKeys.has(contact.id)) {
-          setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-        }
+        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+        return { key: cryptoKey, putRequestId: contact.currentPutId, getRequestId: contact.currentGetId };
       }
     }
     
     // Step 2: If key still not found (or IDs missing) AND contact.keyId exists, attempt upgrade.
     // The db.get call for oldKeyId will handle decryption and import if it's an old format.
-    if ((!cryptoKey || !currentPutId || !currentGetId) && contact.keyId) {
+    if (contact.keyId) {
       const oldKeyId = contact.keyId;
       console.log(`Attempting upgrade for contact ${contact.name} (ID: ${contact.id}) from old keyId ${oldKeyId}`);
       
       const oldKeyResult = await db.get("keys", oldKeyId); // This now handles old string keys
 
-      if (oldKeyResult && oldKeyResult.cryptoKey) {
+      if (oldKeyResult && oldKeyResult.cryptoKey && oldKeyResult.keyDataString) {
         cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
-        keyDataStringToUse = oldKeyResult.keyDataString || null;
+       
+        const keyDataStringToUse = oldKeyResult.keyDataString;
+        const currentPutId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
+        const currentGetId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
 
-        if (keyDataStringToUse) {
-          // Ensure currentPutId and currentGetId are populated, generating if necessary
-          if (!currentPutId) {
-            currentPutId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
-          }
-          if (!currentGetId) {
-            currentGetId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
-          }
+        // Update the contact in listItems state to remove keyId and set request IDs
+        setListItems((prevListItems) =>
+          prevListItems.map((item) => {
+            if (item.id === contact.id && item.itemType === "contact") {
+              const updatedContact = {
+                ...item,
+                putRequestId: currentPutId,
+                getRequestId: currentGetId,
+              } as Contact;
+              delete (updatedContact as any).keyId; // Remove old keyId
+              return updatedContact;
+            }
+            return item;
+          }),
+        );
+          
+        // Save the upgraded key under the new contact.id
+        await db.set("keys", contact.id, cryptoKey);
+        await db.delete("keys", oldKeyId); // Delete old entry
+       
+        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+      
+        console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded, contact object updated, and old key ${oldKeyId} deleted.`);
 
-          // Update the contact in listItems state to remove keyId and set request IDs
-          setListItems((prevListItems) =>
-            prevListItems.map((item) => {
-              if (item.id === contact.id && item.itemType === "contact") {
-                const updatedContact = {
-                  ...item,
-                  putRequestId: currentPutId,
-                  getRequestId: currentGetId,
-                } as Contact;
-                delete (updatedContact as any).keyId; // Remove old keyId
-                return updatedContact;
-              }
-              return item;
-            }),
-          );
-          
-          // Save the upgraded key under the new contact.id
-          await db.set("keys", contact.id, cryptoKey);
-          
-          if (!contactKeys.has(contact.id)) {
-            setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-          }
-          await db.delete("keys", oldKeyId); // Delete old entry
-          console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded, contact object updated, and old key ${oldKeyId} deleted.`);
-        } else {
-          // This case implies db.get("keys", oldKeyId) might have returned a modern key
-          // or keyDataString was missing, which is unusual for an old format key.
-          console.warn(`Key for oldKeyId ${oldKeyId} did not yield keyDataString for upgrade. Contact object might still be updated if IDs were missing.`);
-           // Even if keyDataStringToUse is missing, if cryptoKey was found, cache it.
-          if (cryptoKey && !contactKeys.has(contact.id)) {
-            setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-          }
-        }
-      } else {
-        console.warn(`Could not retrieve or upgrade key for oldKeyId ${oldKeyId}.`);
-        toast({ title: "Upgrade Warning", description: `Could not upgrade old key for ${contact.name}.`, variant: "default" });
+        return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
       }
     }
 
-    if (!cryptoKey) {
-      // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
-      toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
-      return null;
-    }
-
-    // Final check for request IDs.
-    // If keyDataStringToUse was available (e.g. from an upgrade), IDs should have been generated.
-    // If it wasn't available (e.g. new key format, no upgrade needed, or upgrade failed to get keyDataString),
-    // and IDs are still missing, it's an issue.
-    if (!currentPutId || !currentGetId) {
-      if (keyDataStringToUse) { // Should have been generated if keyDataStringToUse was present
-        console.log(`Regenerating missing request IDs for ${contact.name} as a fallback.`);
-        currentPutId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
-        currentGetId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
-      } else {
-        console.error(`Critical: Request IDs missing for contact ${contact.name} and no keyDataString available to regenerate them.`);
-        toast({ title: "ID Error", description: `Request IDs missing for ${contact.name}. Data might be corrupted.`, variant: "destructive" });
-        return null;
-      }
-    }
-    
-    // Ensure contact in listItems reflects the final state of IDs and removal of keyId.
-    // This handles cases where the contact object passed to the function was stale,
-    // or if an upgrade occurred and updated the IDs.
-    const contactInList = listItems.find(item => item.id === contact.id && item.itemType === "contact") as Contact | undefined;
-    const needsFinalUpdateInList = 
-      (contactInList && (contactInList.putRequestId !== currentPutId || contactInList.getRequestId !== currentGetId)) ||
-      (contactInList && (contactInList as any).keyId) || // If keyId somehow still on the list item
-      (!contactInList && cryptoKey); // If contact was somehow missing but we have a key (less likely)
-
-
-    if (needsFinalUpdateInList) {
-      setListItems((prevListItems) =>
-        prevListItems.map((item) => {
-          if (item.id === contact.id && item.itemType === "contact") {
-            const updatedContact = {
-              ...item,
-              putRequestId: currentPutId,
-              getRequestId: currentGetId,
-            } as Contact;
-            delete (updatedContact as any).keyId; // Ensure keyId is removed
-            return updatedContact;
-          }
-          return item;
-        }),
-      );
-    }
-    return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
+    // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
+    toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
+    return null;
   };
 
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
