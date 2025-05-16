@@ -1,4 +1,5 @@
 import { secureStorage } from "./secureStorage";
+import { importKey, arrayBufferToBase64, base64ToArrayBuffer } from "./encryption"; // Added importKey
 
 interface DBSchema {
   contacts: {
@@ -67,7 +68,7 @@ class IndexedDBManager {
   async set<T extends keyof DBSchema>(
     store: T,
     id: string,
-    value: T extends "keys" ? CryptoKey : string,
+    value: T extends "keys" ? CryptoKey : string, // This type signature is correct
   ): Promise<void> {
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
@@ -116,7 +117,7 @@ class IndexedDBManager {
     store: T,
     id: string,
   ): Promise<
-    (T extends "keys" ? { cryptoKey: CryptoKey } | null : string | null)
+    (T extends "keys" ? { cryptoKey: CryptoKey; keyDataString?: string } | null : string | null)
   > {
     await this.init();
     if (!this.db) throw new Error("Database not initialized");
@@ -157,21 +158,34 @@ class IndexedDBManager {
             const wrappedKeyBuffer = combinedBuffer.slice(12);
 
             const cryptoKey = await window.crypto.subtle.unwrapKey(
-              "jwk", // Use JSON Web Key format for non-extractable keys
+              "jwk",
               wrappedKeyBuffer,
               wrappingKey,
-              { name: "AES-GCM", iv }, // Algorithm used for unwrapping
-              { name: "AES-GCM", length: 256 }, // Algorithm of the key that was wrapped
-              false, // Make the unwrapped key non-extractable
+              { name: "AES-GCM", iv },
+              { name: "AES-GCM", length: 256 },
+              false,
               ["encrypt", "decrypt"],
             );
-            resolve({ cryptoKey } as any); // Cast to satisfy complex conditional type
-          } catch (error) {
-            console.error(`Error processing wrapped JWK key from store ${store} for id ${id}:`, error);
-            resolve(null);
+            resolve({ cryptoKey } as any); // New format successfully unwrapped
+          } catch (jwkError) {
+            // JWK unwrap failed, assume it's an old-style encrypted string
+            console.warn(`JWK unwrap failed for key ${id} (may be old format):`, jwkError);
+            try {
+              const keyDataString = await secureStorage.decrypt(retrievedValue);
+              if (keyDataString) {
+                const importedOldKey = await importKey(keyDataString); // from '@/utils/encryption'
+                resolve({ cryptoKey: importedOldKey, keyDataString } as any); // Old format decrypted and imported
+              } else {
+                console.error(`Failed to decrypt old format key ${id} after JWK unwrap failure.`);
+                resolve(null);
+              }
+            } catch (decryptError) {
+              console.error(`Both JWK unwrap and old format decryption failed for key ${id}:`, decryptError);
+              resolve(null);
+            }
           }
         } else {
-          // For other stores, decrypt the string value
+          // For other stores (contacts, messages, groups), decrypt the string value
           if (typeof retrievedValue !== "string") {
             console.error(`Corrupted data in store ${store} for id ${id}: expected encrypted string.`);
             resolve(null);

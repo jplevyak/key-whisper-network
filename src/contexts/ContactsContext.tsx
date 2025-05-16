@@ -330,73 +330,49 @@ export const ContactsProvider = ({
       return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
     }
 
-    const keyResultFromDb = await db.get("keys", contact.id); // Returns { cryptoKey }
-    if (keyResultFromDb && keyResultFromDb.cryptoKey) {
-      cryptoKey = keyResultFromDb.cryptoKey; // This key is non-extractable
-      // Request IDs must come from the contact object or be generated during upgrade.
-      if (!contactKeys.has(contact.id)) {
-        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+    // Try fetching key using contact.id (new system)
+    if (!cryptoKey) {
+      const keyResult = await db.get("keys", contact.id); // Returns { cryptoKey } or { cryptoKey, keyDataString }
+      if (keyResult && keyResult.cryptoKey) {
+        cryptoKey = keyResult.cryptoKey;
+        // keyDataString might be present if db.get had to fallback to old format for this ID (unlikely for contact.id)
+        if (keyResult.keyDataString && !keyDataStringToUse) {
+            keyDataStringToUse = keyResult.keyDataString;
+        }
+        if (!contactKeys.has(contact.id)) {
+          setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+        }
       }
     }
-
-    // Step 2: If key not found by contact.id, or IDs missing from contact, attempt upgrade using contact.keyId
-    // The primary goal of upgrade here is to get the key into the new store format and ensure IDs are on the contact.
+    
+    // Step 2: If key still not found (or IDs missing) AND contact.keyId exists, attempt upgrade.
+    // The db.get call for oldKeyId will handle decryption and import if it's an old format.
     if ((!cryptoKey || !currentPutId || !currentGetId) && contact.keyId) {
       const oldKeyId = contact.keyId;
       console.log(`Attempting upgrade for contact ${contact.name} (ID: ${contact.id}) from old keyId ${oldKeyId}`);
       
-      // Get the raw value from DB, which was an encrypted string in old versions.
-      const rawOldValueFromDB = await db.getRawValue("keys", oldKeyId);
+      const oldKeyResult = await db.get("keys", oldKeyId); // This now handles old string keys
 
-      if (rawOldValueFromDB && typeof rawOldValueFromDB === 'string') {
-        try {
-          const decryptedOldValueString = await secureStorage.decrypt(rawOldValueFromDB);
-          let successfullyProcessedOldData = false;
+      if (oldKeyResult && oldKeyResult.cryptoKey) {
+        cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
+        keyDataStringToUse = oldKeyResult.keyDataString || null; // keyDataString from old format
 
-          try {
-            // Attempt to parse as OldStoredKeyData JSON string
-            const parsedJson = JSON.parse(decryptedOldValueString) as OldStoredKeyData;
-            if (parsedJson && parsedJson.key && parsedJson.putRequestId && parsedJson.getRequestId) {
-              keyDataStringToUse = parsedJson.key;
-              currentPutId = parsedJson.putRequestId;
-              currentGetId = parsedJson.getRequestId;
-              successfullyProcessedOldData = true;
-              console.log(`Upgraded from decrypted JSON StoredKeyData for ${contact.name}`);
-            } else {
-              // Parsed, but not the expected structure, assume it's a raw key string
-              keyDataStringToUse = decryptedOldValueString;
-              successfullyProcessedOldData = true;
-              console.log(`Upgraded from decrypted raw key string (JSON parse did not match OldStoredKeyData) for ${contact.name}`);
-            }
-          } catch (e) {
-            // JSON parsing failed, assume decryptedOldValueString is the raw keyDataString
-            keyDataStringToUse = decryptedOldValueString;
-            successfullyProcessedOldData = true;
-            console.log(`Upgraded from decrypted raw key string (JSON parse failed) for ${contact.name}`);
+        if (keyDataStringToUse) { // Should always be true if oldKeyResult came from an old-style key
+          // Save the upgraded key under the new contact.id
+          await db.set("keys", contact.id, cryptoKey); // db.set handles wrapping
+          
+          if (!contactKeys.has(contact.id)) {
+            setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
           }
-
-          if (successfullyProcessedOldData && keyDataStringToUse) {
-            // Import as non-extractable for both DB (via "jwk" wrapping) and cache
-            const nonExtractableKeyForDbAndCache = await importKey(keyDataStringToUse);
-            await db.set("keys", contact.id, nonExtractableKeyForDbAndCache); // Save in new wrapped format
-            
-            cryptoKey = nonExtractableKeyForDbAndCache; // Use this for the current operation and cache
-
-            if (!contactKeys.has(contact.id)) {
-              setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-            }
-            await db.delete("keys", oldKeyId); // Delete old entry
-            console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded from old keyId ${oldKeyId}.`);
-          }
-        } catch (decryptionError) {
-          console.error(`Failed to decrypt old key data for keyId ${oldKeyId} during upgrade:`, decryptionError);
-          toast({ title: "Upgrade Error", description: `Could not decrypt old key for ${contact.name}.`, variant: "destructive" });
+          await db.delete("keys", oldKeyId); // Delete old entry
+          console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded from old keyId ${oldKeyId}.`);
+        } else {
+          // This case implies db.get("keys", oldKeyId) returned a modern wrapped key, which is unexpected for an oldKeyId.
+          console.warn(`Key for oldKeyId ${oldKeyId} was already in new format or keyDataString was missing.`);
         }
-      } else if (rawOldValueFromDB) {
-        // This case should ideally not happen if old keys were always encrypted strings.
-        console.warn(`Old key data for keyId ${oldKeyId} is not an encrypted string. Type: ${typeof rawOldValueFromDB}. Skipping upgrade for this key.`);
       } else {
-        console.warn(`No raw old value found for keyId ${oldKeyId} during upgrade attempt.`);
+        console.warn(`Could not retrieve or upgrade key for oldKeyId ${oldKeyId}.`);
+        toast({ title: "Upgrade Warning", description: `Could not upgrade old key for ${contact.name}.`, variant: "default" });
       }
     }
 
