@@ -44,7 +44,7 @@ const ForwardMessageDialog = ({
     try {
       const success = await forwardMessage(
         message.id,
-        message.contactId,
+        message.groupId || message.contactId,
         selectedContact.id,
       );
 

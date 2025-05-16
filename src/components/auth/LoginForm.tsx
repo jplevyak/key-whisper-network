@@ -15,7 +15,7 @@ import {
 
 const LoginForm = () => {
   const [username, setUsername] = useState<string>(
-    localStorage.getItem("username") || "",
+    localStorage.getItem("username") || "Owner",
   );
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const { login, hasPasskey, supportsBiometric, supportsPasskeys } = useAuth();
@@ -48,7 +48,7 @@ const LoginForm = () => {
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
-              placeholder="Enter your secure username"
+              placeholder="Enter your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
