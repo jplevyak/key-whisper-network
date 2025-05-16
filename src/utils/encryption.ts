@@ -135,7 +135,7 @@ type AttestationConveyancePreference =
 type UserVerificationRequirement = "required" | "preferred" | "discouraged";
 
 // Generate a new passkey
-export const createPasskey = async (username: string): Promise<boolean> => {
+export const createPasskey = async (username: string) => {
   try {
     // Check if the browser supports the WebAuthn API
     if (!window.PublicKeyCredential) {
@@ -146,8 +146,7 @@ export const createPasskey = async (username: string): Promise<boolean> => {
     // Create a random user ID
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
-    const saltForPrfEnable = window.crypto.getRandomValues(new Uint8Array(32));
-    const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32)); // This is a Uint8Array
+    const saltForKeyGen = window.crypto.getRandomValues(new Uint8Array(32));
 
     // Create the publicKey options with correct types
     const publicKeyOptions: PublicKeyCredentialCreationOptions = {
@@ -166,7 +165,7 @@ export const createPasskey = async (username: string): Promise<boolean> => {
         { type: "public-key", alg: -257 }, // RS256
       ],
       authenticatorSelection: {
-        authenticatorAttachment: "platform",
+        // authenticatorAttachment: "platform",
         userVerification: "preferred" as UserVerificationRequirement,
         requireResidentKey: true,
       },
@@ -176,7 +175,7 @@ export const createPasskey = async (username: string): Promise<boolean> => {
         // This also helps some authenticators "initialize" the PRF capability for the credential
         prf: {
           eval: {
-            first: saltForPrfEnable,
+            first: saltForKeyGen,
           }
         }
       },
@@ -200,7 +199,7 @@ export const createPasskey = async (username: string): Promise<boolean> => {
 
       const extensionResults = credential.getClientExtensionResults();
       if (extensionResults.prf) {
-          console.log("PRF extension was processed during registration.");
+          console.log("PRF extension was processed during registration.", extensionResults.prf);
           if (extensionResults.prf.enabled) { // Some interpretations suggest an 'enabled' field
               console.log("PRF capability explicitly enabled for this credential.");
           }
@@ -210,13 +209,13 @@ export const createPasskey = async (username: string): Promise<boolean> => {
       } else {
           console.log("PRF extension not supported or not evaluated during registration by this authenticator.");
       }
-      return true;
+      return credential;
     }
 
-    return false;
+    return null;
   } catch (error) {
     console.error("Error creating passkey", error);
-    return false;
+    return null;
   }
 };
 
@@ -298,11 +297,11 @@ export const getPasskey = async () => {
       challenge: window.crypto.getRandomValues(new Uint8Array(32)),
       rpId: window.location.hostname,
       allowCredentials: [
-        {
-          type: "public-key",
-          id: base64ToArrayBuffer(credentialId),
-          transports: ["internal"] as AuthenticatorTransport[],
-        },
+        //{
+        //  type: "public-key",
+        //  id: base64ToArrayBuffer(credentialId),
+        //  transports: ["internal"] as AuthenticatorTransport[],
+        //},
       ],
       extensions: {
         prf: {
@@ -316,10 +315,10 @@ export const getPasskey = async () => {
     };
 
     // @ts-ignore - TypeScript doesn't recognize the navigator.credentials.get method
-    const assertion = await navigator.credentials.get({
+    const credential = await navigator.credentials.get({
       publicKey: publicKeyOptions,
     });
-    const extensionResults = assertion.getClientExtensionResults();
+    const extensionResults = credential.getClientExtensionResults();
 
     let prfSecret = null;
     if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
@@ -327,7 +326,7 @@ export const getPasskey = async () => {
       console.log("PRF Secret (first) received and available in extensionResults.");
     }
 
-    return assertion;
+    return credential;
   } catch (error) {
     console.error("Error getting passkey", error);
     return null;
