@@ -34,47 +34,9 @@ class IndexedDBManager {
     if (this.db) return;
 
     // SecureStorage must be initialized before any DB operations.
-    // If AuthContext called secureStorage.initializeWithKey(), it's already set up with the derived key.
-    // Otherwise, this secureStorage.init() will set up secureStorage with its default "main_key".
-    await secureStorage.init();
-
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onerror = () => reject(request.error);
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-
-        STORES.forEach((storeName) => {
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName, { keyPath: "id" });
-          }
-        });
-      };
-    });
-  }
-
-import { arrayBufferToBase64, base64ToArrayBuffer } from "./encryption"; // For key wrapping
-
-// ... (rest of the imports and existing code)
-
-// IMPORTANT: This class will require a new method in SecureStorage:
-// `async getInternalKey(): Promise<CryptoKey | null>`
-// This method should return the `this.encryptionKey` from SecureStorage.
-
-class IndexedDBManager {
-  private db: IDBDatabase | null = null;
-
-  async init(): Promise<void> { // Removed derivedKey parameter
-    if (this.db) return;
-
     // SecureStorage must be initialized before any DB operations.
+    // If AuthContext called secureStorage.initializeWithKey(), secureStorage.init() will just return.
+    // Otherwise, secureStorage.init() will set up secureStorage with its default "main_key".
     await secureStorage.init();
 
     return new Promise((resolve, reject) => {
@@ -98,6 +60,9 @@ class IndexedDBManager {
       };
     });
   }
+
+  // Removed duplicate class definition and redundant import.
+  // The class definition above is the correct one.
 
   async set<T extends keyof DBSchema>(
     store: T,
@@ -111,10 +76,9 @@ class IndexedDBManager {
 
     if (store === "keys") {
       const cryptoKeyToWrap = value as CryptoKey;
-      // @ts-ignore // TODO: Add getInternalKey to SecureStorage class definition
       const wrappingKey = await secureStorage.getInternalKey();
       if (!wrappingKey) {
-        throw new Error("SecureStorage key not available for wrapping contact key.");
+        throw new Error("SecureStorage internal key not available for wrapping contact key.");
       }
 
       const iv = window.crypto.getRandomValues(new Uint8Array(12));
@@ -178,13 +142,17 @@ class IndexedDBManager {
             return;
           }
           try {
-            // @ts-ignore // TODO: Add getInternalKey to SecureStorage class definition
             const wrappingKey = await secureStorage.getInternalKey();
             if (!wrappingKey) {
-              throw new Error("SecureStorage key not available for unwrapping contact key.");
+              throw new Error("SecureStorage internal key not available for unwrapping contact key.");
             }
 
             const combinedBuffer = base64ToArrayBuffer(retrievedValue);
+            if (combinedBuffer.length < 12) { // Basic check for IV presence
+              console.error(`Corrupted wrapped key in store ${store} for id ${id}: too short.`);
+              resolve(null);
+              return;
+            }
             const iv = combinedBuffer.slice(0, 12);
             const wrappedKeyBuffer = combinedBuffer.slice(12);
 

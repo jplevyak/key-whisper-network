@@ -346,74 +346,61 @@ export const ContactsProvider = ({
     if ((!cryptoKey || !currentPutId || !currentGetId) && contact.keyId) {
       const oldKeyId = contact.keyId;
       console.log(`Attempting upgrade for contact ${contact.name} (ID: ${contact.id}) from old keyId ${oldKeyId}`);
-      const rawOldValue = await db.getRawValue("keys", oldKeyId);
+      
+      // Get the raw value from DB, which was an encrypted string in old versions.
+      const rawOldValueFromDB = await db.getRawValue("keys", oldKeyId);
 
-      if (rawOldValue) {
-        let successfullyUpgradedKeyAndGotData = false;
-        let tempKeyDataStringForIdGeneration: string | null = null;
+      if (rawOldValueFromDB && typeof rawOldValueFromDB === 'string') {
+        try {
+          const decryptedOldValueString = await secureStorage.decrypt(rawOldValueFromDB);
+          let successfullyProcessedOldData = false;
 
-        // Case 1: Old data was StoredKeyData object (not encrypted by secureStorage at this level in that old scheme)
-        if (typeof rawOldValue === "object" && rawOldValue.key && rawOldValue.putRequestId && rawOldValue.getRequestId) {
-          const oldData = rawOldValue as OldStoredKeyData;
-          tempKeyDataStringForIdGeneration = oldData.key;
-          currentPutId = oldData.putRequestId; // Use existing IDs
-          currentGetId = oldData.getRequestId;
-          successfullyUpgradedKeyAndGotData = true;
-          console.log(`Upgrading from StoredKeyData object for ${contact.name}`);
-        }
-        // Case 2: Old data was an encrypted string (could be raw key string, or JSON of StoredKeyData)
-        else if (typeof rawOldValue === "string") {
-          const decryptedString = await secureStorage.decrypt(rawOldValue);
-          if (decryptedString) {
-            try {
-              // Try parsing as StoredKeyData JSON
-              const parsedJson = JSON.parse(decryptedString) as OldStoredKeyData;
-              if (parsedJson.key && parsedJson.putRequestId && parsedJson.getRequestId) {
-                tempKeyDataStringForIdGeneration = parsedJson.key;
-                currentPutId = parsedJson.putRequestId; // Use existing IDs
-                currentGetId = parsedJson.getRequestId;
-                console.log(`Upgrading from decrypted JSON StoredKeyData for ${contact.name}`);
-              } else { // Assume it's just the raw key string
-                tempKeyDataStringForIdGeneration = decryptedString;
-                console.log(`Upgrading from decrypted raw key string for ${contact.name}`);
-                // IDs will need to be generated below if not already on contact
-              }
-            } catch (e) { // Parsing failed, assume it's the raw key string
-              tempKeyDataStringForIdGeneration = decryptedString;
-              console.log(`Upgrading from decrypted raw key string (parse failed) for ${contact.name}`);
-              // IDs will need to be generated below if not already on contact
+          try {
+            // Attempt to parse as OldStoredKeyData JSON string
+            const parsedJson = JSON.parse(decryptedOldValueString) as OldStoredKeyData;
+            if (parsedJson && parsedJson.key && parsedJson.putRequestId && parsedJson.getRequestId) {
+              keyDataStringToUse = parsedJson.key;
+              currentPutId = parsedJson.putRequestId;
+              currentGetId = parsedJson.getRequestId;
+              successfullyProcessedOldData = true;
+              console.log(`Upgraded from decrypted JSON StoredKeyData for ${contact.name}`);
+            } else {
+              // Parsed, but not the expected structure, assume it's a raw key string
+              keyDataStringToUse = decryptedOldValueString;
+              successfullyProcessedOldData = true;
+              console.log(`Upgraded from decrypted raw key string (JSON parse did not match OldStoredKeyData) for ${contact.name}`);
             }
-            successfullyUpgradedKeyAndGotData = true;
-          } else {
-            console.error(`Failed to decrypt old key data for keyId ${oldKeyId} during upgrade.`);
+          } catch (e) {
+            // JSON parsing failed, assume decryptedOldValueString is the raw keyDataString
+            keyDataStringToUse = decryptedOldValueString;
+            successfullyProcessedOldData = true;
+            console.log(`Upgraded from decrypted raw key string (JSON parse failed) for ${contact.name}`);
           }
-        }
 
-        if (successfullyUpgradedKeyAndGotData && tempKeyDataStringForIdGeneration) {
-          const extractableKeyForDb = await importRawKey(tempKeyDataStringForIdGeneration);
-          await db.set("keys", contact.id, extractableKeyForDb); // Save in new wrapped format
-          
-          // The key for the cache should be non-extractable.
-          // We can either get it from db.get (which returns non-extractable) or re-import.
-          const nonExtractableKeyForCache = await importKey(tempKeyDataStringForIdGeneration);
-          cryptoKey = nonExtractableKeyForCache; // Use this for the current operation and cache
+          if (successfullyProcessedOldData && keyDataStringToUse) {
+            const extractableKeyForDb = await importRawKey(keyDataStringToUse);
+            await db.set("keys", contact.id, extractableKeyForDb); // Save in new wrapped format
+            
+            const nonExtractableKeyForCache = await importKey(keyDataStringToUse);
+            cryptoKey = nonExtractableKeyForCache; // Use this for the current operation and cache
 
-          if (!contactKeys.has(contact.id)) {
-            setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+            if (!contactKeys.has(contact.id)) {
+              setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+            }
+            await db.delete("keys", oldKeyId); // Delete old entry
+            console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded from old keyId ${oldKeyId}.`);
           }
-          await db.delete("keys", oldKeyId); // Delete old entry
-          console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded from old keyId ${oldKeyId}.`);
-          
-          // Ensure keyDataStringToUse is set for ID generation if needed
-          keyDataStringToUse = tempKeyDataStringForIdGeneration;
-        } else if (!successfullyUpgradedKeyAndGotData) {
-          console.warn(`Could not retrieve or understand old key data for keyId ${oldKeyId}.`);
+        } catch (decryptionError) {
+          console.error(`Failed to decrypt old key data for keyId ${oldKeyId} during upgrade:`, decryptionError);
+          toast({ title: "Upgrade Error", description: `Could not decrypt old key for ${contact.name}.`, variant: "destructive" });
         }
+      } else if (rawOldValueFromDB) {
+        // This case should ideally not happen if old keys were always encrypted strings.
+        console.warn(`Old key data for keyId ${oldKeyId} is not an encrypted string. Type: ${typeof rawOldValueFromDB}. Skipping upgrade for this key.`);
       } else {
         console.warn(`No raw old value found for keyId ${oldKeyId} during upgrade attempt.`);
       }
     }
-
 
     if (!cryptoKey) {
       // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
