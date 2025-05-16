@@ -6,12 +6,8 @@ import React, {
   useCallback,
 } from "react";
 import { Contact, useContacts, ContactOrGroup, Group } from "./ContactsContext";
-// Import generateStableRequestId, encryptMessage, decryptMessage
-import {
-  generateStableRequestId,
-  encryptMessage,
-  decryptMessage,
-} from "@/utils/encryption";
+// Import encryptMessage, decryptMessage (generateStableRequestId no longer needed here)
+import { encryptMessage, decryptMessage } from "@/utils/encryption";
 import { useToast } from "@/components/ui/use-toast";
 // Import storage service and polling hook
 import {
@@ -91,7 +87,8 @@ export const MessagesProvider = ({
   children: React.ReactNode;
 }) => {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
-  const { getContactKey, listItems, activeItem } = useContacts(); // Use listItems and get activeItem
+  const { getContactKey, listItems, activeItem, getPutRequestId } = // Added getPutRequestId
+    useContacts();
   const { toast } = useToast();
   // Fetching logic and refs moved to useMessagePolling hook
 
@@ -162,10 +159,15 @@ export const MessagesProvider = ({
           JSON.stringify(messageContent),
           key,
         );
-        const requestId = await generateStableRequestId(
-          contact.userGeneratedKey,
-          key,
-        );
+        const requestId = await getPutRequestId(contact.id);
+        if (!requestId) {
+          toast({
+            title: "Error",
+            description: `Could not generate request ID for ${contact.name}. Message not sent.`,
+            variant: "destructive",
+          });
+          return false;
+        }
 
         let messageSentToServer = false;
         try {
@@ -313,10 +315,19 @@ export const MessagesProvider = ({
             JSON.stringify(memberMessageContent),
             memberKey,
           );
-          const requestId = await generateStableRequestId(
-            memberContact.userGeneratedKey,
-            memberKey,
-          );
+          const requestId = await getPutRequestId(memberContact.id);
+          if (!requestId) {
+            console.warn(
+              `Could not get PUT request ID for group member ${memberContact.name}. Skipping send.`,
+            );
+            toast({
+              title: "Partial Send Error",
+              description: `No request ID for ${memberContact.name}.`,
+              variant: "warning",
+            });
+            allSendsSuccessful = false;
+            continue;
+          }
 
           const response = await fetch("/api/put-message", {
             method: "POST",
@@ -556,10 +567,13 @@ export const MessagesProvider = ({
 
         for (const message of pendingMessagesInItem) {
           try {
-            const requestId = await generateStableRequestId(
-              contact.userGeneratedKey,
-              contactKey,
-            );
+            const requestId = await getPutRequestId(contact.id);
+            if (!requestId) {
+              console.error(
+                `Retry: Could not get PUT request ID for contact ${contact.name}. Skipping message ${message.id}.`,
+              );
+              continue;
+            }
             const response = await fetch("/api/put-message", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -653,10 +667,14 @@ export const MessagesProvider = ({
                 JSON.stringify(decryptedMessage),
                 memberKey,
               );
-              const requestId = await generateStableRequestId(
-                memberContact.userGeneratedKey,
-                memberKey,
-              );
+              const requestId = await getPutRequestId(memberContact.id);
+              if (!requestId) {
+                console.error(
+                  `Retry: Could not get PUT request ID for group member ${memberContact.name}. Skipping send for this member for message ${message.id}.`,
+                );
+                allMemberSendsSuccessful = false;
+                continue;
+              }
               const response = await fetch("/api/put-message", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -714,10 +732,13 @@ export const MessagesProvider = ({
     messages,
     listItems,
     getContactKey,
+    getPutRequestId, // Added dependency
     toast,
-    encryptMessage,
-    decryptMessage,
-  ]); // Added dependencies
+    // encryptMessage and decryptMessage are not direct dependencies of retryPendingMessages
+    // but are used by getDecryptedContent and in the loop.
+    // However, since they are stable utils, they don't need to be in the dep array.
+    // If they were context methods, they would be.
+  ]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {

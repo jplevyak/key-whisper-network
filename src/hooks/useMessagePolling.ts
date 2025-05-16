@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext"; // Import useAuth
 import { useContacts } from "@/contexts/ContactsContext";
 import { useToast } from "@/components/ui/use-toast";
-import { generateStableRequestId, decryptMessage } from "@/utils/encryption";
+import { decryptMessage } from "@/utils/encryption"; // generateStableRequestId no longer needed here
 import { getStoredPushSubscription } from "@/utils/notifications"; // Import notification util
 import { Message } from "@/contexts/MessagesContext"; // Import only Message type if needed
 
@@ -35,7 +35,7 @@ export const useMessagePolling = ({
   longPollTimeoutMs = 300000, // Timeout for a single long poll request (5 minutes)
   minPollIntervalMs = MIN_POLL_INTERVAL_MS, // Use the defined minimum interval
 }: UseMessagePollingOptions) => {
-  const { listItems, getContactKey } = useContacts(); // Changed contacts to listItems
+  const { listItems, getContactKey, getGetRequestId } = useContacts(); // Added getGetRequestId
   const { toast } = useToast();
   const { isAuthenticated } = useAuth(); // Get authentication status
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -70,21 +70,23 @@ export const useMessagePolling = ({
           // Store the key for decryption later, mapped by contact.id
           contactKeysMap.set(contact.id, key);
 
-          // Generate the stable request ID using the new function
+          // Get the stable request ID using the new context function
           try {
-            const requestId = await generateStableRequestId(
-              !contact.userGeneratedKey,
-              key,
-            );
+            const requestId = await getGetRequestId(contact.id);
+            if (!requestId) {
+              console.warn(
+                `Could not get request ID for contact ${contact.id}. Skipping.`,
+              );
+              continue;
+            }
             requestIdsToSend.push(requestId);
             // Map the generated stable ID back to the contactId to process the response
             requestIdToContactIdMap.set(requestId, contact.id);
           } catch (error) {
             console.error(
-              `Failed to generate request ID for contact ${contact.id}:`,
+              `Error fetching request ID for contact ${contact.id}:`,
               error,
             );
-            // Optionally skip this contact or handle the error appropriately
             continue;
           }
         }
@@ -308,12 +310,13 @@ export const useMessagePolling = ({
     [
       listItems,
       getContactKey,
+      getGetRequestId, // Added dependency
       setMessages,
       toast,
       longPollTimeoutMs,
       activeItemId,
     ],
-  ); // Added activeItemId
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
