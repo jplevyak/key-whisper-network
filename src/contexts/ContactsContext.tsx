@@ -337,32 +337,63 @@ export const ContactsProvider = ({
     }
 
     if (typeof storedData === "string") {
-      // Old format: raw key string, needs upgrade
-      console.log(`Upgrading key format for keyId: ${contact.keyId}`);
-      const rawKeyData = storedData;
-      // Import key to generate IDs, but store the raw string in StoredKeyData.key
-      const tempCryptoKey = await importKey(rawKeyData);
+      // This string could be an encrypted JSON of StoredKeyData, or a very old raw key string.
+      console.log(`Processing potentially old key format for keyId: ${contact.keyId}`);
+      let keyStringToImport: string | null = null;
+      let existingPutRequestId: string | null = null;
+      let existingGetRequestId: string | null = null;
 
-      const putRequestId = await generateStableRequestId(
+      try {
+        // Attempt to decrypt it as if it's an encrypted StoredKeyData JSON string
+        const decryptedJson = await secureStorage.decrypt(storedData);
+        const parsedObject = JSON.parse(decryptedJson) as StoredKeyData;
+
+        if (parsedObject && typeof parsedObject.key === 'string' && typeof parsedObject.putRequestId === 'string' && typeof parsedObject.getRequestId === 'string') {
+          console.log(`Successfully decrypted and parsed StoredKeyData for keyId: ${contact.keyId}`);
+          keyStringToImport = parsedObject.key;
+          existingPutRequestId = parsedObject.putRequestId; // Use existing IDs if available
+          existingGetRequestId = parsedObject.getRequestId;
+        } else {
+          // Decrypted, but not the expected StoredKeyData structure. Fallback.
+          console.warn(`Decrypted data for keyId ${contact.keyId} was not valid StoredKeyData. Assuming raw key string.`);
+          keyStringToImport = storedData; // Treat storedData itself as the raw key string
+        }
+      } catch (e) {
+        // Decryption failed, assume storedData is a raw key string (oldest format)
+        console.warn(`Failed to decrypt stored string for keyId ${contact.keyId}. Assuming raw key string. Error:`, e);
+        keyStringToImport = storedData;
+      }
+
+      if (!keyStringToImport) {
+        console.error(`Critical error: Could not determine key string to import for keyId: ${contact.keyId}`);
+        toast({ title: "Key Error", description: "Failed to process stored key.", variant: "destructive" });
+        return null;
+      }
+
+      const tempCryptoKey = await importKey(keyStringToImport);
+
+      // Use existing request IDs if we parsed them, otherwise generate new ones
+      const putRequestId = existingPutRequestId ?? await generateStableRequestId(
         contact.userGeneratedKey,
         tempCryptoKey,
       );
-      const getRequestId = await generateStableRequestId(
+      const getRequestId = existingGetRequestId ?? await generateStableRequestId(
         !contact.userGeneratedKey,
         tempCryptoKey,
       );
 
-      const newStoredKeyData: StoredKeyData = {
-        key: rawKeyData, // Store the original string
+      const upgradedKeyData: StoredKeyData = {
+        key: keyStringToImport, // This is the actual base64 key string
         putRequestId,
         getRequestId,
       };
 
-      await db.set("keys", contact.keyId, newStoredKeyData);
-      console.log(`Key ${contact.keyId} upgraded and saved.`);
-      return newStoredKeyData;
+      // Save the upgraded StoredKeyData object (now unencrypted) back to the DB
+      await db.set("keys", contact.keyId, upgradedKeyData);
+      console.log(`Key ${contact.keyId} upgraded to new object format and saved.`);
+      return upgradedKeyData;
     } else {
-      // New format: StoredKeyData object
+      // Current format: StoredKeyData object (retrieved directly, unencrypted)
       const keyObject = storedData as StoredKeyData;
       if (
         !keyObject ||
