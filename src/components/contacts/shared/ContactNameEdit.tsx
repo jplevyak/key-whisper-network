@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react"; // Import useRef
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,13 @@ const ContactNameEdit = ({
   onEditToggle,
   onClear, // Destructure the new prop
 }: ContactNameEditProps) => {
+  const inputRef = useRef<HTMLInputElement>(null); // Create a ref for the input
+
+  const handleClear = () => {
+    onClear(); // Call the original onClear prop
+    inputRef.current?.focus(); // Focus the input field
+  };
+
   return (
     <div className="space-y-2">
       <Label htmlFor="contact-name-input">Name</Label>{" "}
@@ -30,6 +37,7 @@ const ContactNameEdit = ({
           {/* Wrap input and clear button for relative positioning */}
           <div className="relative flex-1">
             <Input
+              ref={inputRef} // Attach the ref
               id="contact-name-input" // Add id matching the label's htmlFor
               value={name} // Display the name being edited
               onChange={(e) => onNameChange(e.target.value)} // Update temporary name in parent
@@ -46,7 +54,7 @@ const ContactNameEdit = ({
                 variant="ghost"
                 size="icon"
                 className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={onClear} // Call the clear handler
+                onClick={handleClear} // Call the new clear handler
               >
                 <X className="h-4 w-4" />
                 <span className="sr-only">Clear name</span>{" "}
