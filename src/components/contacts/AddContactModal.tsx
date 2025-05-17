@@ -204,7 +204,7 @@ const AddContactModal = ({ isOpen, onClose }: AddContactModalProps) => {
   return (
     <>
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md top-[10vh] translate-y-0 sm:top-[50%] sm:translate-y-[-50%]">
           <DialogHeader>
             <DialogTitle>Add New Contact</DialogTitle>
             <DialogDescription>
