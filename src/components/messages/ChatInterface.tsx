@@ -90,7 +90,7 @@ const ChatInterface = () => {
     // Delay scrolling slightly to allow the layout to stabilize
     const timerId = setTimeout(() => {
       scrollToBottom();
-    }, 0); // A timeout of 0ms is often enough to push execution after paint
+    }, 100); // A timeout of 0ms is often enough to push execution after paint
 
     return () => clearTimeout(timerId); // Cleanup timer on unmount or re-run
   }, [activeMessages, activeItem]); // Added activeItem to scroll when chat initially loads
