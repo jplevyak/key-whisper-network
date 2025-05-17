@@ -87,7 +87,12 @@ const ChatInterface = () => {
 
   // Scroll to bottom when messages change or active item changes
   useEffect(() => {
-    scrollToBottom();
+    // Delay scrolling slightly to allow the layout to stabilize
+    const timerId = setTimeout(() => {
+      scrollToBottom();
+    }, 0); // A timeout of 0ms is often enough to push execution after paint
+
+    return () => clearTimeout(timerId); // Cleanup timer on unmount or re-run
   }, [activeMessages, activeItem]); // Added activeItem to scroll when chat initially loads
 
   // Scroll to bottom on window resize
