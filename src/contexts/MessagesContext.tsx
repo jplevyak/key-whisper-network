@@ -6,16 +6,13 @@ import React, {
   useCallback,
 } from "react";
 import { Contact, useContacts, ContactOrGroup, Group } from "./ContactsContext";
-// Import encryptMessage, decryptMessage (generateStableRequestId no longer needed here)
 import { encryptMessage, decryptMessage } from "@/utils/encryption";
 import { useToast } from "@/components/ui/use-toast";
-// Import storage service and polling hook
 import {
   loadMessagesFromStorage,
   saveMessagesToStorage,
 } from "@/services/messageStorage";
 import { useMessagePolling } from "@/hooks/useMessagePolling";
-// Buffer utils are no longer needed directly in this file
 
 // Define the structure of the content being encrypted/decrypted
 export interface MessageContent {

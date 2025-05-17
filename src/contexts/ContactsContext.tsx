@@ -85,6 +85,7 @@ export const ContactsProvider = ({
   children: React.ReactNode;
 }) => {
   const [listItems, setListItems] = useState<ContactOrGroup[]>([]);
+
   const [activeItem, setActiveItem] = useState<ContactOrGroup | null>(null);
   const [contactKeys, setContactKeys] = useState<Map<string, CryptoKey>>(
     new Map(),
@@ -92,7 +93,6 @@ export const ContactsProvider = ({
   const { toast } = useToast();
   // Removed: const messagesContext = useMessages();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
-  const processingContactIdsRef = useRef<Set<string>>(new Set());
 
   // Initialize DB
   useEffect(() => {
@@ -242,7 +242,7 @@ export const ContactsProvider = ({
       // Generate request IDs using the original keyData string
       const putRequestId = await generateStableRequestId(userGeneratedKey, keyData);
       const getRequestId = await generateStableRequestId(!userGeneratedKey, keyData);
-      
+
       const contactId = `contact-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       // Store the non-extractable CryptoKey in IndexedDB; db.set will handle wrapping.
@@ -305,132 +305,87 @@ export const ContactsProvider = ({
     }
   };
 
-  // Interface for the old StoredKeyData structure for upgrade purposes
-  interface OldStoredKeyData {
-    key: string;
-    putRequestId: string;
-    getRequestId: string;
-  }
-
   // Helper function to get/upgrade contact key and request IDs
   const _getOrUpgradeContactData = async (
     contact: Contact & { keyId?: string }, // Allow keyId for upgrade
   ): Promise<{ key: CryptoKey; putRequestId: string; getRequestId: string } | null> => {
-    if (processingContactIdsRef.current.has(contact.id)) {
-      console.warn(`_getOrUpgradeContactData already processing contact ID: ${contact.id}. Aborting concurrent call.`);
-      // Optionally, you could implement a queue or retry mechanism here,
-      // but for now, we'll just prevent concurrent execution.
+    if (!isDbInitialized) {
+      toast({ title: "Database Not Ready", description: "Please wait and try again.", variant: "destructive" });
       return null;
     }
 
-    processingContactIdsRef.current.add(contact.id);
-
-    try {
-      if (!isDbInitialized) {
-        toast({ title: "Database Not Ready", description: "Please wait and try again.", variant: "destructive" });
-        return null;
-      }
-
-      let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
+    let cryptoKey: CryptoKey | null = contactKeys.get(contact.id) || null;
+    let putRequestId = contact.putRequestId;
+    let getRequestId = contact.getRequestId;
 
     // Step 1: Try to get key and IDs using the new system (contact.id)
-    if (cryptoKey) {
-      // Only return early if cryptoKey AND request IDs are already present and valid
-      if (contact.putRequestId && contact.getRequestId) {
-        return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
-      }
-      // If cryptoKey is cached but IDs are missing, proceed to potentially upgrade/generate them.
+    if (cryptoKey && putRequestId && getRequestId) {
+      return { key: cryptoKey, putRequestId, getRequestId };
     }
 
     // Try fetching key using contact.id (new system)
-    if (!cryptoKey) {
-      const keyResult = await db.get("keys", contact.id); // Returns { cryptoKey } or { cryptoKey, keyDataString }
+    if (!cryptoKey && putRequestId && getRequestId) {
+      const keyResult = await db.get("keys", contact.id);
       if (keyResult && keyResult.cryptoKey) {
         cryptoKey = keyResult.cryptoKey;
-        if (!contactKeys.has(contact.id)) { // Cache if not already present
-           setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+        if (!contactKeys.has(contact.id)) {
+          setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
         }
-        // Only return early if cryptoKey AND request IDs are already present and valid
-        if (contact.putRequestId && contact.getRequestId) {
-          return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
-        }
-        // If cryptoKey is fetched but IDs are missing, proceed to potentially upgrade/generate them.
+        return { key: cryptoKey, putRequestId, getRequestId };
       }
     }
-    
+
     // Step 2: If key still not found (or IDs missing) AND contact.keyId exists, attempt upgrade.
     // The db.get call for oldKeyId will handle decryption and import if it's an old format.
     if (contact.keyId) {
       const oldKeyId = contact.keyId;
       console.log(`Attempting upgrade for contact ${contact.name} (ID: ${contact.id}) from old keyId ${oldKeyId}`);
-      
+
       const oldKeyResult = await db.get("keys", oldKeyId); // This now handles old string keys
 
       if (oldKeyResult && oldKeyResult.cryptoKey && oldKeyResult.keyDataString) {
-        cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
-       
+          cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
+
         const keyDataStringToUse = oldKeyResult.keyDataString;
-        const currentPutId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
-        const currentGetId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
+        putRequestId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
+        getRequestId = await generateStableRequestId(!contact.userGeneratedKey, keyDataStringToUse);
+
+        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
+        await db.set("keys", contact.id, cryptoKey);
 
         // Update the contact in listItems state to remove keyId and set request IDs
-        setListItems((prevListItems) =>
-          prevListItems.map((item) => {
-            if (item.id === contact.id && item.itemType === "contact") {
-              const updatedContact = {
-                ...item,
-                putRequestId: currentPutId,
-                getRequestId: currentGetId,
-              } as Contact;
-              delete (updatedContact as any).keyId; // Remove old keyId
-              return updatedContact;
-            }
-            return item;
-          }),
-        );
-          
-        // Save the upgraded key under the new contact.id
-        await db.set("keys", contact.id, cryptoKey);
-        await db.delete("keys", oldKeyId); // Delete old entry
-       
-        setContactKeys((prev) => new Map(prev).set(contact.id, cryptoKey!));
-      
-        console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded, contact object updated, and old key ${oldKeyId} deleted.`);
+        setListItems((prevListItems) => prevListItems.map((item) => {
+          if (item.id === contact.id && item.itemType === "contact") {
+            const updatedContact = { ...item, putRequestId, getRequestId, } as Contact;
+            delete (updatedContact as any).keyId; // Remove old keyId
+            return updatedContact;
+          }
+          return item;
+        }));
 
-        return { key: cryptoKey, putRequestId: currentPutId, getRequestId: currentGetId };
+        // Save the upgraded key under the new contact.id
+        await db.delete("keys", oldKeyId); // Delete old entry
+        console.log(`Contact ${contact.name} (ID: ${contact.id}) key upgraded, contact object updated, and old key ${oldKeyId} deleted.`);
+        return { key: cryptoKey, putRequestId: putRequestId, getRequestId: getRequestId };
       }
     }
 
-    // If after all attempts (direct fetch or upgrade), cryptoKey is still null.
-    // This path should ideally only be reached if the contact.keyId path also fails to produce a key.
-    if (!cryptoKey) { // Check if cryptoKey is still null after all attempts
-      toast({ title: "Key Error", description: `Could not load or upgrade encryption key for ${contact.name}.`, variant: "destructive" });
+    // If cryptoKey is found, but request IDs are still missing (should not happen).
+    if (!cryptoKey || !putRequestId || !getRequestId) {
+      console.error(`Critical: cryptoKey (${!cryptoKey}) or Request IDs (${!putRequestId || !getRequestId}) missing for contact ${contact.name} after key retrieval/upgrade.`, contact);
       return null;
     }
-    // If cryptoKey is found, but request IDs are still missing (e.g. contact object was incomplete and no keyDataString for regeneration)
-    if (!contact.putRequestId || !contact.getRequestId) {
-        // This situation should be rare if the upgrade path correctly populates IDs,
-        // or if new contacts always have IDs.
-        // If keyDataString was available from an old key, IDs should have been generated.
-        // If it's a new key format and IDs are missing from the contact object, it's an issue.
-        console.error(`Critical: Request IDs missing for contact ${contact.name} after key retrieval/upgrade.`);
-        toast({ title: "ID Error", description: `Request IDs missing for ${contact.name}. Data might be corrupted.`, variant: "destructive" });
-        return null;
-    }
 
-    return { key: cryptoKey, putRequestId: contact.putRequestId, getRequestId: contact.getRequestId };
-
-    } finally {
-      processingContactIdsRef.current.delete(contact.id);
-    }
+    return { key: cryptoKey, putRequestId, getRequestId };
   };
 
   const getContactKey = async (contactId: string): Promise<CryptoKey | null> => {
+    let cryptoKey: CryptoKey | null = contactKeys.get(contactId) || null;
+    if (cryptoKey) return cryptoKey;
     const contactItem = listItems.find(
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
     if (!contactItem) return null;
-
     const contactData = await _getOrUpgradeContactData(contactItem);
     return contactData ? contactData.key : null;
   };
@@ -440,9 +395,7 @@ export const ContactsProvider = ({
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
     if (!contactItem) return null;
-
     if (contactItem.getRequestId) return contactItem.getRequestId; // Prefer direct from object
-
     const contactData = await _getOrUpgradeContactData(contactItem);
     return contactData ? contactData.getRequestId : null;
   };
@@ -452,9 +405,7 @@ export const ContactsProvider = ({
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
     if (!contactItem) return null;
-
     if (contactItem.putRequestId) return contactItem.putRequestId; // Prefer direct from object
-
     const contactData = await _getOrUpgradeContactData(contactItem);
     return contactData ? contactData.putRequestId : null;
   };
@@ -508,10 +459,6 @@ export const ContactsProvider = ({
       setActiveItem(null);
     }
 
-    // Message clearing logic will be handled by the calling component (e.g., ContactProfile)
-    // Removed: messagesContext.clearHistory(itemId);
-    // Removed: if (itemToDelete.itemType === 'contact') { messagesContext.deleteMessagesFromSenderInGroups(itemId); }
-
     toast({
       title: `${itemToDelete.itemType === "contact" ? "Contact" : "Group"} Deleted`,
       description: `${itemToDelete.name} has been removed.`,
@@ -521,21 +468,15 @@ export const ContactsProvider = ({
   const updateContact = (contactId: string, updates: Partial<Contact>) => {
     setListItems(
       (prevListItems) =>
-      prevListItems.map((item) =>
-                        item.id === contactId && item.itemType === "contact"
-                          ? { ...item, ...updates }
-                          : item,
-                       ) as ContactOrGroup[], // Ensure the map returns the correct union type
+      prevListItems.map(
+        (item) =>
+        item.id === contactId && item.itemType === "contact"
+          ? { ...item, ...updates } : item,
+      ) as ContactOrGroup[], // Ensure the map returns the correct union type
     );
 
-    if (
-      activeItem &&
-      activeItem.id === contactId &&
-    activeItem.itemType === "contact"
-    ) {
-      setActiveItem((prev) =>
-                    prev ? ({ ...prev, ...updates } as Contact) : null,
-                   );
+    if (activeItem && activeItem.id === contactId && activeItem.itemType === "contact") {
+      setActiveItem((prev) => prev ? ({ ...prev, ...updates } as Contact) : null);
     }
   };
 
@@ -551,23 +492,15 @@ export const ContactsProvider = ({
       });
       return false;
     }
-    setListItems(
-      (prevListItems) =>
-      prevListItems.map((item) =>
-                        item.id === groupId && item.itemType === "group"
-                          ? { ...item, ...updates }
-                          : item,
-                       ) as ContactOrGroup[],
-    );
+    setListItems((prevListItems) => prevListItems.map(
+      (item) =>
+      item.id === groupId && item.itemType === "group"
+        ? { ...item, ...updates }
+        : item,
+    ) as ContactOrGroup[],);
 
-    if (
-      activeItem &&
-      activeItem.id === groupId &&
-    activeItem.itemType === "group"
-    ) {
-      setActiveItem((prev) =>
-                    prev ? ({ ...prev, ...updates } as Group) : null,
-                   );
+    if (activeItem && activeItem.id === groupId && activeItem.itemType === "group") {
+      setActiveItem((prev) => prev ? ({ ...prev, ...updates } as Group) : null);
     }
     // Persistence is handled by the useEffect watching listItems
     return true; // Assuming success if state is set, persistence handles errors
@@ -615,40 +548,30 @@ export const ContactsProvider = ({
 
         // Store the non-extractable CryptoKey in DB; db.set handles wrapping.
         await db.set("keys", contact.id, newNonExtractableCryptoKey!);
-        
+
         // Update the key in memory cache with the non-extractable version
         setContactKeys((prev) => new Map(prev).set(contact.id, newNonExtractableCryptoKey!));
 
-
         // Generate new request IDs using the newKeyData string
-        const newPutRequestId = await generateStableRequestId(
-          contact.userGeneratedKey,
-          newKeyData,
-        );
-        const newGetRequestId = await generateStableRequestId(
-          !contact.userGeneratedKey,
-          newKeyData,
-        );
+        const newPutRequestId = await generateStableRequestId(contact.userGeneratedKey, newKeyData);
+        const newGetRequestId = await generateStableRequestId(!contact.userGeneratedKey, newKeyData);
 
         // Update the contact object in listItems with new request IDs
-        setListItems((prevListItems) =>
-          prevListItems.map((item) =>
+        setListItems(
+          (prevListItems) =>
+          prevListItems.map(
+            (item) =>
             item.id === contactId && item.itemType === "contact"
-              ? {
-                  ...item,
-                  putRequestId: newPutRequestId,
-                  getRequestId: newGetRequestId,
-                }
-              : item,
+              ? { ...item, putRequestId: newPutRequestId, getRequestId: newGetRequestId, } : item,
           ),
         );
-        
+
         if (activeItem && activeItem.id === contactId && activeItem.itemType === "contact") {
           setActiveItem(prev => prev ? ({...prev, putRequestId: newPutRequestId, getRequestId: newGetRequestId } as Contact) : null);
         }
 
         console.log(`Key updated successfully for contact ${contact.name}`);
-        
+
         if (!oldKey) {
           toast({
             title: "Contact Key Set",

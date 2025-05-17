@@ -73,6 +73,8 @@ export const useMessagePolling = ({
           // Get the stable request ID using the new context function
           try {
             const requestId = await getGetRequestId(contact.id);
+            // There can be a race during upgrades which will return null here.
+            if (!requestId) continue;
             requestIdsToSend.push(requestId);
             // Map the generated stable ID back to the contactId to process the response
             requestIdToContactIdMap.set(requestId, contact.id);
