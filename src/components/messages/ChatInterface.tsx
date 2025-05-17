@@ -78,11 +78,14 @@ const ChatInterface = () => {
 
   const scrollToBottom = () => {
     if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: "smooth" });
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
       const viewport = scrollAreaRef.current.querySelector<HTMLDivElement>(
         '[data-radix-scroll-area-viewport]',
       );
       if (viewport) {
         viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+        viewport.scrollTop = viewport.scrollHeight;
       }
     }
   };
