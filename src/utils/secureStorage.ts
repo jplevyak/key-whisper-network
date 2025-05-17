@@ -14,6 +14,10 @@ export class SecureStorage {
     console.log("SecureStorage initialized with derived PRF key.");
   }
 
+  public getIsUsingDerivedKey(): boolean {
+    return this.isUsingDerivedKey;
+  }
+
   async init(): Promise<void> {
     // If encryptionKey is already set (e.g., by initializeWithKey or a previous init), don't re-initialize.
     if (this.encryptionKey) {

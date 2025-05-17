@@ -60,6 +60,7 @@ interface MessagesContextType {
     oldKey: CryptoKey,
     newKey: CryptoKey,
   ) => Promise<void>;
+  deleteAllMessages: () => void; // Added to delete all messages
 }
 
 // Type for the response from /api/get-messages
@@ -919,6 +920,15 @@ export const MessagesProvider = ({
     setMessages(finalMessagesState); // Update state once with all changes
   };
 
+  const deleteAllMessages = () => {
+    setMessages({});
+    toast({
+      title: "All Messages Deleted",
+      description: "All your conversations and group messages have been cleared.",
+      variant: "destructive", // Or "default" if preferred
+    });
+  };
+
   return (
     <MessagesContext.Provider
       value={{
@@ -932,6 +942,7 @@ export const MessagesProvider = ({
         moveContextualMessagesToGroup,
         deleteMessagesFromSenderInGroups,
         reEncryptMessagesForKeyChange,
+        deleteAllMessages, // Added
       }}
     >
       {children}

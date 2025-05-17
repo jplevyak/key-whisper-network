@@ -8,6 +8,7 @@ import LoginForm from "@/components/auth/LoginForm";
 import ContactsList from "@/components/contacts/ContactsList";
 import ChatInterface from "@/components/messages/ChatInterface";
 import AddContactModal from "@/components/contacts/AddContactModal";
+import UserProfileModal from "@/components/auth/UserProfileModal"; // Import UserProfileModal
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,6 +39,7 @@ const IndexContent = () => {
   const { activeItem: activeContact, setActiveItem } = useContacts(); // Correctly destructure and get setActiveItem
   const [showAddContact, setShowAddContact] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false); // State for UserProfileModal
   const isMobile = useIsMobile();
   const [showContacts, setShowContacts] = useState(true);
   const [notificationsSupported, setNotificationsSupported] = useState(false);
@@ -420,7 +422,13 @@ const IndexContent = () => {
             </DialogContent>
           </Dialog>
           {/* End About Dialog */}
-          <span className="text-sm text-muted-foreground">{username}</span>
+          <Button
+            variant="link"
+            className="text-sm text-muted-foreground hover:text-primary px-1" // Adjusted padding
+            onClick={() => setShowUserProfileModal(true)}
+          >
+            {username}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleLogout}>
             {" "}
             {/* Use handleLogout */}
@@ -457,6 +465,10 @@ const IndexContent = () => {
       <AddContactModal
         isOpen={showAddContact}
         onClose={() => setShowAddContact(false)}
+      />
+      <UserProfileModal
+        isOpen={showUserProfileModal}
+        onClose={() => setShowUserProfileModal(false)}
       />
     </div>
   );
