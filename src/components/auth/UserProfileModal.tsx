@@ -32,7 +32,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
-  const { username, isUsingDerivedKey } = useAuth();
+  const { username, isUsingDerivedKey, supportsPasskeys } = useAuth(); // Added supportsPasskeys
   const { messages: allMessagesData, deleteAllMessages } = useMessages();
 
   // Calculate aggregate message stats
@@ -99,14 +99,41 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                 )}
               </div>
               {isUsingDerivedKey && (
-                 <p className="text-xs text-muted-foreground">
-                   Your local database is encrypted with a key derived from your passkey&apos;s PRF extension.
-                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Your local database is encrypted with a key derived from your passkey&apos;s PRF extension.
+                </p>
               )}
-               {!isUsingDerivedKey && (
-                 <p className="text-xs text-muted-foreground">
-                   Your local database is encrypted with a standard device-generated key.
-                 </p>
+              {!isUsingDerivedKey && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Your local database is encrypted with a standard device-generated key.
+                  </p>
+                  {supportsPasskeys && ( // Check if passkeys (and thus potentially PRF) are supported by the browser
+                    <div className="mt-1 text-xs text-amber-500 space-y-1">
+                      <p>
+                        <strong>Recommendation for Enhanced Security:</strong>
+                      </p>
+                      {navigator.userAgent.toLowerCase().includes("firefox") ? (
+                        <p>
+                          Firefox currently has limited support for the PRF extension needed for enhanced database security. For better protection, consider using a browser like Chrome, Edge, or Safari on supported platforms, or use a hardware security key.
+                        </p>
+                      ) : navigator.userAgent.toLowerCase().includes("win") ? (
+                        <p>
+                          To enable Passkey Enhanced database security on Windows, ensure you are using a compatible browser (like Chrome or Edge) and consider using a hardware security key (e.g., YubiKey) or Windows Hello if your device supports it with PRF.
+                        </p>
+                      ) : (
+                        <p>
+                          Your browser supports passkeys, but enhanced database security (PRF) might not be active. This could be due to the specific authenticator used (e.g., some built-in authenticators might not support PRF, or it wasn't enabled during passkey creation). Consider re-registering your passkey or using a hardware security key that supports the PRF extension.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {!supportsPasskeys && (
+                     <p className="text-xs text-muted-foreground mt-1">
+                       Your browser does not support passkeys, which are required for enhanced database security.
+                     </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -131,9 +158,7 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
             </div>
 
             <div className="space-y-2 pt-4">
-              <h4 className="font-medium text-sm text-destructive">
-                Danger Zone
-              </h4>
+              {/* "Danger Zone" heading removed */}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" className="w-full justify-start">
