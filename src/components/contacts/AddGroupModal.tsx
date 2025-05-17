@@ -169,7 +169,7 @@ const AddGroupModal = ({
         }
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md top-[10vh] translate-y-0 sm:top-[50%] sm:translate-y-[-50%]">
         <DialogHeader>
           <DialogTitle>Create New Group</DialogTitle>
           <DialogDescription>
