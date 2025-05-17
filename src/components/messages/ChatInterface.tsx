@@ -55,7 +55,7 @@ const ChatInterface = () => {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   // State for confirmation dialog
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
@@ -77,7 +77,14 @@ const ChatInterface = () => {
   }, [activeItem, activeMessages, markAsRead]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollAreaRef.current) {
+      const viewport = scrollAreaRef.current.querySelector<HTMLDivElement>(
+        '[data-radix-scroll-area-viewport]',
+      );
+      if (viewport) {
+        viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+      }
+    }
   };
 
   // Scroll to bottom when messages change or active item changes
@@ -204,7 +211,7 @@ const ChatInterface = () => {
       </div>
 
       {/* Scrollable Messages Area */}
-      <ScrollArea className="flex-1">
+      <ScrollArea ref={scrollAreaRef} className="flex-1">
         <div className="flex flex-col justify-end px-4 py-2">
           {activeMessages.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -223,7 +230,6 @@ const ChatInterface = () => {
               ))}
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
