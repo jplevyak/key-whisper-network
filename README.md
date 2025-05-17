@@ -62,6 +62,19 @@ The availability of the PRF extension depends on the operating system, browser, 
 
 When you register with CCred Network, the application will attempt to use the PRF extension if your browser and authenticator support it. If PRF is not available, your local data is still encrypted, but with a key managed by the browser's standard secure storage mechanisms, which might not offer the same level of binding to your passkey authentication. For maximum security, using a platform and authenticator that supports PRF is highly recommended.
 
+## Security
+
+CCred Network employs multiple layers of security to protect your communications and locally stored data:
+
+-   **Non-Extractable Contact Keys**: When you establish a secure connection with a contact (e.g., by scanning a QR code), a unique shared secret key is generated. This key is stored on your device as a non-extractable `CryptoKey` using the Web Crypto API. This means the key material itself cannot be exported or read out by JavaScript or browser extensions, providing strong protection against exfiltration attempts. All messages exchanged with that contact are end-to-end encrypted using this non-extractable key.
+
+-   **Layered Encryption with Passkey PRF**:
+    -   The primary layer of message encryption uses the unique, non-extractable AES key established with each contact.
+    -   If your device and browser support the Passkey PRF (Pseudo-Random Function) extension, an additional layer of security is applied to your *local data store*. The entire local database, which includes these contact-specific encryption keys and message metadata, is encrypted using a master key derived from your passkey via PRF.
+    -   This means that even if an attacker could somehow bypass the non-extractable nature of the contact keys (e.g., through a compromised browser environment with elevated privileges), they would still need to overcome the PRF-derived encryption of the database itself to access the stored keys. This provides robust defense-in-depth, ensuring that your sensitive communication keys are exceptionally well-protected.
+
+This multi-layered approach ensures that your messages are secure both in transit (via end-to-end encryption) and at rest on your device (via non-extractable keys and optional PRF-based database encryption).
+
 ## Installation
 
 CCred Network is a Progressive Web App (PWA). For the best experience, including features like push notifications, it's recommended to install it to your device.
