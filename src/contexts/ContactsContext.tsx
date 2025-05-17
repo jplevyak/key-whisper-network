@@ -344,7 +344,7 @@ export const ContactsProvider = ({
       const oldKeyResult = await db.get("keys", oldKeyId); // This now handles old string keys
 
       if (oldKeyResult && oldKeyResult.cryptoKey && oldKeyResult.keyDataString) {
-          cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
+        cryptoKey = oldKeyResult.cryptoKey; // This is the non-extractable, imported key
 
         const keyDataStringToUse = oldKeyResult.keyDataString;
         putRequestId = await generateStableRequestId(contact.userGeneratedKey, keyDataStringToUse);
@@ -370,7 +370,7 @@ export const ContactsProvider = ({
       }
     }
 
-    // If cryptoKey is found, but request IDs are still missing (should not happen).
+    // If we don't have the results, it is because useState is not synchronous and the state is stale.  Just return null and let the caller sort it.
     if (!cryptoKey || !putRequestId || !getRequestId) {
       console.error(`Critical: cryptoKey (${!cryptoKey}) or Request IDs (${!putRequestId || !getRequestId}) missing for contact ${contact.name} after key retrieval/upgrade.`, contact);
       return null;
@@ -385,29 +385,29 @@ export const ContactsProvider = ({
     const contactItem = listItems.find(
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
-    if (!contactItem) return null;
-    const contactData = await _getOrUpgradeContactData(contactItem);
-    return contactData ? contactData.key : null;
+      if (!contactItem) return null;
+      const contactData = await _getOrUpgradeContactData(contactItem);
+      return contactData ? contactData.key : null;
   };
 
   const getGetRequestId = async (contactId: string): Promise<string | null> => {
     const contactItem = listItems.find(
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
-    if (!contactItem) return null;
-    if (contactItem.getRequestId) return contactItem.getRequestId; // Prefer direct from object
-    const contactData = await _getOrUpgradeContactData(contactItem);
-    return contactData ? contactData.getRequestId : null;
+      if (!contactItem) return null;
+      if (contactItem.getRequestId) return contactItem.getRequestId; // Prefer direct from object
+      const contactData = await _getOrUpgradeContactData(contactItem);
+      return contactData ? contactData.getRequestId : null;
   };
 
   const getPutRequestId = async (contactId: string): Promise<string | null> => {
     const contactItem = listItems.find(
       (item): item is Contact => item.id === contactId && item.itemType === "contact",
     );
-    if (!contactItem) return null;
-    if (contactItem.putRequestId) return contactItem.putRequestId; // Prefer direct from object
-    const contactData = await _getOrUpgradeContactData(contactItem);
-    return contactData ? contactData.putRequestId : null;
+      if (!contactItem) return null;
+      if (contactItem.putRequestId) return contactItem.putRequestId; // Prefer direct from object
+      const contactData = await _getOrUpgradeContactData(contactItem);
+      return contactData ? contactData.putRequestId : null;
   };
 
   const deleteContact = async (itemId: string) => {
