@@ -59,6 +59,7 @@ class IndexedDBManager {
           console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
         }
         const db = (event.target as IDBOpenDBRequest).result;
+        this.db = db;
 
         STORES.forEach((storeName) => {
           if (!db.objectStoreNames.contains(storeName)) {
