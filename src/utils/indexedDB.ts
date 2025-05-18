@@ -45,11 +45,19 @@ class IndexedDBManager {
       request.onerror = () => reject(request.error);
 
       request.onsuccess = () => {
+        if (this.db) {
+          this.db.close();
+          console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
+        }
         this.db = request.result;
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
+        if (this.db) {
+          this.db.close();
+          console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
+        }
         const db = (event.target as IDBOpenDBRequest).result;
 
         STORES.forEach((storeName) => {
