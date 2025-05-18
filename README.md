@@ -321,6 +321,68 @@ sudo gzip -9 -k /var/www/ccred/assets/*
 sudo service nginx reload
 ```
 
+### Nginx Configuration Example
+
+Below is an example Nginx configuration for serving the CCred Network frontend and proxying API requests to the backend service. This configuration should typically be placed in `/etc/nginx/sites-available/yourdomain.com` and then symlinked to `/etc/nginx/sites-enabled/`.
+
+Remember to replace `ccred.xyz` with your actual domain name and update paths to SSL certificates if necessary. This example assumes you are using Certbot for SSL certificate management.
+
+```nginx
+server {
+  server_name ccred.xyz; # Replace with your domain
+
+  # Serve static frontend files
+  location /index.html {
+    root /var/www/ccred; # Path to your frontend build output
+  }
+
+  location / {
+    root /var/www/ccred; # Path to your frontend build output
+    try_files $uri $uri/ /index.html; # Important for single-page applications
+
+    # Gzip settings for frontend assets
+    gzip on;
+    gzip_comp_level 6;
+    gzip_min_length 1000;
+    gzip_proxied no-cache no-store private expired auth;
+    gzip_vary on;
+    gzip_http_version 1.1;
+    gzip_static on; # Serve pre-gzipped files if available (e.g., .js.gz)
+    gzip_types text/plain text/css application/javascript application/json text/xml image/svg+xml;
+  }
+
+  # Proxy API requests to the backend service
+  location /api/ {
+    proxy_pass http://localhost:3000; # Assuming backend runs on port 3000
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # For SSE or Long Poll (used by /api/get-messages)
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+
+  # SSL Configuration (managed by Certbot)
+  listen 443 ssl;
+  ssl_certificate /etc/letsencrypt/live/ccred.xyz-0001/fullchain.pem; # Update with your cert path
+  ssl_certificate_key /etc/letsencrypt/live/ccred.xyz-0001/privkey.pem; # Update with your key path
+  include /etc/letsencrypt/options-ssl-nginx.conf;
+  ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+  # Optional: Redirect HTTP to HTTPS
+  # listen 80;
+  # return 301 https://$host$request_uri;
+}
+```
+
+After saving this configuration, you would typically test it with `sudo nginx -t` and then reload Nginx with `sudo systemctl reload nginx`.
+
 ## This project is built with:
 
 - Vite
