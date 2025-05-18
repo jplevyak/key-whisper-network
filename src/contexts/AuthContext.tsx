@@ -8,6 +8,7 @@ import {
 } from "@/utils/encryption";
 import { useToast } from "@/components/ui/use-toast";
 import { secureStorage } from "@/utils/secureStorage"; // Import secureStorage
+import { db } from "@/utils/indexedDB"; // Import db
 
 type AuthContextType = {
   isAuthenticated: boolean;
