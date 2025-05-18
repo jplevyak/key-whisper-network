@@ -192,7 +192,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsLoading(true);
     try {
       // 1. Close the main application IndexedDB connection and then delete it
-      db.close(); // Explicitly close the connection
       await db.deleteEntireDatabase();
 
       // 2. Delete the SecureStorage IndexedDB and reset its state
