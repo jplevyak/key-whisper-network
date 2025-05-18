@@ -180,6 +180,14 @@ class IndexedDBManager {
     });
   }
 
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+      console.log(`Database ${DB_NAME} connection closed.`);
+    }
+  }
+
   async deleteEntireDatabase(): Promise<void> {
     // Ensure the connection is closed by calling the instance's close method.
     // This method handles the case where this.db might already be null.
@@ -196,24 +204,12 @@ class IndexedDBManager {
           console.log(`Database ${DB_NAME} deleted successfully after delay.`);
           resolve();
         };
-        request.onblocked = () => {
-          console.warn(`Deletion of database ${DB_NAME} is blocked even after delay. Close other connections.`);
+        request.onblocked = (event) => {
+          // It's useful to log the event for onblocked to see more details if possible
+          console.warn(`Deletion of database ${DB_NAME} is blocked even after delay. Event:`, event);
           reject(new Error(`Database ${DB_NAME} deletion blocked.`));
         };
       }, 100); // 100ms delay
-    });
-  }
-}
-        reject((event.target as IDBOpenDBRequest).error);
-      };
-      request.onsuccess = () => {
-        console.log(`Database ${DB_NAME} deleted successfully.`);
-        resolve();
-      };
-      request.onblocked = () => {
-        console.warn(`Deletion of database ${DB_NAME} is blocked. Close other connections.`);
-        reject(new Error(`Database ${DB_NAME} deletion blocked.`));
-      };
     });
   }
 }
