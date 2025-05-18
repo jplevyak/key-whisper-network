@@ -20,7 +20,6 @@ type AuthContextType = {
   logout: () => void;
   registerPasskey: (username: string) => Promise<boolean>;
   derivedKey: CryptoKey | null; // Changed from getDerivedKey and string to CryptoKey
-  isUsingDerivedKey: boolean; // Added to expose PRF key usage for DB encryption
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,7 +32,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [supportsBiometric, setSupportsBiometric] = useState<boolean>(false);
   const [supportsPasskeys, setSupportsPasskeys] = useState<boolean>(false);
   const [derivedKey, setDerivedKey] = useState<CryptoKey | null>(null); // Changed type
-  const [isUsingDerivedKey, setIsUsingDerivedKey] = useState<boolean>(false); // Added state for PRF key usage
   const { toast } = useToast();
 
   useEffect(() => {
@@ -61,7 +59,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // secureStorage.init() will run if initializeWithKey hasn't been called yet.
       // If initializeWithKey was called (e.g. during login), init() is a no-op.
       await secureStorage.init(); // Ensure it's initialized
-      setIsUsingDerivedKey(secureStorage.getIsUsingDerivedKey());
 
       setIsLoading(false);
     };
@@ -202,7 +199,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       logout,
       registerPasskey,
       derivedKey, // Changed from getDerivedKey
-      isUsingDerivedKey, // Added
     }}
     >
     {children}
