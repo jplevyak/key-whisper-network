@@ -179,6 +179,25 @@ class IndexedDBManager {
       request.onsuccess = () => resolve();
     });
   }
+
+  async getAllKeysFromStore<T extends keyof DBSchema>(storeName: T): Promise<IDBValidKey[]> {
+    await this.init();
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(storeName, "readonly");
+      const objectStore = transaction.objectStore(storeName);
+      const request = objectStore.getAllKeys();
+
+      request.onerror = () => {
+        console.error(`Error getting all keys from store ${storeName}:`, request.error);
+        reject(request.error);
+      };
+      request.onsuccess = () => {
+        resolve(request.result);
+      };
+    });
+  }
 }
 
 export const db = new IndexedDBManager();
