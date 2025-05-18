@@ -33,7 +33,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
-  const { username, supportsPasskeys } = useAuth(); // Added supportsPasskeys
+  const { username, supportsPasskeys, deleteEverything } = useAuth();
   const { messages: allMessagesData, deleteAllMessages } = useMessages();
 
   // Calculate aggregate message stats
@@ -59,6 +59,11 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
   const handleConfirmDeleteAll = () => {
     deleteAllMessages();
     onClose(); // Close the profile modal after deletion
+  };
+
+  const handleConfirmDeleteEverything = async () => {
+    await deleteEverything();
+    onClose();
   };
 
   return (
@@ -192,6 +197,42 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                   This will remove all message history from your local device.
                   It does not affect messages stored on your contacts&apos; devices.
                 </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" className="w-full justify-start">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Everything
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      DANGER: Are you absolutely sure?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action is irreversible. This will permanently delete
+                      ALL messages, ALL contacts, ALL groups, your user profile,
+                      and your passkey from this device. The application will be reset.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleConfirmDeleteEverything}
+                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    >
+                      Confirm Delete Everything
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <p className="text-xs text-muted-foreground">
+                This will erase all application data from this browser, including your identity (passkey).
+                You will need to register again to use the application.
+              </p>
             </div>
           </div>
         </ScrollArea>

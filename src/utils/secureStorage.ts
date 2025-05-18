@@ -156,6 +156,28 @@ export class SecureStorage {
       throw new Error("Failed to decrypt data");
     }
   }
+
+  async deleteOwnDatabase(): Promise<void> {
+    // No need to close a DB connection here as SecureStorage doesn't keep one open.
+    // It opens and closes connections for each operation (getStoredKey, storeKey).
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(this.DB_NAME);
+      request.onerror = (event) => {
+        console.error(`Error deleting SecureStorage database ${this.DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+        reject((event.target as IDBOpenDBRequest).error);
+      };
+      request.onsuccess = () => {
+        console.log(`SecureStorage database ${this.DB_NAME} deleted successfully.`);
+        this.encryptionKey = null;
+        this.isUsingDerivedKey = false;
+        resolve();
+      };
+      request.onblocked = () => {
+        console.warn(`Deletion of SecureStorage database ${this.DB_NAME} is blocked.`);
+        reject(new Error(`SecureStorage database ${this.DB_NAME} deletion blocked.`));
+      };
+    });
+  }
 }
 
 export const secureStorage = new SecureStorage();

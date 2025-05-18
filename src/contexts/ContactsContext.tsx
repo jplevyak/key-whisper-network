@@ -73,7 +73,6 @@ interface ContactsContextType {
     oldKey: CryptoKey | null;
     newKey: CryptoKey | null;
   }>;
-  deleteAllContactsAndGroups: () => Promise<void>; // Added for complete data wipe
 }
 
 const ContactsContext = createContext<ContactsContextType | undefined>(
@@ -592,58 +591,6 @@ export const ContactsProvider = ({
       }
   };
 
-  const deleteAllContactsAndGroups = async (): Promise<void> => {
-    if (!isDbInitialized) {
-      toast({
-        title: "Database Not Ready",
-        description: "Cannot delete all contacts and groups. Please wait and try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      // Clear state
-      setListItems([]);
-      setContactKeys(new Map());
-      setActiveItem(null);
-
-      // Clear contacts and groups from IndexedDB
-      // "all" is the key used for the list of contacts/groups
-      await db.delete("contacts", "all");
-      await db.delete("groups", "all");
-
-      // Delete all individual keys from the 'keys' store
-      const allKeyIds = await db.getAllKeysFromStore("keys");
-      if (allKeyIds && allKeyIds.length > 0) {
-        for (const keyId of allKeyIds) {
-          // Ensure keyId is a string, as db.delete expects a string ID.
-          // Our DBSchema for 'keys' has id as string.
-          if (typeof keyId === 'string') {
-            await db.delete("keys", keyId);
-          } else {
-            console.warn(`Skipping deletion of key with non-string ID: ${keyId}`);
-          }
-        }
-        console.log(`Deleted ${allKeyIds.length} keys from the 'keys' store.`);
-      } else {
-        console.log("No keys found in the 'keys' store to delete, or failed to retrieve keys.");
-      }
-
-      console.log("All contacts, groups, and their associated keys have been deleted.");
-      toast({
-        title: "Contacts & Groups Cleared",
-        description: "All contacts and groups have been removed.",
-      });
-    } catch (error) {
-      console.error("Error deleting all contacts and groups:", error);
-      toast({
-        title: "Deletion Error",
-        description: "Could not remove all contacts and groups.",
-        variant: "destructive",
-      });
-    }
-  };
-
   return (
     <ContactsContext.Provider
     value={{
@@ -660,7 +607,6 @@ export const ContactsProvider = ({
       updateContact,
       updateGroup, // Expose updateGroup
       updateContactKey,
-      deleteAllContactsAndGroups, // Expose deleteAllContactsAndGroups
     }}
     >
     {children}

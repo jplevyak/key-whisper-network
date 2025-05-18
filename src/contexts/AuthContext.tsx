@@ -20,6 +20,7 @@ type AuthContextType = {
   logout: () => void;
   registerPasskey: (username: string) => Promise<boolean>;
   derivedKey: CryptoKey | null; // Changed from getDerivedKey and string to CryptoKey
+  deleteEverything: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -186,6 +187,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  const deleteEverything = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Delete the main application IndexedDB
+      await db.deleteEntireDatabase();
+
+      // 2. Delete the SecureStorage IndexedDB and reset its state
+      await secureStorage.deleteOwnDatabase();
+
+      // 3. Clear specified localStorage items
+      localStorage.removeItem("username");
+      localStorage.removeItem("passkey-credential-id");
+      localStorage.removeItem("passkey-saltForKeyGen");
+
+      // 4. Reset auth state
+      setIsAuthenticated(false);
+      setUsername(null);
+      setHasPasskey(false);
+      setDerivedKey(null);
+
+      toast({
+        title: "All Data Deleted",
+        description: "All your local data has been removed. The app will now reload.",
+        variant: "default",
+      });
+
+      // 5. Reload the application
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000); // Delay for toast visibility
+
+    } catch (error) {
+      console.error("Error during deleteEverything:", error);
+      toast({
+        title: "Deletion Error",
+        description: "Could not completely remove all data. Please try clearing site data from your browser settings.",
+        variant: "destructive",
+      });
+      setIsLoading(false); // Stop loading indicator on error
+    }
+  };
+
   return (
     <AuthContext.Provider
     value={{
@@ -199,6 +242,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       logout,
       registerPasskey,
       derivedKey, // Changed from getDerivedKey
+      deleteEverything,
     }}
     >
     {children}

@@ -180,21 +180,24 @@ class IndexedDBManager {
     });
   }
 
-  async getAllKeysFromStore<T extends keyof DBSchema>(storeName: T): Promise<IDBValidKey[]> {
-    await this.init();
-    if (!this.db) throw new Error("Database not initialized");
-
+  async deleteEntireDatabase(): Promise<void> {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, "readonly");
-      const objectStore = transaction.objectStore(storeName);
-      const request = objectStore.getAllKeys();
-
-      request.onerror = () => {
-        console.error(`Error getting all keys from store ${storeName}:`, request.error);
-        reject(request.error);
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onerror = (event) => {
+        console.error(`Error deleting database ${DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+        reject((event.target as IDBOpenDBRequest).error);
       };
       request.onsuccess = () => {
-        resolve(request.result);
+        console.log(`Database ${DB_NAME} deleted successfully.`);
+        resolve();
+      };
+      request.onblocked = () => {
+        console.warn(`Deletion of database ${DB_NAME} is blocked. Close other connections.`);
+        reject(new Error(`Database ${DB_NAME} deletion blocked.`));
       };
     });
   }
