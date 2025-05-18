@@ -181,13 +181,29 @@ class IndexedDBManager {
   }
 
   async deleteEntireDatabase(): Promise<void> {
-    this.db.close();
-    this.db = null;
+    // Ensure the connection is closed by calling the instance's close method.
+    // This method handles the case where this.db might already be null.
+    this.close();
 
     return new Promise((resolve, reject) => {
-      const request = indexedDB.deleteDatabase(DB_NAME);
-      request.onerror = (event) => {
-        console.error(`Error deleting database ${DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+      setTimeout(() => {
+        const request = indexedDB.deleteDatabase(DB_NAME);
+        request.onerror = (event) => {
+          console.error(`Error deleting database ${DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+          reject((event.target as IDBOpenDBRequest).error);
+        };
+        request.onsuccess = () => {
+          console.log(`Database ${DB_NAME} deleted successfully after delay.`);
+          resolve();
+        };
+        request.onblocked = () => {
+          console.warn(`Deletion of database ${DB_NAME} is blocked even after delay. Close other connections.`);
+          reject(new Error(`Database ${DB_NAME} deletion blocked.`));
+        };
+      }, 100); // 100ms delay
+    });
+  }
+}
         reject((event.target as IDBOpenDBRequest).error);
       };
       request.onsuccess = () => {

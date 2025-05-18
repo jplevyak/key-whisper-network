@@ -191,7 +191,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const deleteEverything = async () => {
     setIsLoading(true);
     try {
-      // 1. Close the main application IndexedDB connection and then delete it
+      // 1. Delete the main application IndexedDB.
+      // The deleteEntireDatabase method in IndexedDBManager now handles closing its own connection.
       await db.deleteEntireDatabase();
 
       // 2. Delete the SecureStorage IndexedDB and reset its state
