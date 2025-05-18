@@ -180,11 +180,18 @@ class IndexedDBManager {
     });
   }
 
-  async deleteEntireDatabase(): Promise<void> {
+  close(): void {
     if (this.db) {
       this.db.close();
       this.db = null;
+      console.log(`Database ${DB_NAME} connection closed.`);
     }
+  }
+
+  async deleteEntireDatabase(): Promise<void> {
+    // Ensure the connection is closed by calling the close method first.
+    this.close();
+
     return new Promise((resolve, reject) => {
       const request = indexedDB.deleteDatabase(DB_NAME);
       request.onerror = (event) => {
