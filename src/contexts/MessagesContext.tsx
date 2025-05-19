@@ -13,6 +13,7 @@ import {
   saveMessagesToStorage,
 } from "@/services/messageStorage";
 import { useMessagePolling } from "@/hooks/useMessagePolling";
+import { useAuth } from "./AuthContext"; // Added for authentication status
 
 // Define the structure of the content being encrypted/decrypted
 export interface MessageContent {
@@ -88,10 +89,15 @@ export const MessagesProvider = ({
   const { getContactKey, listItems, activeItem, getPutRequestId } = // Added getPutRequestId
     useContacts();
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth(); // Get authentication status
   // Fetching logic and refs moved to useMessagePolling hook
 
   // Load messages from IndexedDB on init
   useEffect(() => {
+    if (!isAuthenticated) {
+      setMessages({}); // Clear messages if not authenticated
+      return;
+    }
     const loadMessages = async () => {
       try {
         const loadedMessages = await loadMessagesFromStorage();
@@ -109,18 +115,22 @@ export const MessagesProvider = ({
     };
 
     loadMessages();
-  }, [toast]);
+  }, [isAuthenticated, toast]);
 
   // Save messages to IndexedDB whenever they change
   useEffect(() => {
+    if (!isAuthenticated) {
+      return; // Don't save if not authenticated
+    }
     // No need to check length here, saveMessagesToStorage handles empty state
     saveMessagesToStorage(messages).catch((error) => {
       console.error("Failed to save messages to storage:", error);
       // Optionally show a toast here
     });
-  }, [messages]);
+  }, [messages, isAuthenticated]);
 
   // Use the message polling hook - it runs automatically
+  // Its effectiveness will depend on activeItem, which becomes null if not authenticated due to ContactsContext changes.
   useMessagePolling({ setMessages, activeItemId: activeItem?.id });
 
   // Send a message to a contact or group

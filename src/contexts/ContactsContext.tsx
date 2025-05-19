@@ -9,6 +9,7 @@ import {
 import { secureStorage } from "@/utils/secureStorage";
 import { useToast } from "@/components/ui/use-toast";
 import { db } from "@/utils/indexedDB";
+import { useAuth } from "./AuthContext"; // Added for authentication status
 // Removed: import { useMessages } from './MessagesContext';
 
 // Base interface for items in the list
@@ -93,6 +94,7 @@ export const ContactsProvider = ({
   const { toast } = useToast();
   // Removed: const messagesContext = useMessages();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
+  const { isAuthenticated } = useAuth(); // Get authentication status
 
   // Initialize DB
   useEffect(() => {
@@ -117,7 +119,12 @@ export const ContactsProvider = ({
 
   // Load contacts and groups from IndexedDB on init
   useEffect(() => {
-    if (!isDbInitialized) return; // Wait for DB initialization
+    if (!isDbInitialized || !isAuthenticated) {
+      if (!isAuthenticated) {
+        setListItems([]); // Clear data if not authenticated
+      }
+      return; 
+    }
     const loadListItems = async () => {
       try {
         const storedContactsData = await db.get("contacts", "all");
@@ -143,12 +150,12 @@ export const ContactsProvider = ({
     };
 
     loadListItems();
-  }, [isDbInitialized, toast]);
+  }, [isDbInitialized, isAuthenticated, toast]);
 
   // Save contacts and groups to IndexedDB whenever listItems change
   useEffect(() => {
-    if (!isDbInitialized) {
-      // Only proceed if DB is initialized
+    if (!isDbInitialized || !isAuthenticated) {
+      // Only proceed if DB is initialized and user is authenticated
       return;
     }
 
@@ -201,7 +208,7 @@ export const ContactsProvider = ({
     };
     // The saveListItems function itself handles the logic for empty or populated arrays.
     saveListItems();
-  }, [listItems, isDbInitialized, toast]);
+  }, [listItems, isDbInitialized, isAuthenticated, toast]);
 
   // Generate a new AES-256 key for a new contact (remains contact-specific)
   const generateContactKey = async (): Promise<string> => {
