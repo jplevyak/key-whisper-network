@@ -29,48 +29,73 @@ const STORES = ["contacts", "messages", "keys", "groups"] as const;
 
 class IndexedDBManager {
   private db: IDBDatabase | null = null;
-  private initializing: bool = false;
+  private initializationPromise: Promise<void> | null = null;
 
-  async init(): Promise<void> { // Removed derivedKey parameter
-    await secureStorage.init();
+  async init(): Promise<void> {
+    if (this.db) {
+      return Promise.resolve(); // Already initialized
+    }
 
-    if (this.db || this.initializing) return;
-    this.initializing = true;
+    if (this.initializationPromise) {
+      return this.initializationPromise; // Initialization in progress
+    }
 
-    return new Promise((resolve, reject) => {
+    // Start new initialization
+    await secureStorage.init(); // Ensure secureStorage is ready
+
+    this.initializationPromise = new Promise<void>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => {
-        this.initializing = false;
+        console.error(`Error opening IndexedDB (${DB_NAME}, v${DB_VERSION}):`, request.error);
+        this.initializationPromise = null; // Allow re-attempts
         reject(request.error);
-      }
+      };
 
       request.onsuccess = () => {
-        if (this.db) {
-          this.db.close();
-          console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
-        }
         this.db = request.result;
-        this.initializing = false;
+        console.log(`Database ${DB_NAME} (v${DB_VERSION}) initialized successfully.`);
+
+        // Listen for version changes from other tabs/windows
+        this.db.onversionchange = () => {
+          if (this.db) {
+            this.db.close(); // Close this connection to allow upgrade
+            this.db = null;
+            this.initializationPromise = null; // Allow re-initialization
+            console.warn(`Database ${DB_NAME} version change detected. Connection closed to allow upgrade.`);
+            // Application may need to notify user or reload.
+          }
+        };
+        
+        // Initialization successful, resolve the promise.
+        // It remains as this fulfilled promise unless close() is called.
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
-        if (this.db) {
-          this.db.close();
-          console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
-        }
-        const db = (event.target as IDBOpenDBRequest).result;
-        this.db = db;
-        this.initializing = false;
+        console.log(`Upgrading database ${DB_NAME} to version ${DB_VERSION}. Old version: ${event.oldVersion}`);
+        const currentDb = (event.target as IDBOpenDBRequest).result;
 
         STORES.forEach((storeName) => {
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName, { keyPath: "id" });
+          if (!currentDb.objectStoreNames.contains(storeName)) {
+            console.log(`Creating object store: ${storeName}`);
+            currentDb.createObjectStore(storeName, { keyPath: "id" });
           }
+          // TODO: Add any necessary store-specific migration logic here
+          // based on event.oldVersion and DB_VERSION.
         });
+        // onupgradeneeded transaction commits automatically.
+        // The main initializationPromise resolves/rejects via onsuccess/onerror.
+      };
+
+      request.onblocked = (event) => {
+        console.warn(`Database ${DB_NAME} open request is blocked. Ensure other connections are closed on 'versionchange'. Event:`, event);
+        this.initializationPromise = null; // Allow re-attempts
+        reject(new Error(`Database ${DB_NAME} open request was blocked.`));
       };
     });
+
+    return this.initializationPromise;
   }
 
   // Removed duplicate class definition and redundant import.
@@ -196,6 +221,7 @@ class IndexedDBManager {
     if (this.db) {
       this.db.close();
       this.db = null;
+      this.initializationPromise = null; // Reset initialization promise
       console.log(`Database ${DB_NAME} connection closed.`);
     }
   }
