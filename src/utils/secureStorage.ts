@@ -108,7 +108,7 @@ export class SecureStorage {
 
   async encrypt(data: string): Promise<string> {
     if (!this.encryptionKey) {
-      await this.init();
+      throw new Error("SecureStorage not initialized. Call init() or initializeWithKey() first.");
     }
 
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -133,7 +133,7 @@ export class SecureStorage {
 
   async decrypt(encryptedData: string): Promise<string> {
     if (!this.encryptionKey) {
-      await this.init();
+      throw new Error("SecureStorage not initialized. Call init() or initializeWithKey() first.");
     }
 
     try {

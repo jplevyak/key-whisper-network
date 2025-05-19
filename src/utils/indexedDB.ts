@@ -41,7 +41,8 @@ class IndexedDBManager {
     }
 
     // Start new initialization
-    await secureStorage.init(); // Ensure secureStorage is ready
+    // Application is now responsible for calling secureStorage.init() or secureStorage.initializeWithKey()
+    // *before* IndexedDBManager operations that require encryption/decryption.
 
     this.initializationPromise = new Promise<void>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
