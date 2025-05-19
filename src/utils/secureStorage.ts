@@ -1,5 +1,6 @@
 import { fromByteArray, toByteArray } from "base64-js";
-import { type IndexedDBManager as IDBManagerType, STORES as APP_STORES } from "./indexedDB"; // Import for type usage and constants
+// Import the default db instance and alias it
+import { db as defaultDbManager, type IndexedDBManager as IDBManagerType, STORES as APP_STORES } from "./indexedDB";
 import { importKey } from "./encryption";
 
 
@@ -11,20 +12,22 @@ export class SecureStorage {
   private readonly KEY_ID = "main_key";
   private isUsingDerivedKey = false;
 
-  // Pass the application's IndexedDBManager instance for re-encryption
-  async initializeWithKey(newDerivedKey: CryptoKey, dbManager: IDBManagerType): Promise<void> {
+  // dbManager is now optional; if not provided, the default instance will be used.
+  async initializeWithKey(newDerivedKey: CryptoKey, dbManager?: IDBManagerType): Promise<void> {
+    const effectiveDbManager = dbManager || defaultDbManager;
+
     console.log("SecureStorage: Attempting to initialize with derived PRF key.");
     const oldKey = this.encryptionKey;
     const wasPreviouslyUsingStandardKey = oldKey && !this.isUsingDerivedKey;
 
     if (wasPreviouslyUsingStandardKey && oldKey) {
-      if (!dbManager) {
-        console.error("SecureStorage: dbManager is undefined. Cannot proceed with re-encryption of application data.");
-        throw new Error("SecureStorage: IndexedDBManager instance is required for data re-encryption.");
+      if (!effectiveDbManager) {
+        console.error("SecureStorage: effectiveDbManager is undefined (neither passed nor default available). Cannot proceed with re-encryption.");
+        throw new Error("SecureStorage: IndexedDBManager instance is required for data re-encryption and was not available.");
       }
       console.log("SecureStorage: Standard key was in use. Re-encrypting application data with new derived key.");
       try {
-        await this._reEncryptAllData(oldKey, newDerivedKey, dbManager);
+        await this._reEncryptAllData(oldKey, newDerivedKey, effectiveDbManager);
         console.log("SecureStorage: Application data re-encryption successful.");
         // After successful re-encryption, delete the old standard key's database
         await this.deleteOwnDatabase(); // This also nullifies this.encryptionKey and resets isUsingDerivedKey
