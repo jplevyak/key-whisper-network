@@ -375,21 +375,47 @@ export const getPasskey = async () => {
     }
 
     // Create the publicKey options for authentication with correct types
-    const salt1 = crypto.getRandomValues(new Uint8Array(32)); // Salt for deriving the local encryption key
-    const publicKeyOptions: PublicKeyCredentialRequestOptions = {
+    let saltForPrfEval: Uint8Array | undefined;
+    const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
+
+    if (saltForKeyGenString) {
+      const decodedSalt = base64ToArrayBuffer(saltForKeyGenString);
+      if (decodedSalt.length > 0) {
+        saltForPrfEval = decodedSalt;
+        console.log("getPasskey: Using stored salt for PRF evaluation.");
+      } else {
+        console.error("getPasskey: Failed to decode 'passkey-saltForKeyGen' from localStorage. PRF extension will not be used.");
+      }
+    } else {
+      console.warn("getPasskey: 'passkey-saltForKeyGen' not found in localStorage. PRF extension will not be used.");
+    }
+
+    // Base options, extensions will be added conditionally
+    const basePublicKeyOptions: Omit<PublicKeyCredentialRequestOptions, 'extensions' | 'allowCredentials'> & { allowCredentials: PublicKeyCredentialDescriptor[] } = {
       challenge: window.crypto.getRandomValues(new Uint8Array(32)),
       rpId: window.location.hostname,
-      allowCredentials: [],
-      extensions: {
-        prf: {
-          eval: {
-            first: salt1,
-          },
-        },
-      },
+      allowCredentials: [], // Initialize as empty, will be populated
       timeout: 60000,
       userVerification: "preferred" as UserVerificationRequirement,
     };
+
+    let publicKeyOptions: PublicKeyCredentialRequestOptions;
+
+    if (saltForPrfEval) {
+      publicKeyOptions = {
+        ...basePublicKeyOptions,
+        extensions: {
+          prf: {
+            eval: {
+              first: saltForPrfEval,
+            },
+          },
+        },
+      };
+    } else {
+      // If salt is not available for PRF, do not include the prf extension
+      publicKeyOptions = basePublicKeyOptions;
+    }
 
     if (shouldPreferPlatformAuthenticator() && credentialId) {
       publicKeyOptions.allowCredentials!.push({
