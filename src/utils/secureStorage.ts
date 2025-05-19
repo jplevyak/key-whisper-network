@@ -303,20 +303,5 @@ export class SecureStorage {
     });
   }
 }
-        reject((event.target as IDBOpenDBRequest).error);
-      };
-      request.onsuccess = () => {
-        console.log(`SecureStorage database ${this.DB_NAME} deleted successfully.`);
-        this.encryptionKey = null;
-        this.isUsingDerivedKey = false;
-        resolve();
-      };
-      request.onblocked = () => {
-        console.warn(`Deletion of SecureStorage database ${this.DB_NAME} is blocked.`);
-        reject(new Error(`SecureStorage database ${this.DB_NAME} deletion blocked.`));
-      };
-    });
-  }
-}
 
 export const secureStorage = new SecureStorage();
