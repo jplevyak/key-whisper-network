@@ -1,6 +1,7 @@
 /**
  * Utility functions for encryption/decryption using AES-256
  */
+import { fromByteArray, toByteArray } from 'base64-js';
 
 // Generate a new random AES-256 key
 export const generateAESKey = async (): Promise<CryptoKey> => {
@@ -101,40 +102,25 @@ export const decryptMessage = async (
   }
 };
 
-// Better, URL-safe base64 encoding/decoding functions
+// URL-safe base64 encoding/decoding functions using base64-js
 export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  // Use URL-safe base64 encoding
-  return window
-    .btoa(binary)
+  // fromByteArray returns a standard base64 string.
+  // We need to make it URL-safe.
+  return fromByteArray(bytes)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 };
 
 export const base64ToArrayBuffer = (base64: string): Uint8Array => {
-  // Restore non-URL safe characters and padding
+  // Restore non-URL safe characters. Padding is handled by toByteArray.
   const base64Std = base64.replace(/-/g, "+").replace(/_/g, "/");
-
-  // Add padding if needed
-  const padding = base64Std.length % 4;
-  const paddedBase64 = padding
-    ? base64Std + "=".repeat(4 - padding)
-    : base64Std;
-
+  // toByteArray handles padding automatically.
   try {
-    const binaryString = window.atob(paddedBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
+    return toByteArray(base64Std);
   } catch (error) {
-    console.error("Base64 decoding error:", error);
+    console.error("Base64 decoding error (base64-js):", error);
     // Return empty array in case of error
     return new Uint8Array(0);
   }
