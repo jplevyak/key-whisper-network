@@ -99,12 +99,44 @@ export const ContactsProvider = ({
   // Initialize DB
   useEffect(() => {
     const initializeDatabase = async () => {
+      // Only initialize the main app DB if authenticated and security context is ready
+      if (isAuthenticated && isSecurityContextEstablished) {
+        try {
+          console.log("ContactsContext: Auth and security context established, initializing main DB...");
+          await db.init(); // Call init on the imported db instance
+          setIsDbInitialized(true);
+          console.log("ContactsContext: Main DB initialized successfully.");
+        } catch (error) {
+          console.error("ContactsContext: Failed to initialize main database:", error);
+          toast({
+            title: "Database Error",
+            description:
+              "Could not initialize local database. Some features may not work.",
+            variant: "destructive",
+          });
+          // setIsDbInitialized remains false
+        }
+      } else {
+        setIsDbInitialized(false); // Ensure DB is not marked as initialized if conditions not met
+        console.info("ContactsContext: Main DB initialization deferred (auth or security context not ready).");
+      }
+    };
+    initializeDatabase();
+  }, [isAuthenticated, isSecurityContextEstablished, toast]); // Add dependencies
+
+  // Load contacts and groups from IndexedDB on init
+  useEffect(() => {
+    if (!isDbInitialized || !isAuthenticated || !isSecurityContextEstablished) {
+      if (!isAuthenticated || !isSecurityContextEstablished) {
+        console.info("ContactsContext: Load blocked, user not fully authenticated or security context not established.");
+        setListItems([]); // Clear data if not fully ready
+      }
+      return; 
+    }
+    console.log("ContactsContext: Loading list items as user is authenticated and security context is established.");
+    const loadListItems = async () => {
       try {
-        await db.init(); // Call init on the imported db instance
-        setIsDbInitialized(true);
-        console.log("Database initialized successfully.");
-      } catch (error) {
-        console.error("Failed to initialize database:", error);
+        const storedContactsData = await db.get("contacts", "all");
         toast({
           title: "Database Error",
           description:

@@ -41,9 +41,8 @@ class IndexedDBManager {
     }
 
     // Start new initialization
-    // Ensure SecureStorage is initialized before IndexedDB operations that might need it.
-    // secureStorage.init() will not re-initialize if a key (standard or derived) already exists.
-    await secureStorage.init();
+    // SecureStorage initialization is now handled by AuthContext, not IndexedDBManager.
+    // IndexedDBManager.init() will only ensure its own database connection is open and schema is current.
 
     this.initializationPromise = new Promise<void>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);

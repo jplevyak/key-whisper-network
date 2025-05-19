@@ -58,11 +58,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUsername(storedUsername);
       }
 
-      // Check if secureStorage is using a derived key
-      // Ensure secureStorage is initialized before checking this.
-      // secureStorage.init() will run if initializeWithKey hasn't been called yet.
-      // If initializeWithKey was called (e.g. during login), init() is a no-op.
-      await secureStorage.init(); // Ensure SecureStorage's own key mechanism is primed.
+      // Check if secureStorage is using a derived key.
+      // Only call secureStorage.init() here if no passkey is set up,
+      // otherwise, the login flow will handle derived key or fallback to standard init.
+      if (!storedCredentialId) { // if !hasPasskey essentially
+        await secureStorage.init();
+        console.log("AuthContext: No passkey found, initialized standard SecureStorage.");
+      } else {
+        console.log("AuthContext: Passkey found, deferring SecureStorage init to login flow.");
+      }
       // We do not set isSecurityContextEstablished here; that happens after active login.
       setIsLoading(false);
     };
