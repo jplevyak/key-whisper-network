@@ -99,6 +99,28 @@ class IndexedDBManager {
     return this.initializationPromise;
   }
 
+  async getAllItemsInStore<T extends keyof DBSchema>(
+    storeName: T,
+  ): Promise<{ id: string; value: DBSchema[T]["value"] }[]> {
+    await this.init();
+    if (!this.db) throw new Error("Database not initialized for getAllItemsInStore");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(storeName, "readonly");
+      const objectStore = transaction.objectStore(storeName);
+      const request = objectStore.getAll(); // Gets all records from the store
+
+      request.onerror = () => {
+        console.error(`Error fetching all items from store ${storeName}:`, request.error);
+        reject(request.error);
+      };
+      request.onsuccess = () => {
+        // Ensure the result is an array, even if empty
+        resolve(request.result ? (request.result as { id: string; value: DBSchema[T]["value"] }[]) : []);
+      };
+    });
+  }
+
   // Removed duplicate class definition and redundant import.
   // The class definition above is the correct one.
 
