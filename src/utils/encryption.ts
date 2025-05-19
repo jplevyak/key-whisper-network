@@ -318,6 +318,7 @@ export const deriveEncryptionKeyFromPrf = async (
     return null; // Error during base64 decoding
   }
 
+  console.log('PRF secret:', prfSecret, 'saltForHkdfExtract:', saltForHkdfExtract);
 
   try {
     // 1. Import the PRF secret as an HMAC key for HKDF's extract phase
