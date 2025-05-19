@@ -89,15 +89,19 @@ export const MessagesProvider = ({
   const { getContactKey, listItems, activeItem, getPutRequestId } = // Added getPutRequestId
     useContacts();
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth(); // Get authentication status
+  const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
   // Fetching logic and refs moved to useMessagePolling hook
 
   // Load messages from IndexedDB on init
   useEffect(() => {
-    if (!isAuthenticated) {
-      setMessages({}); // Clear messages if not authenticated
+    if (!isAuthenticated || !isSecurityContextEstablished) {
+      if (Object.keys(messages).length > 0) { // Only log if there was data
+         console.info("MessagesContext: Load blocked, user not fully authenticated or security context not established.");
+      }
+      setMessages({}); // Clear messages if not fully ready
       return;
     }
+    console.log("MessagesContext: Loading messages as user is authenticated and security context is established.");
     const loadMessages = async () => {
       try {
         const loadedMessages = await loadMessagesFromStorage();
@@ -115,23 +119,32 @@ export const MessagesProvider = ({
     };
 
     loadMessages();
-  }, [isAuthenticated, toast]);
+  }, [isAuthenticated, isSecurityContextEstablished, toast]);
 
   // Save messages to IndexedDB whenever they change
   useEffect(() => {
-    if (!isAuthenticated) {
-      return; // Don't save if not authenticated
+    if (!isAuthenticated || !isSecurityContextEstablished) {
+      if (Object.keys(messages).length > 0) { // Only log if there was something to save
+        console.info("MessagesContext: Save blocked, user not fully authenticated or security context not established.");
+      }
+      return; // Don't save if not fully ready
     }
     // No need to check length here, saveMessagesToStorage handles empty state
+    console.log("MessagesContext: Saving messages as user is authenticated and security context is established.");
     saveMessagesToStorage(messages).catch((error) => {
       console.error("Failed to save messages to storage:", error);
       // Optionally show a toast here
     });
-  }, [messages, isAuthenticated]);
+  }, [messages, isAuthenticated, isSecurityContextEstablished]);
 
   // Use the message polling hook - it runs automatically
   // Its effectiveness will depend on activeItem, which becomes null if not authenticated due to ContactsContext changes.
-  useMessagePolling({ setMessages, activeItemId: activeItem?.id });
+  // And on isAuthenticated & isSecurityContextEstablished for its internal fetch operations.
+  useMessagePolling({ 
+    setMessages, 
+    activeItemId: activeItem?.id,
+    isReadyToFetch: isAuthenticated && isSecurityContextEstablished // Pass readiness
+  });
 
   // Send a message to a contact or group
   const sendMessage = async (

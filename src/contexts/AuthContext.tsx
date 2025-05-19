@@ -22,6 +22,7 @@ type AuthContextType = {
   registerPasskey: (username: string) => Promise<boolean>;
   derivedKey: CryptoKey | null; // Changed from getDerivedKey and string to CryptoKey
   deleteEverything: () => Promise<void>;
+  isSecurityContextEstablished: boolean; // New flag
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,6 +35,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [supportsBiometric, setSupportsBiometric] = useState<boolean>(false);
   const [supportsPasskeys, setSupportsPasskeys] = useState<boolean>(false);
   const [derivedKey, setDerivedKey] = useState<CryptoKey | null>(null); // Changed type
+  const [isSecurityContextEstablished, setIsSecurityContextEstablished] = useState<boolean>(false); // New state
   const { toast } = useToast();
 
   useEffect(() => {
@@ -60,27 +62,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Ensure secureStorage is initialized before checking this.
       // secureStorage.init() will run if initializeWithKey hasn't been called yet.
       // If initializeWithKey was called (e.g. during login), init() is a no-op.
-      await secureStorage.init(); // Ensure it's initialized
-
+      await secureStorage.init(); // Ensure SecureStorage's own key mechanism is primed.
+      // We do not set isSecurityContextEstablished here; that happens after active login.
       setIsLoading(false);
     };
 
     checkSupport();
   }, []);
 
-  const setPrfStorageKeyIfAvailable = async (credential) => {
-    const extensionResults = credential.getClientExtensionResults();
-    if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
-      const prfSecret = new Uint8Array(extensionResults.prf.results.first);
-      const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
-      if (saltForKeyGenString) {
-        const key = await deriveEncryptionKeyFromPrf(prfSecret, saltForKeyGenString);
-        setDerivedKey(key);
-        if (key) {
-          await secureStorage.initializeWithKey(key);
+  const setPrfStorageKeyIfAvailable = async (credential): Promise<boolean> => {
+    try {
+      const extensionResults = credential.getClientExtensionResults();
+      if (extensionResults.prf && extensionResults.prf.results && extensionResults.prf.results.first) {
+        const prfSecret = new Uint8Array(extensionResults.prf.results.first);
+        const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
+        if (saltForKeyGenString) {
+          const key = await deriveEncryptionKeyFromPrf(prfSecret, saltForKeyGenString);
+          setDerivedKey(key); // Store for potential UI display or direct use if needed
+          if (key) {
+            await secureStorage.initializeWithKey(key, db); // Pass db instance
+            toast({
+              title: "Secure Storage Enhanced",
+              description: "Database encryption upgraded with your passkey.",
+            });
+          } else {
+            // This case should ideally not be reached if deriveEncryptionKeyFromPrf is robust
+            console.error("Derived key is null despite PRF secret and salt. Falling back to standard key.");
+            await secureStorage.init(); // Fallback to standard key
+            toast({
+              title: "Security Enhancement Issue",
+              description: "Could not derive passkey-based key. Using standard protection.",
+              variant: "warning",
+            });
+          }
+        } else {
+          console.warn("Salt for key generation not found. Cannot derive encryption key for DB. Using standard protection.");
+          await secureStorage.init(); // Fallback to standard key
           toast({
-            title: "Secure Storage Enhanced",
-            description: "Database encryption upgraded with your passkey.",
+            title: "Security Notice",
+            description: "Could not enhance database security with passkey. Using standard protection.",
+          });
+        }
+      } else {
+        console.log("PRF extension data not available. Using standard database protection.");
+        await secureStorage.init(); // Fallback to standard key
+        toast({
+          title: "Standard Security",
+          description: "Passkey login successful. Using standard database protection.",
             variant: "default",
           });
         }
@@ -129,18 +157,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           description: "Please set up a passkey to continue",
         });
         const registered = await registerPasskey(usernameInput);
-        return registered;
+        // After registration, user still needs to login.
+        // registerPasskey returns true on success, but login isn't complete yet.
+        loginSuccessful = registered; // If registration is part of login, then it's "successful" if reg is.
+                                     // However, the typical flow is reg -> then separate login.
+                                     // For now, let's assume if registerPasskey is called, it's the end of this "login" attempt.
       }
     } catch (error) {
       console.error("Login error:", error);
       toast({
         title: "Authentication Error",
-        description: "An error occurred during authentication",
+        description: "An error occurred during authentication.",
         variant: "destructive",
       });
-      setIsLoading(false);
-      return false;
     }
+    setIsLoading(false);
+    return loginSuccessful;
   };
 
   const registerPasskey = async (usernameInput: string) => {
@@ -181,10 +213,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = () => {
     setIsAuthenticated(false);
-    // We don't remove the username or passkey credentials on logout
+    setIsSecurityContextEstablished(false); // Reset security context flag
+    // Username and passkey credentials remain for next login attempt.
+    // SecureStorage key (if derived) might still be in memory until next init/initializeWithKey.
+    // Consider calling secureStorage.init() here if you want to revert to standard key immediately on logout,
+    // or a new method like secureStorage.clearActiveKey(). For now, this is okay.
     toast({
       title: "Logged out",
-      description: "You have been securely logged out",
+      description: "You have been securely logged out.",
     });
   };
 
@@ -208,6 +244,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUsername(null);
       setHasPasskey(false);
       setDerivedKey(null);
+      setIsSecurityContextEstablished(false); // Reset security context flag
 
       toast({
         title: "All Data Deleted",
@@ -245,6 +282,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       registerPasskey,
       derivedKey, // Changed from getDerivedKey
       deleteEverything,
+      isSecurityContextEstablished, // Expose new flag
     }}
     >
     {children}

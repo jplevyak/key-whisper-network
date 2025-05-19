@@ -94,7 +94,7 @@ export const ContactsProvider = ({
   const { toast } = useToast();
   // Removed: const messagesContext = useMessages();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
-  const { isAuthenticated } = useAuth(); // Get authentication status
+  const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
 
   // Initialize DB
   useEffect(() => {
@@ -119,12 +119,14 @@ export const ContactsProvider = ({
 
   // Load contacts and groups from IndexedDB on init
   useEffect(() => {
-    if (!isDbInitialized || !isAuthenticated) {
-      if (!isAuthenticated) {
-        setListItems([]); // Clear data if not authenticated
+    if (!isDbInitialized || !isAuthenticated || !isSecurityContextEstablished) {
+      if (!isAuthenticated || !isSecurityContextEstablished) {
+        console.info("ContactsContext: Load blocked, user not fully authenticated or security context not established.");
+        setListItems([]); // Clear data if not fully ready
       }
       return; 
     }
+    console.log("ContactsContext: Loading list items as user is authenticated and security context is established.");
     const loadListItems = async () => {
       try {
         const storedContactsData = await db.get("contacts", "all");
@@ -150,15 +152,18 @@ export const ContactsProvider = ({
     };
 
     loadListItems();
-  }, [isDbInitialized, isAuthenticated, toast]);
+  }, [isDbInitialized, isAuthenticated, isSecurityContextEstablished, toast]);
 
   // Save contacts and groups to IndexedDB whenever listItems change
   useEffect(() => {
-    if (!isDbInitialized || !isAuthenticated) {
-      // Only proceed if DB is initialized and user is authenticated
+    if (!isDbInitialized || !isAuthenticated || !isSecurityContextEstablished) {
+      // Only proceed if DB is initialized and user is authenticated and security context is established
+      if (listItems.length > 0) { // Only log if there was something to save
+        console.info("ContactsContext: Save blocked, user not fully authenticated or security context not established.");
+      }
       return;
     }
-
+    console.log("ContactsContext: Saving list items as user is authenticated and security context is established.");
     const saveListItems = async () => {
       try {
         const currentContacts = listItems.filter(
@@ -208,7 +213,7 @@ export const ContactsProvider = ({
     };
     // The saveListItems function itself handles the logic for empty or populated arrays.
     saveListItems();
-  }, [listItems, isDbInitialized, isAuthenticated, toast]);
+  }, [listItems, isDbInitialized, isAuthenticated, isSecurityContextEstablished, toast]);
 
   // Generate a new AES-256 key for a new contact (remains contact-specific)
   const generateContactKey = async (): Promise<string> => {
