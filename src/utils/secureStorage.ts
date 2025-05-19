@@ -279,12 +279,30 @@ export class SecureStorage {
   }
 
   async deleteOwnDatabase(): Promise<void> {
-    // No need to close a DB connection here as SecureStorage doesn't keep one open.
+    // No need to explicitly close a DB connection here as SecureStorage doesn't keep one open.
     // It opens and closes connections for each operation (getStoredKey, storeKey).
+    // However, to mitigate "blocked" errors, we introduce a small delay.
     return new Promise((resolve, reject) => {
-      const request = indexedDB.deleteDatabase(this.DB_NAME);
-      request.onerror = (event) => {
-        console.error(`Error deleting SecureStorage database ${this.DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+      setTimeout(() => {
+        const request = indexedDB.deleteDatabase(this.DB_NAME);
+        request.onerror = (event) => {
+          console.error(`Error deleting SecureStorage database ${this.DB_NAME}:`, (event.target as IDBOpenDBRequest).error);
+          reject((event.target as IDBOpenDBRequest).error);
+        };
+        request.onsuccess = () => {
+          console.log(`SecureStorage database ${this.DB_NAME} deleted successfully after delay.`);
+          this.encryptionKey = null;
+          this.isUsingDerivedKey = false;
+          resolve();
+        };
+        request.onblocked = () => {
+          console.warn(`Deletion of SecureStorage database ${this.DB_NAME} is blocked even after delay.`);
+          reject(new Error(`SecureStorage database ${this.DB_NAME} deletion blocked.`));
+        };
+      }, 100); // 100ms delay, similar to IndexedDBManager
+    });
+  }
+}
         reject((event.target as IDBOpenDBRequest).error);
       };
       request.onsuccess = () => {
