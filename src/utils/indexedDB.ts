@@ -29,20 +29,21 @@ const STORES = ["contacts", "messages", "keys", "groups"] as const;
 
 class IndexedDBManager {
   private db: IDBDatabase | null = null;
+  private initializing: bool = false;
 
   async init(): Promise<void> { // Removed derivedKey parameter
-    if (this.db) return;
-
-    // SecureStorage must be initialized before any DB operations.
-    // SecureStorage must be initialized before any DB operations.
-    // If AuthContext called secureStorage.initializeWithKey(), secureStorage.init() will just return.
-    // Otherwise, secureStorage.init() will set up secureStorage with its default "main_key".
     await secureStorage.init();
+
+    if (this.db || this.initializing) return;
+    this.initializing = true;
 
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        this.initializing = false;
+        reject(request.error);
+      }
 
       request.onsuccess = () => {
         if (this.db) {
@@ -50,6 +51,7 @@ class IndexedDBManager {
           console.warn(`Database ${DB_NAME} already opened. Closing the previous connection.`);
         }
         this.db = request.result;
+        this.initializing = false;
         resolve();
       };
 
@@ -60,6 +62,7 @@ class IndexedDBManager {
         }
         const db = (event.target as IDBOpenDBRequest).result;
         this.db = db;
+        this.initializing = false;
 
         STORES.forEach((storeName) => {
           if (!db.objectStoreNames.contains(storeName)) {
