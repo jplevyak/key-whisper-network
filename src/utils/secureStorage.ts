@@ -143,6 +143,10 @@ export class SecureStorage {
     return this.isUsingDerivedKey;
   }
 
+  public getStandardKeyWasRetrievedFromStorage(): boolean {
+    return this.standardKeyWasRetrievedFromStorage;
+  }
+
   async init(): Promise<void> {
     // If encryptionKey is already set (e.g., by initializeWithKey or a previous init), don't re-initialize.
     if (this.encryptionKey) {

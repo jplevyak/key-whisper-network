@@ -95,24 +95,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
           }
         } else { // This else corresponds to if (saltForKeyGenString)
-          console.warn("Salt for key generation not found. Cannot derive encryption key for DB. Using standard protection.");
+          console.warn("Salt for key generation not found. Cannot derive encryption key for DB. Attempting standard protection.");
           await secureStorage.init(); // Fallback to standard key
-          toast({
-            title: "Security Notice",
-            description: "Could not enhance database security with passkey. Using standard protection.",
-          });
+          if (secureStorage.getIsUsingDerivedKey()) { // init() was no-op, derived key still active
+            toast({ title: "Derived Key Active", description: "Passkey security remains active." });
+            return true;
+          } else if (hasPasskey && !secureStorage.getStandardKeyWasRetrievedFromStorage()) {
+            toast({ title: "Security Alert", description: "Passkey security could not be applied. Data might be inaccessible if previously using passkey security.", variant: "destructive" });
+            return false; // Critical failure for passkey user if new standard key generated
+          } else {
+            toast({ title: "Standard Security Active", description: "Using standard database protection." });
+            return true;
+          }
         }
       } else { // This else corresponds to if (extensionResults.prf && ...)
-        console.log("PRF extension data not available. Using standard database protection.");
+        console.log("PRF extension data not available. Attempting standard database protection.");
         await secureStorage.init(); // Fallback to standard key
-        toast({
-          title: "Standard Security",
-          description: "Passkey login successful. Using standard database protection.",
-          variant: "default",
-        });
+        if (secureStorage.getIsUsingDerivedKey()) { // init() was no-op, derived key still active
+            toast({ title: "Derived Key Active", description: "Passkey security remains active." });
+            return true;
+        } else if (hasPasskey && !secureStorage.getStandardKeyWasRetrievedFromStorage()) {
+            toast({ title: "Security Alert", description: "Passkey security could not be applied. Data might be inaccessible if previously using passkey security.", variant: "destructive" });
+            return false; // Critical failure for passkey user if new standard key generated
+        } else {
+            toast({ title: "Standard Security Active", description: "Using standard database protection." });
+            return true;
+        }
       }
-      // Removed extraneous 'else' blocks that were causing syntax issues.
-      return true; // SecureStorage setup was attempted (successfully or with fallback)
+      // This path should ideally not be reached if all conditions above are handled.
+      // However, if key was successfully derived and initializedWithKey called, it returns true.
+      // If any of the fallbacks to init() happened, their return values dictate the outcome.
+      // The original `return true` here was for the successful derived key path.
+      return true; 
     } catch (error) {
       console.error("Critical error during setPrfStorageKeyIfAvailable:", error);
       toast({
