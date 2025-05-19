@@ -95,7 +95,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               variant: "warning",
             });
           }
-        } else {
+        } else { // This else corresponds to if (saltForKeyGenString)
           console.warn("Salt for key generation not found. Cannot derive encryption key for DB. Using standard protection.");
           await secureStorage.init(); // Fallback to standard key
           toast({
@@ -103,65 +103,67 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             description: "Could not enhance database security with passkey. Using standard protection.",
           });
         }
-      } else {
+      } else { // This else corresponds to if (extensionResults.prf && ...)
         console.log("PRF extension data not available. Using standard database protection.");
         await secureStorage.init(); // Fallback to standard key
         toast({
           title: "Standard Security",
           description: "Passkey login successful. Using standard database protection.",
-            variant: "default",
-          });
-        }
-      } else {
-        console.warn("Salt for key generation not found. Cannot derive encryption key for DB.");
-        toast({
-          title: "Security Notice",
-          description: "Could not enhance database security with passkey. Using standard protection.",
-          variant: "default", // Or "warning" if you have one
+          variant: "default",
         });
       }
-    } else {
+      // Removed extraneous 'else' blocks that were causing syntax issues.
+      return true; // SecureStorage setup was attempted (successfully or with fallback)
+    } catch (error) {
+      console.error("Critical error during setPrfStorageKeyIfAvailable:", error);
       toast({
-        title: "Standard Security",
-        description: "Passkey login successful. Using standard database protection.",
-        variant: "default",
+        title: "Security Setup Failed",
+        description: "A critical error occurred while setting up secure storage.",
+        variant: "destructive",
       });
+      return false; // Indicate critical failure
     }
   };
 
   const login = async (usernameInput: string) => {
     setIsLoading(true);
+    let loginSuccessful = false; // Initialize
     try {
       if (hasPasskey) {
         const credential = await getPasskey();
         if (credential) {
-          setIsAuthenticated(true);
-          setUsername(usernameInput);
-          localStorage.setItem("username", usernameInput);
-          setIsLoading(false);
-          await setPrfStorageKeyIfAvailable(credential);
-          return true;
-        } else {
+          const securitySetupSuccess = await setPrfStorageKeyIfAvailable(credential);
+          if (securitySetupSuccess) {
+            setIsSecurityContextEstablished(true); // SecureStorage is now ready
+            setIsAuthenticated(true);
+            setUsername(usernameInput);
+            localStorage.setItem("username", usernameInput);
+            loginSuccessful = true;
+          } else {
+            // Error toast already shown by setPrfStorageKeyIfAvailable for critical failures
+            // Stay unauthenticated if security context couldn't be established
+            setIsAuthenticated(false);
+            setIsSecurityContextEstablished(false);
+            // loginSuccessful remains false
+          }
+        } else { // if (!credential)
           toast({
             title: "Authentication Failed",
             description: "Could not verify your passkey",
             variant: "destructive",
           });
-          setIsLoading(false);
-          return false;
+          // loginSuccessful remains false
         }
-      } else {
+      } else { // if (!hasPasskey)
         // If this is the first time, prompt to create a passkey
         toast({
           title: "Creating Account",
           description: "Please set up a passkey to continue",
         });
-        const registered = await registerPasskey(usernameInput);
-        // After registration, user still needs to login.
-        // registerPasskey returns true on success, but login isn't complete yet.
-        loginSuccessful = registered; // If registration is part of login, then it's "successful" if reg is.
-                                     // However, the typical flow is reg -> then separate login.
-                                     // For now, let's assume if registerPasskey is called, it's the end of this "login" attempt.
+        // Registration itself doesn't mean login is successful for this attempt.
+        // User needs to login after registering.
+        await registerPasskey(usernameInput);
+        // loginSuccessful remains false for this login attempt.
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -170,8 +172,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         description: "An error occurred during authentication.",
         variant: "destructive",
       });
+      // loginSuccessful remains false
     }
-    setIsLoading(false);
+    setIsLoading(false); // Consolidated
     return loginSuccessful;
   };
 
