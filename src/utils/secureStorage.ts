@@ -65,12 +65,23 @@ export class SecureStorage {
           try {
             decryptedData = await this.decrypt(item.value);
           } catch (e) {
-            console.error(`SecureStorage: Failed to decrypt item ${item.id} in store ${storeName} with old key. Skipping.`, e);
-            continue; // Skip this item if decryption fails
+            // Decryption with oldKey failed. Try with newKey.
+            console.warn(`SecureStorage: Failed to decrypt item ${item.id} in store ${storeName} with old key. Attempting with new key. Error: ${e}`);
+            try {
+              this.encryptionKey = newKey; // Try newKey for decryption
+              decryptedData = await this.decrypt(item.value);
+              // If this succeeds, data is already using newKey. No need to re-encrypt.
+              console.log(`SecureStorage: Item ${item.id} in store ${storeName} was already encrypted with new key. Skipping re-encryption for this item.`);
+              continue; // Go to next item in the current store
+            } catch (e2) {
+              // Decryption failed with both old and new key. This is a genuine problem.
+              console.error(`SecureStorage: Failed to decrypt item ${item.id} in store ${storeName} with both old and new keys. Skipping. Original error: ${e}, New key error: ${e2}`);
+              continue; // Skip this item
+            }
           }
 
-          // Set SecureStorage to use the new key for the subsequent encryption by dbManager.set
-          this.encryptionKey = newKey;
+          // If decryption with oldKey succeeded, proceed to re-encrypt with newKey
+          this.encryptionKey = newKey; // Set for encryption
           
           // Pass the decrypted data to dbManager.set.
           // dbManager.set will internally call secureStorage.encrypt, which will now use the newKey.
