@@ -137,31 +137,6 @@ export const ContactsProvider = ({
     const loadListItems = async () => {
       try {
         const storedContactsData = await db.get("contacts", "all");
-        toast({
-          title: "Database Error",
-          description:
-            "Could not initialize local database. Some features may not work.",
-          variant: "destructive",
-        });
-        // setIsDbInitialized remains false
-      }
-    };
-    initializeDatabase();
-  }, [toast]); // toast is a stable dependency from useToast
-
-  // Load contacts and groups from IndexedDB on init
-  useEffect(() => {
-    if (!isDbInitialized || !isAuthenticated || !isSecurityContextEstablished) {
-      if (!isAuthenticated || !isSecurityContextEstablished) {
-        console.info("ContactsContext: Load blocked, user not fully authenticated or security context not established.");
-        setListItems([]); // Clear data if not fully ready
-      }
-      return; 
-    }
-    console.log("ContactsContext: Loading list items as user is authenticated and security context is established.");
-    const loadListItems = async () => {
-      try {
-        const storedContactsData = await db.get("contacts", "all");
         const loadedContacts: Contact[] = storedContactsData
           ? JSON.parse(storedContactsData)
           : [];
