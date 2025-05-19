@@ -247,6 +247,7 @@ export class SecureStorage {
       throw new Error("SecureStorage not initialized. Call init() or initializeWithKey() first.");
     }
 
+    console.log(`SecureStorage: Encrypting data. Using derived key: ${this.isUsingDerivedKey}`);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encodedData = new TextEncoder().encode(data);
 
@@ -272,6 +273,7 @@ export class SecureStorage {
       throw new Error("SecureStorage not initialized. Call init() or initializeWithKey() first.");
     }
 
+    console.log(`SecureStorage: Decrypting data. Attempting with derived key: ${this.isUsingDerivedKey}`);
     try {
       const combined = toByteArray(encryptedData);
       const iv = combined.slice(0, 12);
