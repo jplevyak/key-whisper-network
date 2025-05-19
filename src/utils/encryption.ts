@@ -122,13 +122,7 @@ export const base64ToArrayBuffer = (base64: string): Uint8Array => {
   while (base64Std.length % 4 !== 0) {
     base64Std += "=";
   }
-  try {
-    return toByteArray(base64Std);
-  } catch (error) {
-    console.error("Base64 decoding error (base64-js):", error);
-    // Return empty array in case of error
-    return new Uint8Array(0);
-  }
+  return toByteArray(base64Std);
 };
 
 // Define WebAuthn types to match the expected types
@@ -272,7 +266,7 @@ export const createPasskey = async (username: string) => {
 
       const extensionResults = credential.getClientExtensionResults();
       if (extensionResults.prf) {
-          console.log("PRF extension was processed during registration.", extensionResults.prf);
+          console.log("PRF extension was processed during registration.");
           if (extensionResults.prf.enabled) { // Some interpretations suggest an 'enabled' field
               console.log("PRF capability explicitly enabled for this credential.");
           }
@@ -308,8 +302,6 @@ export const deriveEncryptionKeyFromPrf = async (
     console.error("Failed to decode salt for key generation.");
     return null; // Error during base64 decoding
   }
-
-  console.log('PRF secret:', prfSecret, 'saltForHkdfExtract:', saltForHkdfExtract);
 
   try {
     // 1. Import the PRF secret as an HMAC key for HKDF's extract phase
@@ -391,7 +383,7 @@ export const getPasskey = async () => {
         extensions: {
           prf: {
             eval: {
-              first: saltForPrfEval,
+              first: base64ToArrayBuffer(saltForPrfEval),
             },
           },
         },
