@@ -110,13 +110,18 @@ export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   return fromByteArray(bytes)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .replace(/=+$/, ""); // Remove padding
 };
 
 export const base64ToArrayBuffer = (base64: string): Uint8Array => {
-  // Restore non-URL safe characters. Padding is handled by toByteArray.
-  const base64Std = base64.replace(/-/g, "+").replace(/_/g, "/");
-  // toByteArray handles padding automatically.
+  // Restore non-URL safe characters.
+  let base64Std = base64.replace(/-/g, "+").replace(/_/g, "/");
+  // Add padding if it was removed, as toByteArray expects it.
+  // The original string length must be a multiple of 4 after restoring standard chars.
+  // If not, padding was removed.
+  while (base64Std.length % 4 !== 0) {
+    base64Std += "=";
+  }
   try {
     return toByteArray(base64Std);
   } catch (error) {
