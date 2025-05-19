@@ -18,6 +18,10 @@ export class SecureStorage {
     const wasPreviouslyUsingStandardKey = oldKey && !this.isUsingDerivedKey;
 
     if (wasPreviouslyUsingStandardKey && oldKey) {
+      if (!dbManager) {
+        console.error("SecureStorage: dbManager is undefined. Cannot proceed with re-encryption of application data.");
+        throw new Error("SecureStorage: IndexedDBManager instance is required for data re-encryption.");
+      }
       console.log("SecureStorage: Standard key was in use. Re-encrypting application data with new derived key.");
       try {
         await this._reEncryptAllData(oldKey, newDerivedKey, dbManager);
