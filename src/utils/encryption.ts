@@ -378,16 +378,9 @@ export const getPasskey = async () => {
     let saltForPrfEval: Uint8Array | undefined;
     const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
 
-    if (saltForKeyGenString) {
-      const decodedSalt = base64ToArrayBuffer(saltForKeyGenString);
-      if (decodedSalt.length > 0) {
-        saltForPrfEval = decodedSalt;
-        console.log("getPasskey: Using stored salt for PRF evaluation.");
-      } else {
-        console.error("getPasskey: Failed to decode 'passkey-saltForKeyGen' from localStorage. PRF extension will not be used.");
-      }
-    } else {
-      console.warn("getPasskey: 'passkey-saltForKeyGen' not found in localStorage. PRF extension will not be used.");
+    if (!saltForKeyGenString) {
+      console.error("No passkey-saltForKeyGen found in localStorage");
+      return null;
     }
 
     // Base options, extensions will be added conditionally
