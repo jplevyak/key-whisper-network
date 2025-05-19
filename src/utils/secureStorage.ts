@@ -1,4 +1,7 @@
 import { fromByteArray, toByteArray } from "base64-js";
+import { type IndexedDBManager as IDBManagerType, STORES as APP_STORES } from "./indexedDB"; // Import for type usage and constants
+import { importKey } from "./encryption";
+
 
 // A utility for encrypting/decrypting data with a non-extractable key
 export class SecureStorage {
@@ -8,11 +11,111 @@ export class SecureStorage {
   private readonly KEY_ID = "main_key";
   private isUsingDerivedKey = false;
 
-  async initializeWithKey(key: CryptoKey): Promise<void> {
-    this.encryptionKey = key;
+  // Pass the application's IndexedDBManager instance for re-encryption
+  async initializeWithKey(newDerivedKey: CryptoKey, dbManager: IDBManagerType): Promise<void> {
+    console.log("SecureStorage: Attempting to initialize with derived PRF key.");
+    const oldKey = this.encryptionKey;
+    const wasPreviouslyUsingStandardKey = oldKey && !this.isUsingDerivedKey;
+
+    if (wasPreviouslyUsingStandardKey && oldKey) {
+      console.log("SecureStorage: Standard key was in use. Re-encrypting application data with new derived key.");
+      try {
+        await this._reEncryptAllData(oldKey, newDerivedKey, dbManager);
+        console.log("SecureStorage: Application data re-encryption successful.");
+        // After successful re-encryption, delete the old standard key's database
+        await this.deleteOwnDatabase(); // This also nullifies this.encryptionKey and resets isUsingDerivedKey
+        console.log("SecureStorage: Old standard key database ('secure_storage') deleted.");
+      } catch (error) {
+        console.error("SecureStorage: Failed to re-encrypt application data. Aborting derived key initialization.", error);
+        // Do not proceed to set the new key if re-encryption fails,
+        // leave the system in the state with the old key.
+        throw new Error("Failed to re-encrypt data with new key."); // Propagate error
+      }
+    } else if (this.encryptionKey && this.isUsingDerivedKey && this.encryptionKey !== newDerivedKey) {
+      console.warn("SecureStorage: Already initialized with a different derived key. Proceeding with the new derived key. Data re-encryption from a previous derived key to this new one is not automatically handled by this path.");
+    } else if (!oldKey) {
+      console.log("SecureStorage: No previous key found. Initializing directly with derived key.");
+    }
+
+
+    this.encryptionKey = newDerivedKey;
     this.isUsingDerivedKey = true;
-    console.log("SecureStorage initialized with derived PRF key.");
+    console.log("SecureStorage: Successfully initialized with derived PRF key.");
   }
+
+  private async _reEncryptAllData(oldKey: CryptoKey, newKey: CryptoKey, dbManager: IDBManagerType): Promise<void> {
+    // Stores that contain strings encrypted by SecureStorage's key
+    const storesToReEncryptDirectly = ["contacts", "messages", "groups"] as const;
+
+    for (const storeName of storesToReEncryptDirectly) {
+      console.log(`SecureStorage: Re-encrypting store: ${storeName}`);
+      const items = await dbManager.getAllItemsInStore(storeName);
+      for (const item of items) {
+        if (typeof item.value === 'string' && item.value.length > 0) { // Ensure value is a non-empty string
+          // Decrypt with old key
+          this.encryptionKey = oldKey;
+          let decryptedData;
+          try {
+            decryptedData = await this.decrypt(item.value);
+          } catch (e) {
+            console.error(`SecureStorage: Failed to decrypt item ${item.id} in store ${storeName} with old key. Skipping.`, e);
+            continue; // Skip this item if decryption fails
+          }
+
+          // Set SecureStorage to use the new key for the subsequent encryption by dbManager.set
+          this.encryptionKey = newKey;
+          
+          // Pass the decrypted data to dbManager.set.
+          // dbManager.set will internally call secureStorage.encrypt, which will now use the newKey.
+          try {
+            await dbManager.set(storeName, item.id, decryptedData);
+          } catch (e) {
+            console.error(`SecureStorage: Failed to set re-encrypted item ${item.id} in store ${storeName}. Skipping.`, e);
+            // Potentially revert this.encryptionKey or handle more gracefully
+            continue;
+          }
+        } else if (item.value && typeof item.value !== 'string') {
+          console.warn(`SecureStorage: Item ${item.id} in store ${storeName} is not a string (type: ${typeof item.value}), skipping re-encryption.`);
+        }
+      }
+      console.log(`SecureStorage: Finished re-encrypting store: ${storeName}`);
+    }
+
+    // Handle 'keys' store separately for old encrypted string formats
+    console.log("SecureStorage: Processing 'keys' store for potential re-encryption/conversion.");
+    const keyStoreItems = await dbManager.getAllItemsInStore("keys");
+    for (const item of keyStoreItems) {
+      if (typeof item.value === 'string' && item.value.length > 0) { // Old format: encrypted key string
+        console.log(`SecureStorage: Key ${item.id} in 'keys' store is in old string format. Decrypting and converting to CryptoKey.`);
+        this.encryptionKey = oldKey; // Use old key for decryption
+        let decryptedKeyDataString;
+        try {
+          decryptedKeyDataString = await this.decrypt(item.value);
+        } catch (e) {
+          console.error(`SecureStorage: Failed to decrypt old format key string ${item.id} in 'keys' store. Skipping.`, e);
+          continue;
+        }
+        
+        const importedKey = await importKey(decryptedKeyDataString);
+
+        // Store the CryptoKey directly. dbManager.set for 'keys' expects a CryptoKey.
+        // The SecureStorage's main encryptionKey (oldKey/newKey) is not used to encrypt/decrypt the CryptoKey itself here.
+        try {
+          await dbManager.set("keys", item.id, importedKey);
+          console.log(`SecureStorage: Key ${item.id} converted to CryptoKey and updated in 'keys' store.`);
+        } catch (e) {
+          console.error(`SecureStorage: Failed to set converted CryptoKey ${item.id} in 'keys' store. Skipping.`, e);
+          continue;
+        }
+      } else if (item.value && !(item.value instanceof CryptoKey) && typeof item.value !== 'string') {
+         console.warn(`SecureStorage: Item ${item.id} in 'keys' store is neither a string nor a CryptoKey (type: ${typeof item.value}), skipping.`);
+      }
+    }
+    // Restore newKey as the active key for any subsequent operations outside this method
+    this.encryptionKey = newKey;
+    console.log("SecureStorage: Finished processing 'keys' store.");
+  }
+
 
   public getIsUsingDerivedKey(): boolean {
     return this.isUsingDerivedKey;

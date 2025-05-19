@@ -25,7 +25,7 @@ interface DBSchema {
 const DB_NAME = "ccred_db";
 const DB_VERSION = 4;
 // Add 'groups' to the list of stores
-const STORES = ["contacts", "messages", "keys", "groups"] as const;
+export const STORES = ["contacts", "messages", "keys", "groups"] as const;
 
 class IndexedDBManager {
   private db: IDBDatabase | null = null;
