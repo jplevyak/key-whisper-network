@@ -360,10 +360,8 @@ export const getPasskey = async () => {
     // Create the publicKey options for authentication with correct types
     let saltForPrfEval: Uint8Array | undefined;
     const saltForKeyGenString = localStorage.getItem("passkey-saltForKeyGen");
-
-    if (!saltForKeyGenString) {
-      console.error("No passkey-saltForKeyGen found in localStorage");
-      return null;
+    if (saltForKeyGenString) {
+      saltForPrfEval = base64ToArrayBuffer(saltForKeyGenString);
     }
 
     // Base options, extensions will be added conditionally
@@ -383,7 +381,7 @@ export const getPasskey = async () => {
         extensions: {
           prf: {
             eval: {
-              first: base64ToArrayBuffer(saltForPrfEval),
+              first: saltForPrfEval,
             },
           },
         },
