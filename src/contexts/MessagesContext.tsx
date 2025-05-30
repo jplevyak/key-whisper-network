@@ -140,6 +140,7 @@ export const MessagesProvider = ({
       console.error("Failed to save messages to storage:", error);
       // Optionally show a toast here
     });
+    sendPendingMessages();
   }, [messages, isAuthenticated, isSecurityContextEstablished]);
 
   // useEffect to calculate and update pending message count whenever messages change
@@ -201,7 +202,6 @@ export const MessagesProvider = ({
           JSON.stringify(messageContent),
           key,
         );
-        // Removed direct API call, message will be sent by sendPendingMessages
 
         const newMessage: Message = {
           id: `${localMessageIdBase}-c-${contact.id}`,
@@ -216,8 +216,6 @@ export const MessagesProvider = ({
           ...prev,
           [contact.id]: [...(prev[contact.id] || []), newMessage],
         }));
-        // Call sendPendingMessages after a short delay to allow state to update
-        setTimeout(() => sendPendingMessages(), 250);
         return true; // Local save is successful
       } catch (error) {
         console.error(
@@ -288,17 +286,6 @@ export const MessagesProvider = ({
         ...prev,
         [group.id]: [...(prev[group.id] || []), localGroupMessage],
       }));
-
-      // Removed direct API calls for each member.
-      // The localGroupMessage is already marked as pending: true.
-      // sendPendingMessages will handle iterating through members and sending.
-
-      // Call sendPendingMessages to process the newly added pending group message
-      setTimeout(() => sendPendingMessages(), 250);
-
-      // No need to update pending status based on allSendsSuccessful here,
-      // as sendPendingMessages will manage that for the group message.
-      // The toast for partial send errors will now be handled within sendPendingMessages if necessary.
 
       return true; // Local save is successful
     }
@@ -649,7 +636,7 @@ export const MessagesProvider = ({
     const intervalId = setInterval(() => {
       console.log("Interval: Triggering sendPendingMessages.");
       sendPendingMessages();
-    }, 30000); // 30 seconds
+    }, 1000); // every second
 
     return () => clearInterval(intervalId);
   }, [sendPendingMessages]);
