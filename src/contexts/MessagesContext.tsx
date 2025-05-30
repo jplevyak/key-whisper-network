@@ -12,6 +12,7 @@ import {
   loadMessagesFromStorage,
   saveMessagesToStorage,
 } from "@/services/messageStorage";
+import { putMessage } from "@/services/apiService"; // Import the new service
 import { useMessagePolling } from "@/hooks/useMessagePolling";
 import { useAuth } from "./AuthContext"; // Added for authentication status
 
@@ -183,18 +184,7 @@ export const MessagesProvider = ({
         const requestId = await getPutRequestId(contact.id);
         let messageSentToServer = false;
         try {
-          const response = await fetch("/api/put-message", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message_id: requestId,
-              message: encryptedMessageBase64,
-            }),
-          });
-          if (!response.ok)
-            throw new Error(
-              `API error ${response.status}: ${await response.text()}`,
-            );
+          await putMessage(requestId, encryptedMessageBase64);
           messageSentToServer = true;
         } catch (apiError) {
           console.error(
@@ -328,17 +318,11 @@ export const MessagesProvider = ({
             memberKey,
           );
           const requestId = await getPutRequestId(memberContact.id);
-          const response = await fetch("/api/put-message", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message_id: requestId,
-              message: encryptedContentForMember,
-            }),
-          });
-          if (!response.ok) {
+          try {
+            await putMessage(requestId, encryptedContentForMember);
+          } catch (apiError: any) { // Catching apiError to check its message
             console.error(
-              `API error sending to group member ${memberContact.name}: ${response.status} ${await response.text()}`,
+              `API error sending to group member ${memberContact.name}: ${apiError.message || apiError}`,
             );
             toast({
               title: "Partial Send Error",
@@ -347,7 +331,7 @@ export const MessagesProvider = ({
             });
             allSendsSuccessful = false;
           }
-        } catch (memberError) {
+        } catch (memberError) { // This catch is for other errors like encryption or getting requestId
           console.error(
             `Error sending message to group member ${memberContact.name}:`,
             memberError,
@@ -567,39 +551,32 @@ export const MessagesProvider = ({
         for (const message of pendingMessagesInItem) {
           try {
             const requestId = await getPutRequestId(contact.id);
-            const response = await fetch("/api/put-message", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                message_id: requestId,
-                message: message.content,
-              }),
-            });
-
-            if (response.ok) {
-              console.log(
-                `Successfully resent message ID: ${message.id} to contact: ${contact.name}`,
+            await putMessage(requestId, message.content);
+            // If putMessage succeeds, it returns true or doesn't throw.
+            console.log(
+              `Successfully resent message ID: ${message.id} to contact: ${contact.name}`,
+            );
+            const msgIndex = updatedContactMessages.findIndex(
+              (m) => m.id === message.id,
+            );
+            if (msgIndex !== -1) {
+              updatedContactMessages[msgIndex] = {
+                ...updatedContactMessages[msgIndex],
+                pending: false,
+              };
+              contactMessagesUpdated = true;
+            }
+          } catch (retryError: any) { // Catching retryError to check its message
+            if (retryError.message && retryError.message.startsWith("API error")) {
+              console.error(
+                `Failed to resend message ID: ${message.id} to ${contact.name}. ${retryError.message}`,
               );
-              const msgIndex = updatedContactMessages.findIndex(
-                (m) => m.id === message.id,
-              );
-              if (msgIndex !== -1) {
-                updatedContactMessages[msgIndex] = {
-                  ...updatedContactMessages[msgIndex],
-                  pending: false,
-                };
-                contactMessagesUpdated = true;
-              }
             } else {
               console.error(
-                `Failed to resend message ID: ${message.id} to ${contact.name}. API error ${response.status}: ${await response.text()}`,
+                `Error during retry of message ID: ${message.id} to ${contact.name}:`,
+                retryError,
               );
             }
-          } catch (retryError) {
-            console.error(
-              `Error during retry of message ID: ${message.id} to ${contact.name}:`,
-              retryError,
-            );
           }
         }
         if (contactMessagesUpdated) {
@@ -661,26 +638,19 @@ export const MessagesProvider = ({
                 memberKey,
               );
               const requestId = await getPutRequestId(memberContact.id);
-              const response = await fetch("/api/put-message", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  message_id: requestId,
-                  message: encryptedMessageForMember,
-                  // group: group.name, // Group name is now part of the encrypted MessageContent
-                }),
-              });
-              if (!response.ok) {
+              await putMessage(requestId, encryptedMessageForMember);
+              // If putMessage succeeds, it returns true or doesn't throw.
+            } catch (memberError: any) { // Catching memberError to check its message
+              if (memberError.message && memberError.message.startsWith("API error")) {
                 console.error(
-                  `Retry: API error sending to group member ${memberContact.name}: ${response.status} ${await response.text()}`,
+                  `Retry: API error sending to group member ${memberContact.name}: ${memberError.message}`,
                 );
-                allMemberSendsSuccessful = false;
+              } else {
+                console.error(
+                  `Retry: Error sending to group member ${memberContact.name}:`,
+                  memberError,
+                );
               }
-            } catch (memberError) {
-              console.error(
-                `Retry: Error sending to group member ${memberContact.name}:`,
-                memberError,
-              );
               allMemberSendsSuccessful = false;
             }
           }
