@@ -57,7 +57,6 @@ const ChatInterface = () => {
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null); // Ref for the input field
-  const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
   const [initialGroupDataForModal, setInitialGroupDataForModal] =
@@ -106,18 +105,16 @@ const ChatInterface = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
 
     if (!activeItem || !newMessage.trim()) return; // Use activeItem
-
     const success = await sendMessage(activeItem.id, newMessage);
     if (success) {
-      setNewMessage("");
-      if (isMobile) {
-        // Delay focus slightly to ensure UI updates are processed
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 50); // 50ms delay, can be adjusted
+      if (inputRef.current) {
+        inputRef.current.value = ""; // Clear the input field
       }
+      setNewMessage("");
+      inputRef.current?.focus();
     }
   };
 

@@ -164,11 +164,13 @@ self.addEventListener("push", (event) => {
     });
     let appIsActive = false;
     for (const client of clientsArr) {
-      if (client.visibilityState === "visible" && client.focused) {
+      if (client.visibilityState === "visible" /* && client.focused */) {
         appIsActive = true;
         break;
       }
     }
+    console.log("[Service Worker] clients:", clientsArr);
+    console.log("[Service Worker] App is active:", appIsActive);
 
     // Badge API handling
     if ("setAppBadge" in self && "clearAppBadge" in self) {
