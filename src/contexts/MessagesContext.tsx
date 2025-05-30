@@ -92,7 +92,6 @@ export const MessagesProvider = ({
     useContacts();
   const { toast } = useToast();
   const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
-  const [sendPendingTrigger, setSendPendingTrigger] = useState(0); // New state to trigger sendPendingMessages
   const isSendingPendingRef = useRef(false); // Ref to track if sendPendingMessages is active
   // Fetching logic and refs moved to useMessagePolling hook
 
@@ -199,8 +198,8 @@ export const MessagesProvider = ({
           ...prev,
           [contact.id]: [...(prev[contact.id] || []), newMessage],
         }));
-        // Trigger sendPendingMessages via useEffect
-        setSendPendingTrigger(c => c + 1);
+        // Call sendPendingMessages after a short delay to allow state to update
+        setTimeout(() => sendPendingMessages(), 100);
         return true; // Local save is successful
       } catch (error) {
         console.error(
@@ -277,7 +276,7 @@ export const MessagesProvider = ({
       // sendPendingMessages will handle iterating through members and sending.
 
       // Call sendPendingMessages to process the newly added pending group message
-      setSendPendingTrigger(c => c + 1);
+      setTimeout(() => sendPendingMessages(), 100);
 
       // No need to update pending status based on allSendsSuccessful here,
       // as sendPendingMessages will manage that for the group message.
@@ -631,14 +630,6 @@ export const MessagesProvider = ({
 
     return () => clearInterval(intervalId);
   }, [sendPendingMessages]);
-
-  // useEffect to call sendPendingMessages when triggered
-  useEffect(() => {
-    if (sendPendingTrigger > 0) { // Avoid running on initial mount
-      console.log("useEffect: Triggering sendPendingMessages due to sendPendingTrigger change.");
-      sendPendingMessages();
-    }
-  }, [sendPendingTrigger, sendPendingMessages]); // sendPendingMessages is a dependency
 
   const moveContextualMessagesToGroup = async (
     sourceContactId: string,
