@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef, // Import useRef
 } from "react";
 import { Contact, useContacts, ContactOrGroup, Group } from "./ContactsContext";
 import { encryptMessage, decryptMessage } from "@/utils/encryption";
@@ -91,6 +92,7 @@ export const MessagesProvider = ({
     useContacts();
   const { toast } = useToast();
   const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
+  const isSendingPendingRef = useRef(false); // Ref to track if sendPendingMessages is active
   // Fetching logic and refs moved to useMessagePolling hook
 
   // Load messages from IndexedDB on init
@@ -503,190 +505,196 @@ export const MessagesProvider = ({
     });
   };
 
-  // Retry sending pending messages
-  const retryPendingMessages = useCallback(async () => {
-    let changesMadeOverall = false;
-    const currentMessagesSnapshot = { ...messages }; // Operate on a snapshot
+  // Send pending messages
+  const sendPendingMessages = useCallback(async () => {
+    if (isSendingPendingRef.current) {
+      console.log("sendPendingMessages: Already in progress, skipping.");
+      return;
+    }
+    isSendingPendingRef.current = true;
+    console.log("sendPendingMessages: Starting to process pending messages.");
 
-    for (const itemIdKey in currentMessagesSnapshot) {
-      if (
-        !Object.prototype.hasOwnProperty.call(
-          currentMessagesSnapshot,
-          itemIdKey,
+    try {
+      let changesMadeOverall = false;
+      // Operate on a snapshot of messages to avoid issues with state updates during the async loop.
+      // The actual updates will use setMessages(prev => ...) to ensure they are based on the latest state.
+      const currentMessagesSnapshot = { ...messages };
+
+      for (const itemIdKey in currentMessagesSnapshot) {
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            currentMessagesSnapshot,
+            itemIdKey,
+          )
         )
-      )
-        continue;
+          continue;
 
-      const item = listItems.find((i) => i.id === itemIdKey);
-      if (!item) {
-        console.warn(
-          `Retry: Item ${itemIdKey} not found in listItems, skipping its messages.`,
-        );
-        continue;
-      }
-
-      const itemMessages = currentMessagesSnapshot[itemIdKey];
-      const pendingMessagesInItem = itemMessages.filter(
-        (m) => m.pending && m.sent,
-      );
-
-      if (pendingMessagesInItem.length === 0) continue;
-
-      console.log(
-        `Retrying ${pendingMessagesInItem.length} pending messages for ${item.itemType} ${item.name} (ID: ${itemIdKey})`,
-      );
-
-      if (item.itemType === "contact") {
-        const contact = item as Contact;
-        const contactKey = await getContactKey(contact.id);
-        if (!contactKey) {
+        const item = listItems.find((i) => i.id === itemIdKey);
+        if (!item) {
           console.warn(
-            `Retry: Key not found for contact ${contact.name}, skipping messages.`,
+            `sendPendingMessages: Item ${itemIdKey} not found in listItems, skipping its messages.`,
           );
           continue;
         }
-        let contactMessagesUpdated = false;
-        const updatedContactMessages = [...(messages[contact.id] || [])]; // Get latest from state for update
 
-        for (const message of pendingMessagesInItem) {
-          try {
-            const requestId = await getPutRequestId(contact.id);
-            await putMessage(requestId, message.content);
-            // If putMessage succeeds, it returns true or doesn't throw.
-            console.log(
-              `Successfully resent message ID: ${message.id} to contact: ${contact.name}`,
-            );
-            const msgIndex = updatedContactMessages.findIndex(
-              (m) => m.id === message.id,
-            );
-            if (msgIndex !== -1) {
-              updatedContactMessages[msgIndex] = {
-                ...updatedContactMessages[msgIndex],
-                pending: false,
-              };
-              contactMessagesUpdated = true;
-            }
-          } catch (retryError: any) { // Catching retryError to check its message
-            if (retryError.message && retryError.message.startsWith("API error")) {
-              console.error(
-                `Failed to resend message ID: ${message.id} to ${contact.name}. ${retryError.message}`,
-              );
-            } else {
-              console.error(
-                `Error during retry of message ID: ${message.id} to ${contact.name}:`,
-                retryError,
-              );
-            }
-          }
-        }
-        if (contactMessagesUpdated) {
-          setMessages((prev) => ({
-            ...prev,
-            [contact.id]: updatedContactMessages,
-          }));
-          changesMadeOverall = true;
-        }
-      } else if (item.itemType === "group") {
-        const group = item as Group;
-        let groupMessagesUpdated = false;
-        const updatedGroupMessages = [...(messages[group.id] || [])]; // Get latest from state for update
+        const itemMessages = currentMessagesSnapshot[itemIdKey];
+        const pendingMessagesInItem = itemMessages.filter(
+          (m) => m.pending && m.sent,
+        );
 
-        for (const message of pendingMessagesInItem) {
-          // message.contactId is groupId, message.groupId is groupId
-          if (!message.groupId || message.contactId !== group.id) {
-            // Sanity check
+        if (pendingMessagesInItem.length === 0) continue;
+
+        console.log(
+          `sendPendingMessages: Processing ${pendingMessagesInItem.length} pending messages for ${item.itemType} ${item.name} (ID: ${itemIdKey})`,
+        );
+
+        if (item.itemType === "contact") {
+          const contact = item as Contact;
+          const contactKey = await getContactKey(contact.id);
+          if (!contactKey) {
             console.warn(
-              `Skipping retry for malformed group message ${message.id}`,
+              `sendPendingMessages: Key not found for contact ${contact.name}, skipping messages.`,
             );
             continue;
           }
-          console.log(
-            `Retrying group message ID: ${message.id} for group: ${group.name}`,
-          );
-          const decryptedMessage = await getDecryptedContent(message); // Decrypts using first member's key
-
-          if (!decryptedMessage) {
-            console.error(
-              `Cannot retry group message ${message.id}: decryption failed.`,
-            );
-            continue;
-          }
-
-          let allMemberSendsSuccessful = true;
-          for (const memberId of group.memberIds) {
-            const memberContact = listItems.find(
-              (i) => i.id === memberId && i.itemType === "contact",
-            ) as Contact | undefined;
-            if (!memberContact) {
-              console.warn(
-                `Retry: Group member ${memberId} not found. Skipping send for this member.`,
-              );
-              allMemberSendsSuccessful = false;
-              continue;
-            }
-            const memberKey = await getContactKey(memberId);
-            if (!memberKey) {
-              console.warn(
-                `Retry: No key for group member ${memberContact.name}. Skipping.`,
-              );
-              allMemberSendsSuccessful = false;
-              continue;
-            }
+          let contactMessagesUpdated = false;
+          
+          for (const message of pendingMessagesInItem) {
             try {
-              const encryptedMessageForMember = await encryptMessage(
-                JSON.stringify(decryptedMessage),
-                memberKey,
+              const requestId = await getPutRequestId(contact.id);
+              await putMessage(requestId, message.content);
+              console.log(
+                `sendPendingMessages: Successfully sent message ID: ${message.id} to contact: ${contact.name}`,
               );
-              const requestId = await getPutRequestId(memberContact.id);
-              await putMessage(requestId, encryptedMessageForMember);
-              // If putMessage succeeds, it returns true or doesn't throw.
-            } catch (memberError: any) { // Catching memberError to check its message
-              if (memberError.message && memberError.message.startsWith("API error")) {
+              // Update this specific message's pending status using functional update
+              setMessages(prev => ({
+                ...prev,
+                [contact.id]: (prev[contact.id] || []).map(m => 
+                  m.id === message.id ? { ...m, pending: false } : m
+                ),
+              }));
+              contactMessagesUpdated = true; // Flag that at least one message was processed
+            } catch (sendError: any) {
+              if (sendError.message && sendError.message.startsWith("API error")) {
                 console.error(
-                  `Retry: API error sending to group member ${memberContact.name}: ${memberError.message}`,
+                  `sendPendingMessages: Failed to send message ID: ${message.id} to ${contact.name}. ${sendError.message}`,
                 );
               } else {
                 console.error(
-                  `Retry: Error sending to group member ${memberContact.name}:`,
-                  memberError,
+                  `sendPendingMessages: Error sending message ID: ${message.id} to ${contact.name}:`,
+                  sendError,
                 );
               }
-              allMemberSendsSuccessful = false;
             }
           }
-          if (allMemberSendsSuccessful) {
+          if (contactMessagesUpdated) changesMadeOverall = true;
+
+        } else if (item.itemType === "group") {
+          const group = item as Group;
+          let groupMessagesLocallyUpdated = false;
+
+          for (const message of pendingMessagesInItem) {
+            if (!message.groupId || message.contactId !== group.id) {
+              console.warn(
+                `sendPendingMessages: Skipping malformed group message ${message.id}`,
+              );
+              continue;
+            }
             console.log(
-              `Successfully resent group message ID: ${message.id} to all members of ${group.name}`,
+              `sendPendingMessages: Processing group message ID: ${message.id} for group: ${group.name}`,
             );
-            const msgIndex = updatedGroupMessages.findIndex(
-              (m) => m.id === message.id,
-            );
-            if (msgIndex !== -1) {
-              updatedGroupMessages[msgIndex] = {
-                ...updatedGroupMessages[msgIndex],
-                pending: false,
-              };
-              groupMessagesUpdated = true;
+            const decryptedMessage = await getDecryptedContent(message);
+
+            if (!decryptedMessage) {
+              console.error(
+                `sendPendingMessages: Cannot process group message ${message.id}: decryption failed.`,
+              );
+              continue;
             }
-          } else {
-            console.warn(
-              `Retry for group message ID: ${message.id} was not successful for all members.`,
-            );
+
+            let allMemberSendsSuccessful = true;
+            for (const memberId of group.memberIds) {
+              const memberContact = listItems.find(
+                (i) => i.id === memberId && i.itemType === "contact",
+              ) as Contact | undefined;
+              if (!memberContact) {
+                console.warn(
+                  `sendPendingMessages: Group member ${memberId} not found. Skipping send for this member.`,
+                );
+                allMemberSendsSuccessful = false;
+                continue;
+              }
+              const memberKey = await getContactKey(memberId);
+              if (!memberKey) {
+                console.warn(
+                  `sendPendingMessages: No key for group member ${memberContact.name}. Skipping.`,
+                );
+                allMemberSendsSuccessful = false;
+                continue;
+              }
+              try {
+                const encryptedMessageForMember = await encryptMessage(
+                  JSON.stringify(decryptedMessage),
+                  memberKey,
+                );
+                const requestId = await getPutRequestId(memberContact.id);
+                await putMessage(requestId, encryptedMessageForMember);
+              } catch (memberError: any) {
+                if (memberError.message && memberError.message.startsWith("API error")) {
+                  console.error(
+                    `sendPendingMessages: API error sending to group member ${memberContact.name}: ${memberError.message}`,
+                  );
+                } else {
+                  console.error(
+                    `sendPendingMessages: Error sending to group member ${memberContact.name}:`,
+                    memberError,
+                  );
+                }
+                allMemberSendsSuccessful = false;
+              }
+            }
+            if (allMemberSendsSuccessful) {
+              console.log(
+                `sendPendingMessages: Successfully sent group message ID: ${message.id} to all members of ${group.name}`,
+              );
+              // Update this specific message's pending status using functional update
+              setMessages(prev => ({
+                ...prev,
+                [group.id]: (prev[group.id] || []).map(m => 
+                  m.id === message.id ? { ...m, pending: false } : m
+                ),
+              }));
+              groupMessagesLocallyUpdated = true;
+            } else {
+              console.warn(
+                `sendPendingMessages: Group message ID: ${message.id} was not successful for all members. It remains pending.`,
+              );
+            }
           }
-        }
-        if (groupMessagesUpdated) {
-          setMessages((prev) => ({
-            ...prev,
-            [group.id]: updatedGroupMessages,
-          }));
-          changesMadeOverall = true;
+          if (groupMessagesLocallyUpdated) changesMadeOverall = true;
         }
       }
+      // No explicit overall setMessages(newState) needed if all updates are functional.
+      // The changesMadeOverall flag can be used for logging or other side effects if necessary.
+      if (changesMadeOverall) {
+        console.log("sendPendingMessages: Some pending messages were processed.");
+      } else {
+        console.log("sendPendingMessages: No pending messages required processing or updates.");
+      }
+    } catch (error) {
+      console.error("sendPendingMessages: An unexpected error occurred:", error);
+    } finally {
+      isSendingPendingRef.current = false;
+      console.log("sendPendingMessages: Finished processing.");
     }
-    // No need to call setMessages(newMessagesState) if changes were applied directly with setMessages(prev => ...)
   }, [
-    messages,
+    messages, // messages is a dependency because we read it for the snapshot
     listItems,
+    getContactKey,
+    getPutRequestId,
+    toast, // Though not directly used in this version, keeping it if toasts are re-added
+    getDecryptedContent, // Added as it's used
+    // encryptMessage is used, ensure it's stable or add if it's from context/props
     getContactKey,
     getPutRequestId, // Added dependency
     toast,
@@ -698,12 +706,12 @@ export const MessagesProvider = ({
 
   useEffect(() => {
     const intervalId = setInterval(() => {
-      console.log("Checking for pending messages to retry...");
-      retryPendingMessages();
+      console.log("Interval: Triggering sendPendingMessages.");
+      sendPendingMessages();
     }, 30000); // 30 seconds
 
     return () => clearInterval(intervalId);
-  }, [retryPendingMessages]);
+  }, [sendPendingMessages]);
 
   const moveContextualMessagesToGroup = async (
     sourceContactId: string,
