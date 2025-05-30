@@ -113,7 +113,10 @@ const ChatInterface = () => {
     if (success) {
       setNewMessage("");
       if (isMobile) {
-        inputRef.current?.focus();
+        // Delay focus slightly to ensure UI updates are processed
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 50); // 50ms delay, can be adjusted
       }
     }
   };
