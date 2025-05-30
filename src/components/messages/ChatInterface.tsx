@@ -56,6 +56,7 @@ const ChatInterface = () => {
   // State for confirmation dialog
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null); // Ref for the input field
   const isMobile = useIsMobile();
   const [showProfile, setShowProfile] = useState(false);
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
@@ -111,6 +112,9 @@ const ChatInterface = () => {
     const success = await sendMessage(activeItem.id, newMessage);
     if (success) {
       setNewMessage("");
+      if (isMobile) {
+        inputRef.current?.focus();
+      }
     }
   };
 
@@ -240,6 +244,7 @@ const ChatInterface = () => {
       <div className="p-4 border-t bg-background z-10 shrink-0">
         <form onSubmit={handleSendMessage} className="flex space-x-2">
           <Input
+            ref={inputRef} // Assign the ref to the input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onFocus={scrollToBottom} // Use the new scrollToBottom function
