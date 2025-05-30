@@ -107,19 +107,11 @@ const ChatInterface = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!activeItem || !newMessage.trim()) return; // Use activeItem
+    if (!activeItem || !newMessage.trim()) return;
     const success = await sendMessage(activeItem.id, newMessage);
     if (success) {
       setNewMessage(""); // Clear the controlled input state
-      if (isMobile) {
-        // Delay focus slightly on mobile to ensure UI updates are processed
-        // and the keyboard stays up.
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 50); // 50ms delay, can be adjusted if needed
-      } else {
-        inputRef.current?.focus(); // Focus immediately on non-mobile
-      }
+      inputRef.current?.focus();
     }
   };
 
