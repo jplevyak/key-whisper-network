@@ -16,6 +16,7 @@ import {
 import { putMessage } from "@/services/apiService"; // Import the new service
 import { useMessagePolling } from "@/hooks/useMessagePolling";
 import { useAuth } from "./AuthContext"; // Added for authentication status
+import { updateAppBadge, clearAppBadgeExplicitly } from "@/utils/appBadge"; // Import app badge utilities
 
 // Define the structure of the content being encrypted/decrypted
 export interface MessageContent {
@@ -94,6 +95,7 @@ export const MessagesProvider = ({
   const { toast } = useToast();
   const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
   const [pendingMessageCount, setPendingMessageCount] = useState(0); // State for pending message count
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0); // State for unread message count
   const isSendingPendingRef = useRef(false); // Ref to track if sendPendingMessages is active
   // Fetching logic and refs moved to useMessagePolling hook
 
@@ -158,6 +160,32 @@ export const MessagesProvider = ({
     setPendingMessageCount(count);
     // console.log("MessagesContext: Updated pending message count:", count); // For debugging
   }, [messages]);
+
+  // useEffect to calculate and update unread message count whenever messages change
+  useEffect(() => {
+    let count = 0;
+    for (const itemId in messages) {
+      if (Object.prototype.hasOwnProperty.call(messages, itemId)) {
+        messages[itemId].forEach(message => {
+          if (!message.sent && !message.read) { // Received and unread
+            count++;
+          }
+        });
+      }
+    }
+    setUnreadMessageCount(count);
+    // console.log("MessagesContext: Updated unread message count:", count); // For debugging
+  }, [messages]);
+
+  // useEffect to update the app badge when unreadMessageCount changes or auth status changes
+  useEffect(() => {
+    if (isAuthenticated && isSecurityContextEstablished) {
+      updateAppBadge(unreadMessageCount);
+    } else {
+      // If user logs out or security context is lost, clear the badge.
+      clearAppBadgeExplicitly();
+    }
+  }, [unreadMessageCount, isAuthenticated, isSecurityContextEstablished]);
 
   // Use the message polling hook - it runs automatically
   // Its effectiveness will depend on activeItem, which becomes null if not authenticated due to ContactsContext changes.
