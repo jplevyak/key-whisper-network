@@ -183,22 +183,7 @@ export const MessagesProvider = ({
           JSON.stringify(messageContent),
           key,
         );
-        const requestId = await getPutRequestId(contact.id);
-        let messageSentToServer = false;
-        try {
-          await putMessage(requestId, encryptedMessageBase64);
-          messageSentToServer = true;
-        } catch (apiError) {
-          console.error(
-            `Failed to send message to backend for contact ${contact.name}:`,
-            apiError,
-          );
-          toast({
-            title: "Send Warning",
-            description: `Message to ${contact.name} saved locally, but failed to send.`,
-            variant: "warning",
-          });
-        }
+        // Removed direct API call, message will be sent by sendPendingMessages
 
         const newMessage: Message = {
           id: `${localMessageIdBase}-c-${contact.id}`,
@@ -207,12 +192,14 @@ export const MessagesProvider = ({
           timestamp: new Date().toISOString(),
           sent: true,
           read: true,
-          pending: !messageSentToServer,
+          pending: true, // Always true, sendPendingMessages will handle it
         };
         setMessages((prev) => ({
           ...prev,
           [contact.id]: [...(prev[contact.id] || []), newMessage],
         }));
+        // Call sendPendingMessages to process the newly added pending message
+        sendPendingMessages();
         return true; // Local save is successful
       } catch (error) {
         console.error(
@@ -284,87 +271,18 @@ export const MessagesProvider = ({
         [group.id]: [...(prev[group.id] || []), localGroupMessage],
       }));
 
-      let allSendsSuccessful = true;
-      for (const memberId of group.memberIds) {
-        const memberContact = listItems.find(
-          (i) => i.id === memberId && i.itemType === "contact",
-        ) as Contact | undefined;
-        if (!memberContact) {
-          console.warn(
-            `Group member ${memberId} not found in contacts. Skipping.`,
-          );
-          allSendsSuccessful = false;
-          continue;
-        }
-        try {
-          const memberKey = await getContactKey(memberId);
-          if (!memberKey) {
-            console.warn(
-              `Could not get encryption key for group member ${memberContact.name}. Skipping.`,
-            );
-            toast({
-              title: "Partial Send Error",
-              description: `No key for ${memberContact.name}.`,
-              variant: "warning",
-            });
-            allSendsSuccessful = false;
-            continue;
-          }
-          const memberMessageContent: MessageContent = {
-            message: textContent,
-            group: group.name,
-            groupId: group.id,
-          };
-          const encryptedContentForMember = await encryptMessage(
-            JSON.stringify(memberMessageContent),
-            memberKey,
-          );
-          const requestId = await getPutRequestId(memberContact.id);
-          try {
-            await putMessage(requestId, encryptedContentForMember);
-          } catch (apiError: any) { // Catching apiError to check its message
-            console.error(
-              `API error sending to group member ${memberContact.name}: ${apiError.message || apiError}`,
-            );
-            toast({
-              title: "Partial Send Error",
-              description: `Failed to send to ${memberContact.name}.`,
-              variant: "warning",
-            });
-            allSendsSuccessful = false;
-          }
-        } catch (memberError) { // This catch is for other errors like encryption or getting requestId
-          console.error(
-            `Error sending message to group member ${memberContact.name}:`,
-            memberError,
-          );
-          toast({
-            title: "Partial Send Error",
-            description: `Could not send to ${memberContact.name}.`,
-            variant: "warning",
-          });
-          allSendsSuccessful = false;
-        }
-      }
+      // Removed direct API calls for each member.
+      // The localGroupMessage is already marked as pending: true.
+      // sendPendingMessages will handle iterating through members and sending.
 
-      // Update pending status of the local group message
-      setMessages((prev) => ({
-        ...prev,
-        [group.id]: (prev[group.id] || []).map((m) =>
-          m.id === localGroupMessage.id
-            ? { ...m, pending: !allSendsSuccessful }
-            : m,
-        ),
-      }));
+      // Call sendPendingMessages to process the newly added pending group message
+      sendPendingMessages();
 
-      if (!allSendsSuccessful) {
-        toast({
-          title: "Group Send Issue",
-          description: `Message to ${group.name} sent with some errors.`,
-          variant: "warning",
-        });
-      }
-      return true; // Local save is successful, return true even if some remote sends fail
+      // No need to update pending status based on allSendsSuccessful here,
+      // as sendPendingMessages will manage that for the group message.
+      // The toast for partial send errors will now be handled within sendPendingMessages if necessary.
+
+      return true; // Local save is successful
     }
     // Should not reach here if item is found
     return false;
