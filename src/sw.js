@@ -33,14 +33,6 @@ cleanupOutdatedCaches();
 // event.waitUntil(self.clients.claim());
 //});
 
-// --- Message Handling (e.g., for SKIP_WAITING) ---
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[Service Worker] Received SKIP_WAITING message. Activating new SW.');
-    self.skipWaiting();
-  }
-});
-
 // --- Routing & Caching Strategies (using Workbox) ---
 
 // Cache CSS, JS, and Web Workers with a Stale While Revalidate strategy.
