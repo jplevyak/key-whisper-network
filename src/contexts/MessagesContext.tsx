@@ -64,6 +64,7 @@ interface MessagesContextType {
     newKey: CryptoKey,
   ) => Promise<void>;
   deleteAllMessages: () => void; // Added to delete all messages
+  pendingMessageCount: number; // Added to track pending messages
 }
 
 // Type for the response from /api/get-messages
@@ -92,6 +93,7 @@ export const MessagesProvider = ({
     useContacts();
   const { toast } = useToast();
   const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
+  const [pendingMessageCount, setPendingMessageCount] = useState(0); // State for pending message count
   const isSendingPendingRef = useRef(false); // Ref to track if sendPendingMessages is active
   // Fetching logic and refs moved to useMessagePolling hook
 
@@ -139,6 +141,22 @@ export const MessagesProvider = ({
       // Optionally show a toast here
     });
   }, [messages, isAuthenticated, isSecurityContextEstablished]);
+
+  // useEffect to calculate and update pending message count whenever messages change
+  useEffect(() => {
+    let count = 0;
+    for (const itemId in messages) {
+      if (Object.prototype.hasOwnProperty.call(messages, itemId)) {
+        messages[itemId].forEach(message => {
+          if (message.sent && message.pending) {
+            count++;
+          }
+        });
+      }
+    }
+    setPendingMessageCount(count);
+    // console.log("MessagesContext: Updated pending message count:", count); // For debugging
+  }, [messages]);
 
   // Use the message polling hook - it runs automatically
   // Its effectiveness will depend on activeItem, which becomes null if not authenticated due to ContactsContext changes.
@@ -429,8 +447,12 @@ export const MessagesProvider = ({
       console.log("sendPendingMessages: Already in progress, skipping.");
       return;
     }
+    if (pendingMessageCount === 0) {
+      console.log("sendPendingMessages: No pending messages (count is 0). Skipping.");
+      return;
+    }
     isSendingPendingRef.current = true;
-    console.log("sendPendingMessages: Starting to process pending messages.");
+    console.log(`sendPendingMessages: Starting to process up to ${pendingMessageCount} pending messages.`);
 
     try {
       let changesMadeOverall = false;
@@ -620,6 +642,7 @@ export const MessagesProvider = ({
     // but are used by getDecryptedContent and in the loop.
     // However, since they are stable utils, they don't need to be in the dep array.
     // If they were context methods, they would be.
+    pendingMessageCount, // Added dependency
   ]);
 
   useEffect(() => {
@@ -862,6 +885,7 @@ export const MessagesProvider = ({
         deleteMessagesFromSenderInGroups,
         reEncryptMessagesForKeyChange,
         deleteAllMessages, // Added
+        pendingMessageCount, // Added
       }}
     >
       {children}
