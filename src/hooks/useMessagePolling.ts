@@ -43,13 +43,13 @@ export const useMessagePolling = ({
 
   // Renamed to reflect it's a single long poll request cycle
   const fetchMessagesFromServer = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal): Promise<boolean> => { // Return boolean
       const actualContacts = listItems.filter(
         (item) => item.itemType === "contact",
       );
 
       if (actualContacts.length === 0) {
-        return;
+        return false; // No contacts, so no messages fetched
       }
 
       const requestIdsToSend: string[] = [];
@@ -88,7 +88,7 @@ export const useMessagePolling = ({
         }
 
         if (requestIdsToSend.length === 0) {
-          return;
+          return false; // No request IDs, so no messages fetched
         }
 
         // Get stored push subscription
@@ -289,6 +289,7 @@ export const useMessagePolling = ({
         } else {
           // This is expected during long polling timeouts
           //console.log('Long poll timed out or no new messages.');
+          return newMessagesAdded; // Return whether new messages were added
         }
       } catch (error) {
         // Re-throw errors to be handled by the polling loop, except AbortError
@@ -299,7 +300,8 @@ export const useMessagePolling = ({
         console.error("Failed during message fetch/processing:", error);
         throw error; // Re-throw other errors
       }
-      // No finally block needed here, the loop handles continuation/stopping
+      // Fallback return, though typically execution should exit via one of the paths above
+      return false;
     },
     [
       listItems,
@@ -331,6 +333,7 @@ export const useMessagePolling = ({
 
     const longPoll = async () => {
       let lastPollStartTime = 0; // Track the start time of the last poll
+      let messagesReceivedInLastPoll = false; // Track if messages were received in the last poll
 
       while (isMountedRef.current) {
         if (signal.aborted) {
@@ -338,32 +341,34 @@ export const useMessagePolling = ({
           break;
         }
 
-        // --- Enforce minimum interval ---
-        const now = performance.now();
-        const timeSinceLastStart = now - lastPollStartTime;
-        if (lastPollStartTime > 0 && timeSinceLastStart < minPollIntervalMs) {
-          const delayNeeded = minPollIntervalMs - timeSinceLastStart;
-          console.log(
-            `Minimum interval enforced. Waiting ${delayNeeded.toFixed(0)}ms...`,
-          );
-          try {
-            await new Promise((resolve, reject) => {
-              const timeoutId = setTimeout(resolve, delayNeeded);
-              signal.addEventListener("abort", () => {
-                clearTimeout(timeoutId);
-                reject(new DOMException("Aborted", "AbortError"));
+        // --- Enforce minimum interval only if no messages were received in the last poll ---
+        if (!messagesReceivedInLastPoll) {
+          const now = performance.now();
+          const timeSinceLastStart = now - lastPollStartTime;
+          if (lastPollStartTime > 0 && timeSinceLastStart < minPollIntervalMs) {
+            const delayNeeded = minPollIntervalMs - timeSinceLastStart;
+            console.log(
+              `Minimum interval enforced (no new msgs). Waiting ${delayNeeded.toFixed(0)}ms...`,
+            );
+            try {
+              await new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(resolve, delayNeeded);
+                signal.addEventListener("abort", () => {
+                  clearTimeout(timeoutId);
+                  reject(new DOMException("Aborted", "AbortError"));
+                });
               });
-            });
-          } catch (abortError) {
-            if ((abortError as DOMException).name === "AbortError") {
-              console.log("Minimum interval wait aborted.");
-              break; // Exit loop if aborted during wait
+            } catch (abortError) {
+              if ((abortError as DOMException).name === "AbortError") {
+                console.log("Minimum interval wait aborted.");
+                break; // Exit loop if aborted during wait
+              }
             }
-          }
-          // Check abort signal again after waiting
-          if (signal.aborted) {
-            console.log("Abort signal detected after minimum interval wait.");
-            break;
+            // Check abort signal again after waiting
+            if (signal.aborted) {
+              console.log("Abort signal detected after minimum interval wait.");
+              break;
+            }
           }
         }
         // --- End minimum interval enforcement ---
@@ -371,11 +376,15 @@ export const useMessagePolling = ({
         lastPollStartTime = performance.now(); // Record start time *before* the await
 
         try {
-          // Wait for the fetch to complete (or timeout)
-          await fetchMessagesFromServer(signal);
-          // If successful (got messages or timed out), loop continues. Delay handled above.
-          console.log("Long poll request finished successfully or timed out.");
+          // Wait for the fetch to complete (or timeout) and get if messages were received
+          messagesReceivedInLastPoll = await fetchMessagesFromServer(signal);
+          if (messagesReceivedInLastPoll) {
+            console.log("Long poll request finished: New messages received.");
+          } else {
+            console.log("Long poll request finished: No new messages or timed out.");
+          }
         } catch (error: any) {
+          messagesReceivedInLastPoll = false; // Assume no messages on error, so interval applies next
           lastPollStartTime = 0; // Reset start time on error to avoid immediate retry delay issue
           if (error.name === "AbortError") {
             //console.log('Long poll fetch aborted.');
