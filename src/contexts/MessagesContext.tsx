@@ -435,7 +435,6 @@ export const MessagesProvider = ({
       return;
     }
     if (pendingMessageCount === 0) {
-      console.log("sendPendingMessages: No pending messages (count is 0). Skipping.");
       return;
     }
     isSendingPendingRef.current = true;
@@ -634,7 +633,6 @@ export const MessagesProvider = ({
 
   useEffect(() => {
     const intervalId = setInterval(() => {
-      console.log("Interval: Triggering sendPendingMessages.");
       sendPendingMessages();
     }, 1000); // every second
 
