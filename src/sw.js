@@ -120,10 +120,86 @@ self.addEventListener("push", (event) => {
     },
   };
 
-  event.waitUntil(
-    self.registration.showNotification(title, options),
-    // ... (rest of your push handler)
-  );
+  // --- Badge Handling & Conditional Notification Logic ---
+  const handlePush = async () => {
+    let parsedData = {};
+    if (event.data) {
+      try {
+        parsedData = event.data.json();
+        console.log("[Service Worker] Push data:", parsedData);
+      } catch (e) {
+        console.log("[Service Worker] Push payload was text:", event.data.text());
+        parsedData.body = event.data.text(); // Fallback if not JSON
+      }
+    }
+
+    const notificationTitle = parsedData.title || "New Message";
+    const notificationOptions = {
+      body: parsedData.body || "You have a new message.",
+      icon: parsedData.icon || "android-chrome-192x192.png",
+      badge: parsedData.badge || "flavicon-32x32.png", // Icon for the notification itself
+      data: {
+        url: parsedData.url || "/",
+        ...(parsedData.data || {}),
+      },
+      // Consider adding a tag to allow replacement of notifications
+      // tag: parsedData.tag || 'general-notification',
+    };
+
+    // Update app badge
+    if ("setAppBadge" in self && "clearAppBadge" in self) {
+      const badgeCount = parsedData.badgeCount; // Expecting this in the payload
+      if (typeof badgeCount === "number") {
+        if (badgeCount > 0) {
+          try {
+            await self.setAppBadge(badgeCount);
+            console.log(`[Service Worker] App badge set to ${badgeCount}.`);
+          } catch (badgeError) {
+            console.error("[Service Worker] Error setting app badge:", badgeError);
+          }
+        } else { // badgeCount is 0 or negative
+          try {
+            await self.clearAppBadge();
+            console.log("[Service Worker] App badge cleared.");
+          } catch (badgeError) {
+            console.error("[Service Worker] Error clearing app badge:", badgeError);
+          }
+        }
+      } else {
+        console.log("[Service Worker] No badgeCount in push data, or not a number. Badge not updated by push.");
+      }
+    } else {
+      console.log("[Service Worker] Badging API not supported in this Service Worker context.");
+    }
+
+    // Check if app is active
+    const clientsArr = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+
+    let appIsActive = false;
+    for (const client of clientsArr) {
+      // Check if the client is visible and focused.
+      // You might want to also check client.url to ensure it's your app.
+      if (client.visibilityState === "visible" && client.focused) {
+        appIsActive = true;
+        // Optional: Send a message to the active client if it needs to react to the push
+        // client.postMessage({ type: 'PUSH_RECEIVED_WHILE_ACTIVE', payload: parsedData });
+        break;
+      }
+    }
+
+    if (appIsActive) {
+      console.log("[Service Worker] App is active and focused. Notification suppressed.");
+      // The badge has been updated above. The app should update its UI via polling or other means.
+    } else {
+      console.log("[Service Worker] App not active or not focused. Showing notification.");
+      await self.registration.showNotification(notificationTitle, notificationOptions);
+    }
+  };
+
+  event.waitUntil(handlePush());
 });
 
 // --- Notification Click Handling (Keep your custom logic here) ---
