@@ -94,105 +94,123 @@ registerRoute(
 
 // Add other routes as needed (e.g., for fonts, specific origins)
 
-// --- Push Event Handling (Keep your custom logic here) ---
+// --- Push Badge Counter Logic ---
+const PUSH_BADGE_COUNTER_CACHE_NAME = 'push-badge-counter-cache-v1';
 
+async function getPushBadgeCount() {
+  try {
+    const cache = await caches.open(PUSH_BADGE_COUNTER_CACHE_NAME);
+    const response = await cache.match('badge-count');
+    if (response) {
+      const count = await response.text();
+      return parseInt(count, 10) || 0;
+    }
+  } catch (error) {
+    console.error('[Service Worker] Error getting push badge count:', error);
+  }
+  return 0;
+}
+
+async function setPushBadgeCount(count) {
+  try {
+    const cache = await caches.open(PUSH_BADGE_COUNTER_CACHE_NAME);
+    await cache.put('badge-count', new Response(String(count)));
+    console.log(`[Service Worker] Push badge count set to ${count}.`);
+  } catch (error) {
+    console.error('[Service Worker] Error setting push badge count:', error);
+  }
+}
+
+// --- Message Handling (e.g., for SKIP_WAITING and CLEAR_PUSH_BADGE_COUNT) ---
+self.addEventListener('message', async (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[Service Worker] Received SKIP_WAITING message. Activating new SW.');
+    self.skipWaiting();
+  }
+  if (event.data && event.data.type === 'CLEAR_PUSH_BADGE_COUNT') {
+    console.log('[Service Worker] Received CLEAR_PUSH_BADGE_COUNT message from client.');
+    await setPushBadgeCount(0);
+    // The client will set the correct badge, so SW doesn't need to clear it here.
+  }
+});
+
+
+// --- Push Event Handling ---
 self.addEventListener("push", (event) => {
   console.log("[Service Worker] Push Received.");
-  let data = {};
-  if (event.data) {
-    try {
-      data = event.data.json();
-      console.log("[Service Worker] Push data:", data);
-    } catch (e) {
-      console.log("[Service Worker] Push payload was text:", event.data.text());
-      data.body = event.data.text();
-    }
-  }
 
-  const title = data.title || "Default Push Title";
-  const options = {
-    body: data.body || "Default push message body.",
-    icon: data.icon || "android-chrome-192x192.png",
-    badge: data.badge || "flavicon-32x32.png",
-    data: {
-      url: data.url || "/",
-      ...(data.data || {}),
-    },
-  };
-
-  // --- Badge Handling & Conditional Notification Logic ---
   const handlePush = async () => {
     let parsedData = {};
     if (event.data) {
       try {
         parsedData = event.data.json();
-        console.log("[Service Worker] Push data:", parsedData);
       } catch (e) {
-        console.log("[Service Worker] Push payload was text:", event.data.text());
-        parsedData.body = event.data.text(); // Fallback if not JSON
+        // If parsing as JSON fails, try as text.
+        parsedData.body = event.data.text();
+        console.log("[Service Worker] Push payload was text or failed to parse as JSON:", parsedData.body);
       }
     }
+    console.log("[Service Worker] Parsed push data:", parsedData);
+
 
     const notificationTitle = parsedData.title || "New Message";
     const notificationOptions = {
       body: parsedData.body || "You have a new message.",
-      icon: parsedData.icon || "android-chrome-192x192.png",
-      badge: parsedData.badge || "flavicon-32x32.png", // Icon for the notification itself
+      icon: parsedData.icon || "android-chrome-192x192.png", // Default icon
+      badge: parsedData.badge || "flavicon-32x32.png", // Icon for the notification itself (usually monochrome)
       data: {
-        url: parsedData.url || "/",
+        url: parsedData.url || "/", // Default URL to open on click
         ...(parsedData.data || {}),
       },
-      // Consider adding a tag to allow replacement of notifications
-      // tag: parsedData.tag || 'general-notification',
+      tag: parsedData.tag || 'general-notification', // Allows replacing/grouping notifications
     };
 
-    // Update app badge
+    // Determine if app is active FIRST
+    const clientsArr = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    let appIsActive = false;
+    for (const client of clientsArr) {
+      if (client.visibilityState === "visible" && client.focused) {
+        appIsActive = true;
+        break;
+      }
+    }
+
+    // Badge API handling
     if ("setAppBadge" in self && "clearAppBadge" in self) {
-      const badgeCount = parsedData.badgeCount; // Expecting this in the payload
-      if (typeof badgeCount === "number") {
-        if (badgeCount > 0) {
-          try {
-            await self.setAppBadge(badgeCount);
-            console.log(`[Service Worker] App badge set to ${badgeCount}.`);
-          } catch (badgeError) {
-            console.error("[Service Worker] Error setting app badge:", badgeError);
-          }
-        } else { // badgeCount is 0 or negative
-          try {
-            await self.clearAppBadge();
-            console.log("[Service Worker] App badge cleared.");
-          } catch (badgeError) {
-            console.error("[Service Worker] Error clearing app badge:", badgeError);
-          }
-        }
+      if (appIsActive) {
+        // App is active. Client is responsible for the badge.
+        // Reset SW's push-specific counter.
+        await setPushBadgeCount(0);
+        console.log("[Service Worker] App is active. SW push badge counter reset. Client manages badge.");
+        // Client will call updateAppBadge with its own unread count.
       } else {
-        console.log("[Service Worker] No badgeCount in push data, or not a number. Badge not updated by push.");
+        // App is NOT active. SW increments its counter and sets the badge.
+        let currentPushBadgeCount = await getPushBadgeCount();
+        currentPushBadgeCount++;
+        await setPushBadgeCount(currentPushBadgeCount);
+        try {
+          await self.setAppBadge(currentPushBadgeCount);
+          console.log(`[Service Worker] App not active. Badge set to incremented count: ${currentPushBadgeCount}.`);
+        } catch (badgeError) {
+          console.error("[Service Worker] Error setting app badge with incremented count:", badgeError);
+        }
       }
     } else {
       console.log("[Service Worker] Badging API not supported in this Service Worker context.");
     }
 
-    // Check if app is active
-    const clientsArr = await self.clients.matchAll({
-      type: "window",
-      includeUncontrolled: true,
-    });
-
-    let appIsActive = false;
-    for (const client of clientsArr) {
-      // Check if the client is visible and focused.
-      // You might want to also check client.url to ensure it's your app.
-      if (client.visibilityState === "visible" && client.focused) {
-        appIsActive = true;
-        // Optional: Send a message to the active client if it needs to react to the push
-        // client.postMessage({ type: 'PUSH_RECEIVED_WHILE_ACTIVE', payload: parsedData });
-        break;
-      }
-    }
-
+    // Show notification only if app is not active
     if (appIsActive) {
       console.log("[Service Worker] App is active and focused. Notification suppressed.");
-      // The badge has been updated above. The app should update its UI via polling or other means.
+      // Optionally, send a message to the active client if it needs to react to the push in a special way
+      // clientsArr.forEach(client => {
+      //   if (client.visibilityState === "visible" && client.focused) {
+      //     client.postMessage({ type: 'PUSH_RECEIVED_WHILE_ACTIVE', payload: parsedData });
+      //   }
+      // });
     } else {
       console.log("[Service Worker] App not active or not focused. Showing notification.");
       await self.registration.showNotification(notificationTitle, notificationOptions);

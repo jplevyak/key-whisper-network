@@ -180,7 +180,15 @@ export const MessagesProvider = ({
   // useEffect to update the app badge when unreadMessageCount changes or auth status changes
   useEffect(() => {
     if (isAuthenticated && isSecurityContextEstablished) {
-      updateAppBadge(unreadMessageCount);
+      updateAppBadge(unreadMessageCount); // Client updates badge based on its source of truth
+
+      // Tell the service worker to clear its push-based badge counter
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_PUSH_BADGE_COUNT' });
+        console.log("MessagesContext: Sent CLEAR_PUSH_BADGE_COUNT to service worker.");
+      } else {
+        console.log("MessagesContext: Service worker controller not available to send CLEAR_PUSH_BADGE_COUNT.");
+      }
     } else {
       // If user logs out or security context is lost, clear the badge.
       clearAppBadgeExplicitly();
