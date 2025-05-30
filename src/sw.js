@@ -169,8 +169,6 @@ self.addEventListener("push", (event) => {
         break;
       }
     }
-    console.log("[Service Worker] clients:", clientsArr);
-    console.log("[Service Worker] App is active:", appIsActive);
 
     // Badge API handling
     if ("setAppBadge" in self && "clearAppBadge" in self) {
