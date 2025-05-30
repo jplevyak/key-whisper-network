@@ -95,6 +95,7 @@ export const useMessagePolling = ({
         const pushSubscription = getStoredPushSubscription();
 
         // Send the list of stable request IDs (hashes) and timeout to the backend
+        console.log('long poll started');
         const response = await fetch("/api/get-messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -106,6 +107,7 @@ export const useMessagePolling = ({
           }),
           signal: signal, // Pass the abort signal
         });
+        console.log('long poll ended');
 
         if (!response.ok) {
           // Don't throw AbortError if the request was intentionally aborted
@@ -401,7 +403,7 @@ export const useMessagePolling = ({
           }
         }
       }
-      //console.log('Long polling loop stopped.');
+      console.log('Long polling loop stopped.');
     };
 
     // Start the first poll after the initial delay ONLY if authenticated
