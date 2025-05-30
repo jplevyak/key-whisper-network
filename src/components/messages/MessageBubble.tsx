@@ -136,6 +136,9 @@ const MessageBubble = ({
               isSent ? "text-primary-foreground/70" : "text-muted-foreground"
             }`}
           >
+            {isSent && message.pending && (
+              <span className="italic mr-1">Pending...</span>
+            )}
             {formattedTime}
           </div>
 
