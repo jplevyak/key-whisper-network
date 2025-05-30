@@ -286,10 +286,7 @@ export const useMessagePolling = ({
               });
             }
           }
-        } else {
-          // This is expected during long polling timeouts
-          //console.log('Long poll timed out or no new messages.');
-          return newMessagesAdded; // Return whether new messages were added
+          return true;
         }
       } catch (error) {
         // Re-throw errors to be handled by the polling loop, except AbortError
@@ -300,7 +297,6 @@ export const useMessagePolling = ({
         console.error("Failed during message fetch/processing:", error);
         throw error; // Re-throw other errors
       }
-      // Fallback return, though typically execution should exit via one of the paths above
       return false;
     },
     [
