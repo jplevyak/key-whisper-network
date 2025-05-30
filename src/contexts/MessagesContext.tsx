@@ -199,7 +199,7 @@ export const MessagesProvider = ({
           [contact.id]: [...(prev[contact.id] || []), newMessage],
         }));
         // Call sendPendingMessages after a short delay to allow state to update
-        setTimeout(() => sendPendingMessages(), 100);
+        setTimeout(() => sendPendingMessages(), 250);
         return true; // Local save is successful
       } catch (error) {
         console.error(
@@ -276,7 +276,7 @@ export const MessagesProvider = ({
       // sendPendingMessages will handle iterating through members and sending.
 
       // Call sendPendingMessages to process the newly added pending group message
-      setTimeout(() => sendPendingMessages(), 100);
+      setTimeout(() => sendPendingMessages(), 250);
 
       // No need to update pending status based on allSendsSuccessful here,
       // as sendPendingMessages will manage that for the group message.
