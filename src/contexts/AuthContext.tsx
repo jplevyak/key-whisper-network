@@ -24,6 +24,7 @@ type AuthContextType = {
   deleteEverything: () => Promise<void>;
   isSecurityContextEstablished: boolean; // New flag
   upgradeToPrf: () => Promise<boolean>;
+  isUsingDerivedKey: boolean; // Reactive state for UI
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,6 +38,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [supportsPasskeys, setSupportsPasskeys] = useState<boolean>(false);
   const [derivedKey, setDerivedKey] = useState<CryptoKey | null>(null); // Changed type
   const [isSecurityContextEstablished, setIsSecurityContextEstablished] = useState<boolean>(false); // New state
+  const [isUsingDerivedKey, setIsUsingDerivedKey] = useState<boolean>(false); // New reactive state
   const { toast } = useToast();
 
   useEffect(() => {
@@ -63,7 +65,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // or by falling back to standard init if PRF fails).
       // We no longer call secureStorage.init() preemptively here.
       console.log("AuthContext: Initial check complete. SecureStorage init deferred to login flow.");
-      // We do not set isSecurityContextEstablished here; that happens after active login.
+      // Initial state check for UI if already logged in (persistence handled elsewhere but good to sync)
+      setIsUsingDerivedKey(secureStorage.getIsUsingDerivedKey());
       setIsLoading(false);
     };
 
@@ -81,6 +84,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setDerivedKey(key); // Store for potential UI display or direct use if needed
           if (key) {
             await secureStorage.initializeWithKey(key, db); // Pass db instance
+            setIsUsingDerivedKey(true); // Update reactive state
             toast({
               title: "Secure Storage Enhanced",
               description: "Database encryption upgraded with your passkey.",
@@ -89,6 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             // This case should ideally not be reached if deriveEncryptionKeyFromPrf is robust
             console.error("Derived key is null despite PRF secret and salt. Falling back to standard key.");
             await secureStorage.init(); // Fallback to standard key
+            setIsUsingDerivedKey(secureStorage.getIsUsingDerivedKey());
             toast({
               title: "Security Enhancement Issue",
               description: "Could not derive passkey-based key. Using standard protection.",
@@ -98,6 +103,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } else { // This else corresponds to if (saltForKeyGenString)
           console.warn("Salt for key generation not found. Cannot derive encryption key for DB. Attempting standard protection.");
           await secureStorage.init(); // Fallback to standard key
+          setIsUsingDerivedKey(secureStorage.getIsUsingDerivedKey());
           if (secureStorage.getIsUsingDerivedKey()) { // init() was no-op, derived key still active
             toast({ title: "Derived Key Active", description: "Passkey security remains active." });
             return true;
@@ -112,6 +118,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else { // This else corresponds to if (extensionResults.prf && ...)
         console.log("PRF extension data not available. Attempting standard database protection.");
         await secureStorage.init(); // Fallback to standard key
+        setIsUsingDerivedKey(secureStorage.getIsUsingDerivedKey());
         if (secureStorage.getIsUsingDerivedKey()) { // init() was no-op, derived key still active
           toast({ title: "Derived Key Active", description: "Passkey security remains active." });
           return true;
@@ -262,18 +269,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const credential = await getPasskey();
       if (credential) {
         // reuse the logic in setPrfStorageKeyIfAvailable
-        const success = await setPrfStorageKeyIfAvailable(credential);
-        if (success) {
-          // setPrfStorageKeyIfAvailable handles the success toast for "Secure Storage Enhanced"
-          // but we can add a specific one here if needed, or rely on that.
-          // However, let's explicitly confirm upgrade action success.
-          toast({
-            title: "Upgrade Successful",
-            description: "Your database is now encrypted with your passkey.",
-          });
+        await setPrfStorageKeyIfAvailable(credential);
+
+        if (secureStorage.getIsUsingDerivedKey()) {
+          // We explicitly check if the key is now derived.
+          // setPrfStorageKeyIfAvailable might return true even if it fell back to standard security.
+          // But for UPGRADE, we only count success if we are actually using the derived key.
+
+          // Toast is already handled in setPrfStorageKeyIfAvailable for the success case?
+          // Actually setPrfStorageKeyIfAvailable shows "Secure Storage Enhanced".
+          // We can skip a duplicate toast or just rely on that one.
+          // But let's verify if the logic above in setPrfStorageKeyIfAvailable shows it.
+          // Yes, "Secure Storage Enhanced". 
+          // So we can return true.
           return true;
         } else {
-          // setPrfStorageKeyIfAvailable handles error toasts
+          // If we are here, setPrfStorageKeyIfAvailable returned (likely true or false) but we are NOT using derived key.
+          // This means PRF wasn't available or failed.
+          toast({
+            title: "Upgrade Failed",
+            description: "Your current passkey does not appear to support enhanced security (PRF). You may need to create a new passkey.",
+            variant: "destructive",
+          });
           return false;
         }
       } else {
@@ -357,6 +374,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         deleteEverything,
         isSecurityContextEstablished, // Expose new flag
         upgradeToPrf,
+        isUsingDerivedKey,
       }}
     >
       {children}

@@ -33,7 +33,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
-  const { username, supportsPasskeys, hasPasskey, deleteEverything, upgradeToPrf, isLoading } = useAuth();
+  const { username, supportsPasskeys, hasPasskey, deleteEverything, upgradeToPrf, isLoading, isUsingDerivedKey } = useAuth();
   const { messages: allMessagesData, deleteAllMessages } = useMessages();
 
   // Calculate aggregate message stats
@@ -96,7 +96,7 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
               </h4>
               <div className="flex items-center space-x-2">
                 <p className="text-sm">Database Encryption:</p>
-                {secureStorage.getIsUsingDerivedKey() ? (
+                {isUsingDerivedKey ? (
                   <Badge variant="default" className="bg-green-600 hover:bg-green-700">
                     Passkey Enhanced
                   </Badge>
@@ -104,12 +104,12 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                   <Badge variant="secondary">Standard</Badge>
                 )}
               </div>
-              {secureStorage.getIsUsingDerivedKey() && (
+              {isUsingDerivedKey && (
                 <p className="text-xs text-muted-foreground">
                   Your local database is encrypted with a key derived from your passkey&apos;s PRF extension.
                 </p>
               )}
-              {!secureStorage.getIsUsingDerivedKey() && (
+              {!isUsingDerivedKey && (
                 <>
                   <p className="text-xs text-muted-foreground">
                     Your local database is encrypted with a standard device-generated key.
