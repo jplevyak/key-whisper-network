@@ -23,6 +23,7 @@ type AuthContextType = {
   derivedKey: CryptoKey | null; // Changed from getDerivedKey and string to CryptoKey
   deleteEverything: () => Promise<void>;
   isSecurityContextEstablished: boolean; // New flag
+  upgradeToPrf: () => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -91,7 +92,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             toast({
               title: "Security Enhancement Issue",
               description: "Could not derive passkey-based key. Using standard protection.",
-              variant: "warning",
+              variant: "destructive",
             });
           }
         } else { // This else corresponds to if (saltForKeyGenString)
@@ -112,21 +113,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.log("PRF extension data not available. Attempting standard database protection.");
         await secureStorage.init(); // Fallback to standard key
         if (secureStorage.getIsUsingDerivedKey()) { // init() was no-op, derived key still active
-            toast({ title: "Derived Key Active", description: "Passkey security remains active." });
-            return true;
+          toast({ title: "Derived Key Active", description: "Passkey security remains active." });
+          return true;
         } else if (hasPasskey && !secureStorage.getStandardKeyWasRetrievedFromStorage()) {
-            toast({ title: "Security Alert", description: "Passkey security could not be applied. Data might be inaccessible if previously using passkey security.", variant: "destructive" });
-            return false; // Critical failure for passkey user if new standard key generated
+          toast({ title: "Security Alert", description: "Passkey security could not be applied. Data might be inaccessible if previously using passkey security.", variant: "destructive" });
+          return false; // Critical failure for passkey user if new standard key generated
         } else {
-            toast({ title: "Standard Security Active", description: "Using standard database protection." });
-            return true;
+          toast({ title: "Standard Security Active", description: "Using standard database protection." });
+          return true;
         }
       }
       // This path should ideally not be reached if all conditions above are handled.
       // However, if key was successfully derived and initializedWithKey called, it returns true.
       // If any of the fallbacks to init() happened, their return values dictate the outcome.
       // The original `return true` here was for the successful derived key path.
-      return true; 
+      return true;
     } catch (error) {
       console.error("Critical error during setPrfStorageKeyIfAvailable:", error);
       toast({
@@ -238,6 +239,62 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       title: "Logged out",
       description: "You have been securely logged out.",
     });
+    toast({
+      title: "Logged out",
+      description: "You have been securely logged out.",
+    });
+  };
+
+  const upgradeToPrf = async (): Promise<boolean> => {
+    if (!hasPasskey) {
+      toast({
+        title: "No Passkey found",
+        description: "You need a passkey to enable enhanced security.",
+        variant: "destructive",
+      });
+      return false;
+    }
+
+    setIsLoading(true);
+    try {
+      // Re-assert the passkey to get the PRF material.
+      // We use getPasskey() which triggers the browser assertion flow.
+      const credential = await getPasskey();
+      if (credential) {
+        // reuse the logic in setPrfStorageKeyIfAvailable
+        const success = await setPrfStorageKeyIfAvailable(credential);
+        if (success) {
+          // setPrfStorageKeyIfAvailable handles the success toast for "Secure Storage Enhanced"
+          // but we can add a specific one here if needed, or rely on that.
+          // However, let's explicitly confirm upgrade action success.
+          toast({
+            title: "Upgrade Successful",
+            description: "Your database is now encrypted with your passkey.",
+          });
+          return true;
+        } else {
+          // setPrfStorageKeyIfAvailable handles error toasts
+          return false;
+        }
+      } else {
+        toast({
+          title: "Verification Failed",
+          description: "Could not verify your passkey for upgrade.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error("Upgrade error:", error);
+      toast({
+        title: "Upgrade Error",
+        description: "An error occurred during the upgrade process.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const deleteEverything = async () => {
@@ -286,22 +343,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AuthContext.Provider
-    value={{
-      isAuthenticated,
-      isLoading,
-      username,
-      hasPasskey,
-      supportsBiometric,
-      supportsPasskeys,
-      login,
-      logout,
-      registerPasskey,
-      derivedKey, // Changed from getDerivedKey
-      deleteEverything,
-      isSecurityContextEstablished, // Expose new flag
-    }}
+      value={{
+        isAuthenticated,
+        isLoading,
+        username,
+        hasPasskey,
+        supportsBiometric,
+        supportsPasskeys,
+        login,
+        logout,
+        registerPasskey,
+        derivedKey, // Changed from getDerivedKey
+        deleteEverything,
+        isSecurityContextEstablished, // Expose new flag
+        upgradeToPrf,
+      }}
     >
-    {children}
+      {children}
     </AuthContext.Provider>
   );
 };

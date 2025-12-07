@@ -33,7 +33,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
-  const { username, supportsPasskeys, deleteEverything } = useAuth();
+  const { username, supportsPasskeys, hasPasskey, deleteEverything, upgradeToPrf, isLoading } = useAuth();
   const { messages: allMessagesData, deleteAllMessages } = useMessages();
 
   // Calculate aggregate message stats
@@ -114,7 +114,24 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                   <p className="text-xs text-muted-foreground">
                     Your local database is encrypted with a standard device-generated key.
                   </p>
-                  {supportsPasskeys && ( // Check if passkeys (and thus potentially PRF) are supported by the browser
+                  {supportsPasskeys && hasPasskey && (
+                    <div className="mt-3">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={upgradeToPrf}
+                        disabled={isLoading}
+                        className="w-full sm:w-auto"
+                      >
+                        {isLoading ? "Upgrading..." : "Upgrade to Enhanced Security"}
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        encrypt existing data with your passkey.
+                      </p>
+                    </div>
+                  )}
+
+                  {supportsPasskeys && !hasPasskey && ( // Check if passkeys (and thus potentially PRF) are supported by the browser
                     <div className="mt-1 text-xs text-amber-500 space-y-1">
                       <p>
                         <strong>Recommendation for Enhanced Security:</strong>
@@ -135,9 +152,9 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                     </div>
                   )}
                   {!supportsPasskeys && (
-                     <p className="text-xs text-muted-foreground mt-1">
-                       Your browser does not support passkeys, which are required for enhanced database security.
-                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Your browser does not support passkeys, which are required for enhanced database security.
+                    </p>
                   )}
                 </>
               )}
@@ -193,10 +210,10 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-               <p className="text-xs text-muted-foreground">
-                  This will remove all message history from your local device.
-                  It does not affect messages stored on your contacts&apos; devices.
-                </p>
+              <p className="text-xs text-muted-foreground">
+                This will remove all message history from your local device.
+                It does not affect messages stored on your contacts&apos; devices.
+              </p>
             </div>
 
             <div className="space-y-2 pt-2">

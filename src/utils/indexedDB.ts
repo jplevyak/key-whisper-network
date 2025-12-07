@@ -27,7 +27,7 @@ const DB_VERSION = 4;
 // Add 'groups' to the list of stores
 export const STORES = ["contacts", "messages", "keys", "groups"] as const;
 
-class IndexedDBManager {
+export class IndexedDBManager {
   private db: IDBDatabase | null = null;
   private initializationPromise: Promise<void> | null = null;
 
@@ -67,7 +67,7 @@ class IndexedDBManager {
             // Application may need to notify user or reload.
           }
         };
-        
+
         // Initialization successful, resolve the promise.
         // It remains as this fulfilled promise unless close() is called.
         resolve();
