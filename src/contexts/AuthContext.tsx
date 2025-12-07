@@ -24,6 +24,7 @@ type AuthContextType = {
   deleteEverything: () => Promise<void>;
   isSecurityContextEstablished: boolean; // New flag
   upgradeToPrf: () => Promise<boolean>;
+  upgradeToPrfWithNewPasskey: () => Promise<boolean>;
   isUsingDerivedKey: boolean; // Reactive state for UI
 };
 
@@ -314,6 +315,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const upgradeToPrfWithNewPasskey = async (): Promise<boolean> => {
+    setIsLoading(true);
+    const backupId = localStorage.getItem("passkey-credential-id");
+    const backupSalt = localStorage.getItem("passkey-saltForKeyGen");
+
+    try {
+      // Create a NEW passkey. This updates localStorage with the new ID and salt.
+      const credential = await createPasskey(username!);
+      if (credential) {
+        // Attempt upgrade/re-encryption with the new passkey credential
+        await setPrfStorageKeyIfAvailable(credential);
+
+        if (secureStorage.getIsUsingDerivedKey()) {
+          toast({
+            title: "Upgrade Successful",
+            description: "Created new passkey and upgraded database encryption.",
+          });
+          return true;
+        } else {
+          // Fallback happened inside setPrfStorageKeyIfAvailable, meaning new passkey also failed PRF?
+          throw new Error("New passkey does not support PRF or upgrade failed.");
+        }
+      } else {
+        return false; // User cancelled creation
+      }
+    } catch (error) {
+      console.error("Upgrade with new passkey error:", error);
+
+      // Rollback localStorage to previous passkey (so they can at least login with old method next time)
+      if (backupId) localStorage.setItem("passkey-credential-id", backupId);
+      if (backupSalt) localStorage.setItem("passkey-saltForKeyGen", backupSalt);
+
+      // We might need to ensure secureStorage is still usable or re-init with old key?
+      // secureStorage.init() would likely pick up the old key if re-encryption didn't happen (and deleteOldDb wasn't called).
+      // If re-encryption partially happened... that's handled by secureStorage logic (transactional-ish).
+
+      toast({
+        title: "Upgrade Failed",
+        description: "Could not upgrade even with a new passkey. Reverted to previous settings.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const deleteEverything = async () => {
     setIsLoading(true);
     try {
@@ -374,6 +422,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         deleteEverything,
         isSecurityContextEstablished, // Expose new flag
         upgradeToPrf,
+        upgradeToPrfWithNewPasskey,
         isUsingDerivedKey,
       }}
     >

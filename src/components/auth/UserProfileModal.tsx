@@ -33,7 +33,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
-  const { username, supportsPasskeys, hasPasskey, deleteEverything, upgradeToPrf, isLoading, isUsingDerivedKey } = useAuth();
+  const { username, supportsPasskeys, hasPasskey, deleteEverything, upgradeToPrf, upgradeToPrfWithNewPasskey, isLoading, isUsingDerivedKey } = useAuth();
   const { messages: allMessagesData, deleteAllMessages } = useMessages();
 
   // Calculate aggregate message stats
@@ -125,8 +125,19 @@ const UserProfileModal = ({ isOpen, onClose }: UserProfileModalProps) => {
                       >
                         {isLoading ? "Upgrading..." : "Upgrade to Enhanced Security"}
                       </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={upgradeToPrfWithNewPasskey}
+                        disabled={isLoading}
+                        className="w-full sm:w-auto mt-2 sm:mt-0 sm:ml-2"
+                      >
+                        {isLoading ? "Processing..." : "Create New Passkey & Upgrade"}
+                      </Button>
                       <p className="text-xs text-muted-foreground mt-1">
-                        encrypt existing data with your passkey.
+                        Upgrade standard encryption to passkey-based.
+                        <br />
+                        Use "Create New" if your current passkey doesn't support enhanced security.
                       </p>
                     </div>
                   )}
