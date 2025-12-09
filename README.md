@@ -10,6 +10,7 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 - **Automatic Encryption/Decryption**: Messages are automatically encrypted before sending and decrypted upon receipt, providing a seamless secure communication experience.
 - **Local Conversation Control**: Users can clear the conversation history for any contact on their own device using a dedicated trash icon in the chat interface.
 - **Secure Message Forwarding**: Messages can be forwarded to other contacts securely, maintaining the end-to-end encryption.
+- **Secure Contact Sharing**: Securely share contact keys with other users. Attached keys are ephemeral—they expire after 24 hours and are automatically stripped from messages after being forwarded or added, preventing key proliferation.
 - **Flexible Group Tagging**: Create "group" tags locally to categorize contacts. This allows sending the same message to multiple contacts by associating it with a group name. Recipients see the group name attached to the message and can choose to create their own local group with that name, managing their own contact associations for that group. Group memberships are not synchronized between users, maintaining privacy and local control.
 - **Push Notifications**: Stay updated with new messages through push notifications (requires PWA installation and user permission on some platforms).
 - **Progressive Web App (PWA)**: Installable as a PWA for a more native app-like experience on supported devices.
@@ -21,6 +22,7 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 -   Add contacts by scanning their QR code or generating your own for them to scan.
 -   Select a contact to start a conversation.
 -   Messages are automatically encrypted and decrypted.
+-   **Attach a Contact Key**: Use the "+" menu in the chat bar to "Attach New Contact". This generates a one-time key that your recipient can use to easily add a new contact.
 -   Use the trash icon in the chat header to clear the conversation history on your device.
 -   Forward messages securely using the forward icon on a message bubble.
 
@@ -72,6 +74,11 @@ CCred Network employs multiple layers of security to protect your communications
     -   The primary layer of message encryption uses the unique, non-extractable AES key established with each contact.
     -   If your device and browser support the Passkey PRF (Pseudo-Random Function) extension, an additional layer of security is applied to your *local data store*. The entire local database, which includes these contact-specific encryption keys and message metadata, is encrypted using a master key derived from your passkey via PRF.
     -   This means that even if an attacker could somehow bypass the non-extractable nature of the contact keys (e.g., through a compromised browser environment with elevated privileges), they would still need to overcome the PRF-derived encryption of the database itself to access the stored keys. This provides robust defense-in-depth, ensuring that your sensitive communication keys are exceptionally well-protected.
+
+-   **Ephemeral Key Sharing**:
+    -   When you share a contact (by attaching a key), the key is treated as ephemeral.
+    -   **Time-to-Live**: Keys expire automatically 24 hours after being sent.
+    -   **Usage Limits**: Keys are stripped from the message content immediately after they are used to add a contact or forwarded to another user. This minimizes the risk of long-term key exposure.
 
 This multi-layered approach ensures that your messages are secure both in transit (via end-to-end encryption) and at rest on your device (via non-extractable keys and optional PRF-based database encryption).
 
