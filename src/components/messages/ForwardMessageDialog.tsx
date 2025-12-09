@@ -18,12 +18,14 @@ interface ForwardMessageDialogProps {
   message: Message;
   isOpen: boolean;
   onClose: () => void;
+  onForwardSuccess?: () => void; // Added callback
 }
 
 const ForwardMessageDialog = ({
   message,
   isOpen,
   onClose,
+  onForwardSuccess,
 }: ForwardMessageDialogProps) => {
   const { listItems } = useContacts(); // Changed contacts to listItems
   const { forwardMessage, getDecryptedContent } = useMessages();
@@ -53,6 +55,7 @@ const ForwardMessageDialog = ({
           title: "Message Forwarded",
           description: `Message forwarded to ${selectedContact.name}`,
         });
+        if (onForwardSuccess) onForwardSuccess(); // Trigger callback
         onClose();
       } else {
         toast({
@@ -95,11 +98,10 @@ const ForwardMessageDialog = ({
                 availableContacts.map((contact) => (
                   <div
                     key={contact.id}
-                    className={`flex items-center space-x-3 p-3 rounded-md cursor-pointer transition-colors ${
-                      selectedContact?.id === contact.id
-                        ? "bg-primary/10"
-                        : "hover:bg-muted/50"
-                    }`}
+                    className={`flex items-center space-x-3 p-3 rounded-md cursor-pointer transition-colors ${selectedContact?.id === contact.id
+                      ? "bg-primary/10"
+                      : "hover:bg-muted/50"
+                      }`}
                     onClick={() => setSelectedContact(contact)}
                   >
                     <Avatar className="h-10 w-10">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useKeyExpiration } from "@/hooks/useKeyExpiration"; // Added import
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ContactsProvider } from "@/contexts/ContactsContext";
 import { MessagesProvider } from "@/contexts/MessagesContext";
@@ -37,6 +38,7 @@ const IndexContent = () => {
   const appContainerRef = React.useRef<HTMLDivElement>(null);
   const { isAuthenticated, isLoading, logout, username } = useAuth();
   const { activeItem: activeContact, setActiveItem } = useContacts(); // Correctly destructure and get setActiveItem
+  useKeyExpiration(); // Background key expiration
   const [showAddContact, setShowAddContact] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [showUserProfileModal, setShowUserProfileModal] = useState(false); // State for UserProfileModal
@@ -146,7 +148,7 @@ const IndexContent = () => {
     const setupSWListeners = async () => {
       try {
         registration = await navigator.serviceWorker.ready;
-        
+
         if (registration.waiting) {
           console.log("Initial check: Service worker waiting.", registration.waiting);
           setServiceWorkerWaiting(registration.waiting);
@@ -156,7 +158,7 @@ const IndexContent = () => {
           if (registration && registration.installing) {
             const newWorker = registration.installing;
             console.log("Service worker update found. New worker:", newWorker);
-            
+
             const handleStateChange = () => {
               if (newWorker.state === 'installed') {
                 console.log("New service worker installed and waiting.", newWorker);
@@ -172,9 +174,9 @@ const IndexContent = () => {
         };
 
         if (registration) {
-            registration.addEventListener('updatefound', handleUpdateFound);
+          registration.addEventListener('updatefound', handleUpdateFound);
         }
-        
+
       } catch (error) {
         console.error("Service Worker registration failed:", error);
       }
@@ -201,14 +203,14 @@ const IndexContent = () => {
   const handleUpdateApp = () => {
     if (serviceWorkerWaiting) {
       console.log("Sending SKIP_WAITING to service worker.");
-      
+
       const onControllerChange = () => {
         console.log("handleUpdateApp: Controller changed. Preparing to reload.");
         navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
-        
+
         // Close the About dialog first, as the button is inside it.
-        setIsAboutDialogOpen(false); 
-        
+        setIsAboutDialogOpen(false);
+
         // Brief timeout to allow UI changes (like dialog closing) and then reload.
         setTimeout(() => {
           console.log("handleUpdateApp: Reloading window now.");
@@ -216,7 +218,7 @@ const IndexContent = () => {
         }, 100); // 100ms delay, adjust if needed
       };
       navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
-      
+
       console.log("handleUpdateApp: Sending SKIP_WAITING to service worker.", serviceWorkerWaiting);
       serviceWorkerWaiting.postMessage({ type: 'SKIP_WAITING' });
       console.log("handleUpdateApp: SKIP_WAITING message sent.");

@@ -49,7 +49,7 @@ interface ContactsContextType {
     avatar: string,
     keyData: string,
     userGeneratedKey: boolean,
-  ) => Promise<boolean>;
+  ) => Promise<Contact | null>;
   addGroup: (
     name: string,
     memberIds: string[],
@@ -244,14 +244,14 @@ export const ContactsProvider = ({
     avatar: string,
     keyData: string,
     userGeneratedKey: boolean,
-  ): Promise<boolean> => {
+  ): Promise<Contact | null> => {
     if (!isDbInitialized) {
       toast({
         title: "Database Not Ready",
         description: "Please wait a moment and try again.",
         variant: "destructive",
       });
-      return false;
+      return null;
     }
     try {
       // Import key as non-extractable for in-memory cache and for DB storage.
@@ -282,7 +282,7 @@ export const ContactsProvider = ({
       setContactKeys((prev) => new Map(prev).set(newContact.id, nonExtractableCryptoKey));
       setListItems((prev) => [...prev, newContact]);
 
-      return true;
+      return newContact;
     } catch (error) {
       console.error("Error adding contact:", error);
       toast({
@@ -290,7 +290,7 @@ export const ContactsProvider = ({
         description: "Could not add contact",
         variant: "destructive",
       });
-      return false;
+      return null;
     }
   };
 

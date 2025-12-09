@@ -197,6 +197,25 @@ This endpoint is used by clients to acknowledge receipt of specific messages, wh
 
 This design ensures that the backend remains a simple, stateless (in terms of user identity) message broker, deferring all security and interpretation of data to the end-user clients.
 
+## Running Tests
+
+To run the automated tests for the application:
+
+1.  **Install dependencies** (if not already done):
+    ```sh
+    npm install
+    ```
+
+2.  **Run tests only once**:
+    ```sh
+    npm test run
+    ```
+
+3.  **Run tests in watch mode**:
+    ```sh
+    npm test
+    ```
+
 ## Editing and building
 
 ```sh

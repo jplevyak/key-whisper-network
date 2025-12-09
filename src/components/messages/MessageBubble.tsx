@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Message, useMessages } from "@/contexts/MessagesContext";
-import { useContacts, Contact } from "@/contexts/ContactsContext"; // Import Contact
+import { useContacts, Contact } from "@/contexts/ContactsContext";
 import { formatDistanceToNow } from "date-fns";
-import { Check, MessageSquare, Users } from "lucide-react"; // Added Users for group icon
+import { Check, MessageSquare, Users, Key, UserPlus, ArrowRight } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 interface MessageBubbleProps {
   message: Message;
@@ -21,22 +22,38 @@ const MessageBubble = ({
   onForward,
   onGroupContextClick,
 }: MessageBubbleProps) => {
-  const { getDecryptedContent } = useMessages();
-  const { listItems } = useContacts(); // Use listItems to find contacts
+  const {
+    messages, // Added messages
+    getDecryptedContent,
+    reEncryptMessagesForKeyChange,
+    forwardMessage, // Added forwardMessage
+    sendMessage,     // Added sendMessage
+    stripAttachedKey, // Added stripAttachedKey
+  } = useMessages();
+  const { listItems, updateContactKey, getContactKey, addContact, updateContact, setActiveItem } = useContacts();
   const [decryptedContent, setDecryptedContent] = useState<string>("");
+  const [introductionKeyData, setIntroductionKeyData] = useState<string | null>(null);
   const [decrypting, setDecrypting] = useState<boolean>(true);
   const [senderDisplayName, setSenderDisplayName] = useState<string | null>(
     null,
   );
+  const { toast } = useToast();
 
   // Decrypt the message content and determine sender display name
   useEffect(() => {
+    let isMounted = true; // Added for cleanup
     const processMessage = async () => {
       setDecrypting(true);
       const decryptedData = await getDecryptedContent(message);
-      setDecryptedContent(
-        decryptedData ? decryptedData.message : "[Decryption Error]",
-      );
+
+      if (isMounted && decryptedData) { // Check isMounted
+        setDecryptedContent(decryptedData.message);
+        if (decryptedData.introductionKey) setIntroductionKeyData(decryptedData.introductionKey);
+
+
+      } else {
+        setDecryptedContent("[Decryption Error]");
+      }
       setDecrypting(false);
 
       // Access original message prop for sender info, not the decrypted content object
@@ -63,13 +80,13 @@ const MessageBubble = ({
   const forwardingInfo =
     message.forwarded && message.forwardedPath
       ? message.forwardedPath
-          .map((id) => {
-            const contact = listItems.find(
-              (c) => c.id === id && c.itemType === "contact",
-            ) as Contact | undefined;
-            return contact?.name;
-          })
-          .filter(Boolean)
+        .map((id) => {
+          const contact = listItems.find(
+            (c) => c.id === id && c.itemType === "contact",
+          ) as Contact | undefined;
+          return contact?.name;
+        })
+        .filter(Boolean)
       : [];
 
   // Check if message is sent or received
@@ -85,14 +102,24 @@ const MessageBubble = ({
     }
   };
 
+
+
+  const handleAddContactFromIntroduction = async () => {
+    if (!introductionKeyData) return;
+    const name = window.prompt("Enter name for new contact:", "New Contact");
+    if (name) {
+      await addContact(name, "", introductionKeyData, false); // false = user didn't generate key (it was imported)
+      toast({ title: "Contact Added", description: `${name} has been added to your contacts.` });
+    }
+  };
+
   return (
     <div className={`flex ${isSent ? "justify-end" : "justify-start"}`}>
       <Card
-        className={`max-w-[80%] p-3 shadow-sm ${
-          isSent
-            ? "bg-primary text-primary-foreground rounded-tr-none"
-            : "bg-muted rounded-tl-none"
-        }`}
+        className={`max-w-[80%] p-3 shadow-sm ${isSent
+          ? "bg-primary text-primary-foreground rounded-tr-none"
+          : "bg-muted rounded-tl-none"
+          }`}
       >
         {/* Display sender name for group messages received */}
         {!isSent && senderDisplayName && (
@@ -114,9 +141,8 @@ const MessageBubble = ({
 
         {message.forwarded && forwardingInfo.length > 0 && (
           <div
-            className={`text-xs mb-1 italic ${
-              isSent ? "text-primary-foreground/80" : "text-muted-foreground"
-            }`}
+            className={`text-xs mb-1 italic ${isSent ? "text-primary-foreground/80" : "text-muted-foreground"
+              }`}
           >
             Forwarded from {forwardingInfo.join(" → ")}
           </div>
@@ -126,15 +152,33 @@ const MessageBubble = ({
           {decrypting ? (
             <div className="animate-pulse text-sm">Decrypting message...</div>
           ) : (
-            decryptedContent
+            <div className="space-y-2">
+              {/* Introduction Key UI */}
+              {introductionKeyData && (
+                <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded text-xs flex flex-col gap-2">
+                  <div className="flex items-center font-semibold text-blue-600">
+                    <UserPlus className="w-3 h-3 mr-1" /> New Contact Attached
+                  </div>
+                  {!message.sent && (
+                    <Button size="sm" variant="outline" className="h-6 text-xs" onClick={handleAddContactFromIntroduction}>
+                      Add Contact
+                    </Button>
+                  )}
+                  {message.sent && <span className="text-muted-foreground italic">You attached a contact.</span>}
+                </div>
+              )}
+
+
+
+              <div>{decryptedContent}</div>
+            </div>
           )}
         </div>
 
         <div className="flex justify-between items-center gap-2 mt-2">
           <div
-            className={`text-xs ${
-              isSent ? "text-primary-foreground/70" : "text-muted-foreground"
-            }`}
+            className={`text-xs ${isSent ? "text-primary-foreground/70" : "text-muted-foreground"
+              }`}
           >
             {isSent && message.pending && (
               <span className="italic mr-1">Pending...</span>
@@ -146,19 +190,18 @@ const MessageBubble = ({
             <Button
               variant="ghost"
               size="sm"
-              className={`px-2 py-1 h-auto text-xs ${
-                isSent
-                  ? "hover:bg-primary-foreground/10 text-primary-foreground/90"
-                  : "hover:bg-background/50 text-foreground/90"
-              }`}
+              className={`px-2 py-1 h-auto text-xs ${isSent
+                ? "hover:bg-primary-foreground/10 text-primary-foreground/90"
+                : "hover:bg-background/50 text-foreground/90"
+                }`}
               onClick={() => onForward(message)}
             >
               Forward
             </Button>
           </div>
         </div>
-      </Card>
-    </div>
+      </Card >
+    </div >
   );
 };
 

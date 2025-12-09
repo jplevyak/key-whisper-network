@@ -24,9 +24,18 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useContacts } from "@/contexts/ContactsContext";
 import { useMessages, Message } from "@/contexts/MessagesContext";
-import { Send, Fingerprint, Trash2, Users, User } from "lucide-react"; // Added Users, User
+import { Send, Fingerprint, Trash2, Users, User, Plus, Key, UserPlus } from "lucide-react"; // Added imports
 import { useIsMobile } from "@/hooks/use-mobile";
 import MessageBubble from "./MessageBubble";
 import ForwardMessageDialog from "./ForwardMessageDialog";
@@ -42,13 +51,23 @@ interface InitialGroupData {
 }
 
 const ChatInterface = () => {
-  const { activeItem, setActiveItem } = useContacts(); // Added setActiveItem
+  const {
+    generateContactKey,
+    addContact,
+    updateContactKey,
+    getContactKey,
+    updateContact,
+    activeItem,
+    setActiveItem
+  } = useContacts(); // Consolidated useContacts
   const {
     messages,
     sendMessage,
     markAsRead,
     clearHistory,
     moveContextualMessagesToGroup,
+    reEncryptMessagesForKeyChange,
+    stripAttachedKey, // Added
   } = useMessages();
   const [newMessage, setNewMessage] = useState("");
   const [isForwarding, setIsForwarding] = useState(false);
@@ -60,6 +79,11 @@ const ChatInterface = () => {
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
   const [initialGroupDataForModal, setInitialGroupDataForModal] =
     useState<InitialGroupData | null>(null);
+  const [attachedContactKey, setAttachedContactKey] = useState<string | null>(null);
+  const [pendingAttachmentKey, setPendingAttachmentKey] = useState<string | null>(null);
+  const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
+  const { toast } = useToast();
+
 
   // Get messages for the active item (contact or group)
   const activeMessages = activeItem ? messages[activeItem.id] || [] : [];
@@ -102,20 +126,52 @@ const ChatInterface = () => {
     };
   }, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async () => {
+    if ((!newMessage.trim() && !isForwarding && !attachedContactKey) || !activeItem) return;
 
-    if (!activeItem || !newMessage.trim()) return;
-    const success = await sendMessage(activeItem.id, newMessage);
+    if (isForwarding && selectedMessage) {
+      // Forwarding logic here if needed, or delegated to dialog
+    }
+
+    const options: { introductionKey?: string } = {};
+    if (attachedContactKey) {
+      options.introductionKey = attachedContactKey;
+    }
+
+    const success = await sendMessage(activeItem.id, newMessage, options);
+
     if (success) {
       setNewMessage("");
+
+      if (attachedContactKey) {
+        // Provide UX to save this contact
+        setPendingAttachmentKey(attachedContactKey);
+        setAttachedContactKey(null);
+        setIsAddContactModalOpen(true);
+      }
     }
   };
 
   const handleForwardMessage = (message: Message) => {
+    // If message has attached key, we verify if user wants to forward it?
+    // Requirement: "Forward the message with the key attached".
+    // Standard forward does this.
+    // Requirement: "key should not be persisted... after they have forwarded".
+    // So we need to strip it AFTER the forward completes.
+
+    // We can pass a callback to ForwardMessageDialog?
+    // Or just listen for the success of forwarding?
+    // `ForwardMessageDialog` is a UI component. It calls `forwardMessage`.
+    // Let's pass a `onSuccess` prop to it?
     setSelectedMessage(message);
     setIsForwarding(true);
   };
+
+  // Note: ForwardMessageDialog needs to accept onForwardSuccess to trigger strip attached key.
+  // I need to modify ForwardMessageDialog.tsx.
+  // Or handle it here if I control the call?
+  // `ForwardMessageDialog` likely calls `forwardMessage` internally.
+  // I will check ForwardMessageDialog.tsx next tool call.  };
 
   const handleClearHistory = () => {
     if (activeItem) {
@@ -236,18 +292,103 @@ const ChatInterface = () => {
 
       {/* Fixed Message Input */}
       <div className="p-4 border-t bg-background z-10 shrink-0">
-        <form onSubmit={handleSendMessage} className="flex space-x-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onFocus={scrollToBottom} // Use the new scrollToBottom function
-            placeholder="Type a secure message..."
-            className="flex-1"
-          />
-          <Button type="submit" disabled={!newMessage.trim()}>
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
+        <div className="flex flex-col space-y-2">
+          <div className="flex space-x-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="shrink-0">
+                  <Plus className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Chat Actions</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={async () => {
+                  // Attach New Contact Flow
+                  // 1. Generate Key
+                  const key = await generateContactKey();
+                  if (key) {
+                    setAttachedContactKey(key);
+                    toast({ title: "New Contact Key Attached", description: "This key will be sent with your next message." });
+                  }
+                }}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Attach New Contact
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsClearConfirmOpen(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Clear History
+                </DropdownMenuItem>
+                {activeItem?.itemType === 'group' && (
+                  <DropdownMenuItem onClick={() => setShowProfile(true)}>
+                    <Users className="mr-2 h-4 w-4" />
+                    Group Info
+                  </DropdownMenuItem>
+                )}
+                {activeItem?.itemType === 'contact' && (
+                  <DropdownMenuItem onClick={() => setShowProfile(true)}>
+                    <User className="mr-2 h-4 w-4" />
+                    Verfied Profile
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Input
+              placeholder={attachedContactKey ? "Message with attached contact..." : "Type a message..."}
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              className="flex-1"
+            />
+            <Button onClick={handleSendMessage} size="icon">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          {attachedContactKey && (
+            <div className="flex items-center gap-2 mt-2 bg-secondary/30 p-2 rounded text-xs">
+              <Key className="h-3 w-3" />
+              <span>New Contact Key Attached</span>
+              <Button variant="ghost" size="icon" className="h-4 w-4 ml-auto" onClick={() => setAttachedContactKey(null)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <Dialog open={isAddContactModalOpen} onOpenChange={setIsAddContactModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Contact</DialogTitle>
+              <DialogDescription>
+                You have attached a new contact key. Please give this contact a name.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label>Name</label>
+                <Input id="new-contact-name" placeholder="Contact Name" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddContactModalOpen(false)}>Cancel</Button>
+              <Button onClick={async () => {
+                const nameInput = document.getElementById("new-contact-name") as HTMLInputElement;
+                const name = nameInput.value;
+                if (name && pendingAttachmentKey) {
+                  await addContact(name, "", pendingAttachmentKey, true);
+                  toast({ title: "Contact Created", description: `Added ${name} to your contacts.` });
+                  setIsAddContactModalOpen(false);
+                  setPendingAttachmentKey(null);
+                }
+              }}>Add Contact</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Dialogs */}
@@ -258,6 +399,15 @@ const ChatInterface = () => {
           onClose={() => {
             setIsForwarding(false);
             setSelectedMessage(null);
+          }}
+          onForwardSuccess={async () => {
+            // Strip key from the original message if it had one?
+            // Requirement: "key should not be persisted... after they have forwarded".
+            // If I forward *my own* message, I shouldn't have the key anyway (sender side).
+            // If I forward *received* message, I might have it.
+            if (selectedMessage && selectedMessage.hasAttachedKey) {
+              await stripAttachedKey(selectedMessage.id, selectedMessage.contactId);
+            }
           }}
         />
       )}

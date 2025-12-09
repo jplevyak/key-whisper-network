@@ -164,14 +164,18 @@ export const useMessagePolling = ({
               );
               continue;
             }
-            let groupName: String | undefined = undefined;
-            let groupId: String | undefined = undefined;
+            let groupName: string | undefined = undefined;
+            let groupId: string | undefined = undefined;
+            let hasAttachedKey = false;
             try {
               const msg = JSON.parse(
                 await decryptMessage(receivedMsg.message, keyForDecryption),
               );
               groupName = msg.group;
               groupId = msg.groupId;
+              if (msg.introductionKey) {
+                hasAttachedKey = true;
+              }
             } catch (decryptError) {
               console.error(
                 `Failed to decrypt message for contactId ${contactId} (will store anyway):`,
@@ -195,6 +199,8 @@ export const useMessagePolling = ({
                 messageForStorage.groupContextId = groupId;
               }
             }
+
+            messageForStorage.hasAttachedKey = hasAttachedKey;
 
             newlyReceivedMessages.push(messageForStorage as Message);
             messagesToAck.push({
