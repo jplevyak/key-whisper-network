@@ -48,7 +48,7 @@ const MessageBubble = ({
 
       if (isMounted && decryptedData) { // Check isMounted
         setDecryptedContent(decryptedData.message);
-        if (decryptedData.introductionKey) setIntroductionKeyData(decryptedData.introductionKey);
+        setIntroductionKeyData(decryptedData.introductionKey || null);
 
 
       } else {

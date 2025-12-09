@@ -157,8 +157,11 @@ const ForwardPreview = ({ message }: ForwardPreviewProps) => {
   const [decryptedText, setDecryptedText] = useState<string>("");
 
   React.useEffect(() => {
+    let isMounted = true;
     const decryptAndSet = async () => {
       const contentObj = await getDecryptedContent(message);
+      if (!isMounted) return;
+
       const text = contentObj ? contentObj.message : "";
       // Truncate long messages
       if (text.length > 100) {
@@ -169,6 +172,10 @@ const ForwardPreview = ({ message }: ForwardPreviewProps) => {
     };
 
     decryptAndSet();
+
+    return () => {
+      isMounted = false;
+    };
   }, [message, getDecryptedContent]);
 
   return (
