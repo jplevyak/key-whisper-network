@@ -25,6 +25,16 @@ export interface MessageContent {
   groupId?: string; // Optional: id of the group if it's a group message
 
   introductionKey?: string; // Base64 encoded exported key for introduction
+  fileTransfer?: {
+    transferId: string;
+    filename: string;
+    size: number;
+    mimeType: string;
+    chunkSize: number;
+    iv: string;
+    checksum: string;
+    maskedFilename: string;
+  };
 }
 
 // Export the Message interface
@@ -50,7 +60,10 @@ interface MessagesContextType {
   sendMessage: (
     itemId: string,
     textContent: string,
-    options?: { introductionKey?: string },
+    options?: {
+      introductionKey?: string;
+      fileTransfer?: MessageContent['fileTransfer'];
+    },
   ) => Promise<boolean>;
   forwardMessage: (
     messageId: string,
@@ -216,7 +229,10 @@ export const MessagesProvider = ({
   const sendMessage = async (
     itemId: string, // Can be contactId or groupId
     textContent: string,
-    options?: { introductionKey?: string },
+    options?: {
+      introductionKey?: string;
+      fileTransfer?: MessageContent['fileTransfer'];
+    },
   ): Promise<boolean> => {
     const item = listItems.find((i) => i.id === itemId);
     if (!item) {
@@ -242,21 +258,23 @@ export const MessagesProvider = ({
           });
           return false;
         }
-        // ENCRPTION FOR SERVER (Includes attached key)
+        // ENCRPTION FOR SERVER (Includes attached key and file transfer)
         const messageContentForServer: MessageContent = {
           message: textContent,
           introductionKey: options?.introductionKey,
+          fileTransfer: options?.fileTransfer,
         };
         const encryptedMessageBase64 = await encryptMessage(
           JSON.stringify(messageContentForServer),
           key,
         );
 
-        // ENCRYPTION FOR LOCAL STORAGE (Excludes attached key for sender security)
+        // ENCRYPTION FOR LOCAL STORAGE (Excludes attached key for sender security, but keeps fileTransfer)
         // Sender already knows the key they generated. They should not store it in the chat history.
         const messageContentForLocal: MessageContent = {
           message: textContent,
-          // Explicitly excluding newKey and introductionKey
+          fileTransfer: options?.fileTransfer,
+          // Explicitly excluding introductionKey but keeping fileTransfer so sender can see what they sent
         };
         const localEncryptedMessageBase64 = await encryptMessage(
           JSON.stringify(messageContentForLocal),

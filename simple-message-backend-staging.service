@@ -1,0 +1,42 @@
+[Unit]
+Description=Simple Message Backend Service (Staging)
+Documentation=https://example.com/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# --- User and Permissions ---
+User=msgsvc
+Group=msgsvc
+
+# Set the working directory for the service.
+WorkingDirectory=/opt/simple-message-backend-staging
+
+# --- Execution Settings ---
+ExecStart=/opt/simple-message-backend-staging/simple-message-backend
+
+# --- Process Management ---
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+
+# --- Environment Variables ---
+Environment="RUST_LOG=info"
+Environment="PORT=3001"
+
+# --- Security Hardening (Recommended) ---
+PrivateTmp=true
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectHome=true
+CapabilityBoundingSet=~CAP_SYS_ADMIN CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+# --- Standard Output/Error Logging ---
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

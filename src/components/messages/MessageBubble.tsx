@@ -38,6 +38,9 @@ const MessageBubble = ({
     null,
   );
   const { toast } = useToast();
+  const [fileTransferData, setFileTransferData] = useState<any>(null); // Type should be inferred or imported
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = React.useRef<HTMLInputElement>(null);
 
   // Decrypt the message content and determine sender display name
   useEffect(() => {
@@ -49,7 +52,7 @@ const MessageBubble = ({
       if (isMounted && decryptedData) { // Check isMounted
         setDecryptedContent(decryptedData.message);
         setIntroductionKeyData(decryptedData.introductionKey || null);
-
+        setFileTransferData(decryptedData.fileTransfer || null);
 
       } else {
         setDecryptedContent("[Decryption Error]");
@@ -103,7 +106,6 @@ const MessageBubble = ({
   };
 
 
-
   const handleAddContactFromIntroduction = async () => {
     if (!introductionKeyData) return;
     const name = window.prompt("Enter name for new contact:", "New Contact");
@@ -113,8 +115,80 @@ const MessageBubble = ({
     }
   };
 
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !fileTransferData) return;
+
+    // We need the key to decrypt.
+    // For sent messages (testing/self), we use receiver key?
+    // For received messages, we use sender key.
+    // getDecryptedContent knows how to get the key.
+    // But decryptSharedFile needs the RAW CryptoKey.
+    // We can re-fetch it using the same logic as getDecryptedContent?
+    // Actually, getDecryptedContent returns CONTENT.
+    // We need the KEY.
+    // Let's assume standard logic: 
+    // If sent: key = getContactKey(contactId) (recipient)
+    // If received: key = getContactKey(contactId) (sender) or originalSenderId (group)
+
+    setIsImporting(true);
+    try {
+      let key: CryptoKey | null = null;
+      if (message.sent) {
+        if (message.groupId) {
+          // Local group copy encrypted with first member key
+          // Not supported for group file share yet? 
+          // Assuming 1:1 for now or simple group logic.
+          // let's try activeItem logic or just fail safely.
+          // message.contactId is groupId.
+          // We need a key.
+          // Simplify: Just try to get key for message.contactId? No, that's group ID.
+          // For now, let's assume 1:1 or use the helper if exposed?
+          // We don't have a `getKeyForMessage` exposed.
+          // Let's duplicate logic for now (safe).
+          // Actually for SENT messages, we are storing the FILE TRANSFER metadata.
+          // If I sent it, I probably have the file.
+          // But for testing, I might want to import my own share?
+          // Let's assume received flow is primary.
+          key = await getContactKey(message.contactId);
+        } else {
+          key = await getContactKey(message.contactId);
+        }
+      } else {
+        // Received
+        if (message.groupId && message.originalSenderId) {
+          key = await getContactKey(message.originalSenderId);
+        } else if (message.contactId) {
+          key = await getContactKey(message.contactId);
+        }
+      }
+
+      if (!key) throw new Error("Could not retrieve decryption key.");
+
+      const { decryptSharedFile } = await import("@/services/fileTransferService");
+      const decryptedFile = await decryptSharedFile(file, key, fileTransferData);
+
+      // Success! Trigger download/save
+      const url = URL.createObjectURL(decryptedFile);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileTransferData.filename; // Use original filename
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "File Decrypted", description: "File saved to your downloads." });
+
+    } catch (error: any) {
+      console.error("Import error:", error);
+      toast({ title: "Import Failed", description: error.message || "Could not decrypt file.", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
   return (
     <div className={`flex ${isSent ? "justify-end" : "justify-start"}`}>
+      <input type="file" ref={importInputRef} style={{ display: 'none' }} onChange={handleImportFile} accept=".txt" />
       <Card
         className={`max-w-[80%] p-3 shadow-sm ${isSent
           ? "bg-primary text-primary-foreground rounded-tr-none"
@@ -168,7 +242,36 @@ const MessageBubble = ({
                 </div>
               )}
 
+              {/* File Transfer UI */}
+              {fileTransferData && (
+                <div className="bg-secondary/50 border border-border p-3 rounded text-sm flex flex-col gap-2">
+                  <div className="font-semibold flex items-center gap-2">
+                    {/* File Icon */}
+                    <span>📄</span>
+                    <span className="truncate max-w-[200px]">{fileTransferData.filename}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Size: {(fileTransferData.size / 1024).toFixed(1)} KB
+                  </div>
 
+                  {!message.sent && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full mt-1"
+                      onClick={() => importInputRef.current?.click()}
+                      disabled={isImporting}
+                    >
+                      {isImporting ? "Decrypting..." : "Import Shared File"}
+                    </Button>
+                  )}
+                  {message.sent && (
+                    <div className="text-xs italic opacity-70">
+                      Sent secure file metadata.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>{decryptedContent}</div>
             </div>

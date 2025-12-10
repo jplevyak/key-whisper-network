@@ -83,6 +83,69 @@ const ChatInterface = () => {
   const [pendingAttachmentKey, setPendingAttachmentKey] = useState<string | null>(null);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const { toast } = useToast();
+  // File Sharing Logic
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  // useIsMobile is already imported and likely used elsewhere or can be used here.
+  // const { isIsMobile } = useIsMobile(); // Removed redundant/incorrect usage if not needed globally or fixed.
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !activeItem) return;
+
+    const key = await getContactKey(activeItem.id);
+    if (!key) {
+      toast({ title: "Error", description: "Encryption key not found.", variant: "destructive" });
+      return;
+    }
+
+    setIsProcessingFile(true);
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { encryptFileForShare } = await import("@/services/fileTransferService");
+
+      const { maskedFile, metadata } = await encryptFileForShare(file, key);
+
+      // Web Share API
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [maskedFile] })) {
+        await navigator.share({
+          files: [maskedFile],
+          title: "Secure File Share",
+          text: "Sharing encrypted file via CCred"
+        });
+
+        const success = await sendMessage(activeItem.id, "Sent a secure file.", {
+          fileTransfer: metadata
+        });
+
+        if (success) {
+          toast({ title: "File Shared", description: "Secure file metadata sent." });
+        }
+      } else {
+        toast({ title: "Sharing Not Supported", description: "Your browser does not support native file sharing.", variant: "destructive" });
+
+        // Fallback download
+        const url = URL.createObjectURL(maskedFile);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = maskedFile.name;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        await sendMessage(activeItem.id, "Sent a secure file (manual share).", {
+          fileTransfer: metadata
+        });
+      }
+
+    } catch (error) {
+      console.error("File share error:", error);
+      toast({ title: "Error", description: "Failed to encrypt or share file.", variant: "destructive" });
+    } finally {
+      setIsProcessingFile(false);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
 
   // Get messages for the active item (contact or group)
@@ -206,11 +269,18 @@ const ChatInterface = () => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Fixed Chat Header */}
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
       <div className="p-4 border-b flex items-center justify-between bg-muted/30 z-10 shrink-0">
         <div
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
-          onClick={() => activeItem && setShowProfile(true)} // Use activeItem
+          onClick={() => activeItem && setShowProfile(true)}
         >
           <Avatar className="h-10 w-10">
             <AvatarImage src={activeItem?.avatar} alt={activeItem?.name} />
@@ -296,23 +366,26 @@ const ChatInterface = () => {
           <div className="flex space-x-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="shrink-0">
-                  <Plus className="h-5 w-5" />
+                <Button variant="outline" size="icon" className="shrink-0" disabled={isProcessingFile}>
+                  {isProcessingFile ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" /> : <Plus className="h-5 w-5" />}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Chat Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <UserPlus className="mr-2 h-4 w-4" /> {/* Reuse Icon or import FileIcon */}
+                  Share File (Native)
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={async () => {
                   // Attach New Contact Flow
-                  // 1. Generate Key
                   const key = await generateContactKey();
                   if (key) {
                     setAttachedContactKey(key);
                     toast({ title: "New Contact Key Attached", description: "This key will be sent with your next message." });
                   }
                 }}>
-                  <UserPlus className="mr-2 h-4 w-4" />
+                  <Key className="mr-2 h-4 w-4" />
                   Attach New Contact
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsClearConfirmOpen(true)}>
@@ -334,7 +407,7 @@ const ChatInterface = () => {
               </DropdownMenuContent>
             </DropdownMenu>
             <Input
-              placeholder={attachedContactKey ? "Message with attached contact..." : "Type a message..."}
+              placeholder={isProcessingFile ? "Encrypting file..." : (attachedContactKey ? "Message with attached contact..." : "Type a message...")}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={(e) => {
@@ -343,9 +416,10 @@ const ChatInterface = () => {
                   handleSendMessage();
                 }
               }}
+              disabled={isProcessingFile}
               className="flex-1"
             />
-            <Button onClick={handleSendMessage} size="icon">
+            <Button onClick={handleSendMessage} size="icon" disabled={isProcessingFile}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
@@ -361,6 +435,7 @@ const ChatInterface = () => {
         </div>
 
         <Dialog open={isAddContactModalOpen} onOpenChange={setIsAddContactModalOpen}>
+          {/* ... existing dialog content ... */}
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Contact</DialogTitle>
@@ -401,10 +476,6 @@ const ChatInterface = () => {
             setSelectedMessage(null);
           }}
           onForwardSuccess={async () => {
-            // Strip key from the original message if it had one?
-            // Requirement: "key should not be persisted... after they have forwarded".
-            // If I forward *my own* message, I shouldn't have the key anyway (sender side).
-            // If I forward *received* message, I might have it.
             if (selectedMessage && selectedMessage.hasAttachedKey) {
               await stripAttachedKey(selectedMessage.id, selectedMessage.contactId);
             }
@@ -414,14 +485,14 @@ const ChatInterface = () => {
 
       {activeItem && showProfile && activeItem.itemType === "contact" && (
         <ContactProfile
-          contact={activeItem} // activeItem is a Contact here
+          contact={activeItem}
           isOpen={showProfile}
           onClose={() => setShowProfile(false)}
         />
       )}
       {activeItem && showProfile && activeItem.itemType === "group" && (
         <GroupProfile
-          group={activeItem as Group} // activeItem is a Group here
+          group={activeItem as Group}
           isOpen={showProfile}
           onClose={() => setShowProfile(false)}
         />
@@ -440,11 +511,10 @@ const ChatInterface = () => {
                 initialGroupDataForModal.contactId,
                 createdGroup,
               );
-              // Optionally, switch active chat to the new group
               setActiveItem(createdGroup);
             }
             setIsAddGroupModalOpen(false);
-            setInitialGroupDataForModal(null); // Reset initial data
+            setInitialGroupDataForModal(null);
           }}
           initialGroupName={initialGroupDataForModal?.groupName}
           initialSelectedMemberIds={
@@ -452,7 +522,7 @@ const ChatInterface = () => {
               ? [initialGroupDataForModal.contactId]
               : []
           }
-          initialGroupId={initialGroupDataForModal?.groupId} // Pass groupId as initialGroupId
+          initialGroupId={initialGroupDataForModal?.groupId}
         />
       )}
     </div>

@@ -2,16 +2,24 @@ import { defineConfig } from "vite";
 import { VitePWA } from 'vite-plugin-pwa'
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    allowedHosts: [ "ccred.xyz", "localhost" ],
+    allowedHosts: ["ccred.xyz", "localhost", "192.168.0.3"],
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     react(),
+    basicSsl(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
@@ -19,8 +27,8 @@ export default defineConfig(({ mode }) => ({
       srcDir: 'src',
       filename: 'sw.js',
       devOptions: {
-         enabled: true, // Enable PWA in development (optional)
-         type: 'module',
+        enabled: true, // Enable PWA in development (optional)
+        type: 'module',
       },
       // Optional: Configure manifest options
       manifest: {
