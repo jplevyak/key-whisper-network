@@ -2,7 +2,10 @@
 . "$HOME/.cargo/env"
 cargo build --release
 sudo systemctl stop simple-message-backend-staging.service
+sudo cp simple-message-backend-staging.service /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo cp target/release/simple-message-backend /opt/simple-message-backend-staging/
+sudo systemctl enable simple-message-backend-staging.service
 sudo systemctl start simple-message-backend-staging.service
 sudo rm -rf /var/www/ccred-staging/*
 sudo cp -r dist/* /var/www/ccred-staging/
