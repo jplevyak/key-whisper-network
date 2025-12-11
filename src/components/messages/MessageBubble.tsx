@@ -110,8 +110,14 @@ const MessageBubble = ({
     if (!introductionKeyData) return;
     const name = window.prompt("Enter name for new contact:", "New Contact");
     if (name) {
-      await addContact(name, "", introductionKeyData, false); // false = user didn't generate key (it was imported)
-      toast({ title: "Contact Added", description: `${name} has been added to your contacts.` });
+      const result = await addContact(name, "", introductionKeyData, false); // false = user didn't generate key (it was imported)
+      if (result) {
+        if (message.contactId) {
+          await stripAttachedKey(message.id, message.contactId);
+        }
+        setIntroductionKeyData(null); // Clear local state immediately
+        toast({ title: "Contact Added", description: `${name} has been added to your contacts.` });
+      }
     }
   };
 
