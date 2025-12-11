@@ -409,6 +409,9 @@ const IndexContent = () => {
                   aria-label="View source code on GitHub"
                 >
                   <Github className="h-5 w-5" />
+                  <span className="ml-2 text-xs text-muted-foreground font-mono">
+                    {typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev'}
+                  </span>
                 </a>
                 <div className="flex gap-2 items-center"> {/* Group buttons and ensure alignment */}
                   {serviceWorkerWaiting && (
