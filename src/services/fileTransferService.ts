@@ -1,5 +1,5 @@
 
-import { arrayBufferToBase64, base64ToArrayBuffer } from "../utils/encryption";
+import { arrayBufferToBase64, base64ToArrayBuffer, generateAESKey, exportKey } from "../utils/encryption";
 
 export interface FileTransferMetadata {
     transferId: string;
@@ -15,6 +15,7 @@ export interface FileTransferMetadata {
 export interface EncryptedFileResult {
     maskedFile: File;
     metadata: FileTransferMetadata;
+    key: string; // Exported Base64 Raw Key
 }
 
 const CHUNK_SIZE = 1024 * 1024; // 1MB
@@ -40,13 +41,13 @@ const blobToArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
 };
 
 /**
- * Encrypts a file using AES-GCM in chunks.
+ * Encrypts a file using a fresh random AES-GCM key.
  * Masks the output as a .txt file with a magic header.
  */
 export const encryptFileForShare = async (
-    file: File,
-    key: CryptoKey
+    file: File
 ): Promise<EncryptedFileResult> => {
+    const key = await generateAESKey();
     const transferId = generateUUID();
     const baseIv = window.crypto.getRandomValues(new Uint8Array(12));
     const encryptedChunks: BlobPart[] = [];
@@ -109,28 +110,18 @@ export const encryptFileForShare = async (
     finalFileBuffer.set(headerBytes, 0);
     finalFileBuffer.set(allCiphertext, headerBytes.length);
 
-    // Bypass Blob creation issues in JSDOM by returning the buffer masquerading as File
-    const maskedFile = finalFileBuffer as unknown as File;
+    // Create a real File object for browser compatibility (navigator.share requires it)
+    // For Encrypt/Decrypt flow, we rename it to .ccred
+    const maskedFile = new File(
+        [finalFileBuffer],
+        `${file.name}.ccred`, // Use .ccred extension
+        {
+            type: "application/ccred+octet-stream", // Custom mime type? or generic
+            lastModified: Date.now(),
+        }
+    );
 
-    // Hack to make Buffer look like File
-    Object.defineProperty(maskedFile, 'name', {
-        value: `secure_share_${transferId.slice(0, 8)}.txt`,
-        writable: true
-    });
-    Object.defineProperty(maskedFile, 'lastModified', {
-        value: Date.now(),
-        writable: true
-    });
-    // Ensure size property exists (Uint8Array has length/byteLength, Blob has size. Response uses size/byteLength?)
-    Object.defineProperty(maskedFile, 'size', {
-        value: finalFileBuffer.byteLength,
-        writable: true
-    });
-    // Ensure type property exists
-    Object.defineProperty(maskedFile, 'type', {
-        value: "text/plain",
-        writable: true
-    });
+    const exportedKey = await exportKey(key);
 
     return {
         maskedFile,
@@ -144,8 +135,9 @@ export const encryptFileForShare = async (
             // avoiding issues if the original Uint8Array is a view on a larger buffer.
             iv: arrayBufferToBase64(new Uint8Array(baseIv).buffer),
             checksum,
-            maskedFilename: (maskedFile as File).name
+            maskedFilename: maskedFile.name
         },
+        key: exportedKey
     };
 };
 
@@ -161,7 +153,7 @@ export const decryptSharedFile = async (
     // Header is "CCRED\x01" (6) + UUID (36) + \n (1) = 43 bytes.
     const HEADER_SIZE = MAGIC_HEADER.length + 36 + 1;
     const headerSlice = maskedFile.slice(0, HEADER_SIZE);
-    const headerAb = await new Response(headerSlice).arrayBuffer();
+    const headerAb = await blobToArrayBuffer(headerSlice);
     const headerBytes = new Uint8Array(headerAb);
 
     // Check Magic Header
@@ -186,7 +178,7 @@ export const decryptSharedFile = async (
 
     // 2. Validate Checksum
     const ciphertextBlob = maskedFile.slice(headerLength);
-    const ciphertextAb = await new Response(ciphertextBlob).arrayBuffer();
+    const ciphertextAb = await blobToArrayBuffer(ciphertextBlob);
     const ciphertextBuffer = new Uint8Array(ciphertextAb);
     const hashBuffer = await window.crypto.subtle.digest("SHA-256", ciphertextBuffer);
     const calculatedChecksum = arrayBufferToBase64(hashBuffer);
@@ -217,7 +209,7 @@ export const decryptSharedFile = async (
         const sliceEnd = sliceStart + currentEncryptedChunkSize;
 
         const chunkBlob = ciphertextBlob.slice(sliceStart, sliceEnd);
-        const chunkArrayBuffer = await new Response(chunkBlob).arrayBuffer();
+        const chunkArrayBuffer = await blobToArrayBuffer(chunkBlob);
         const chunkBuffer = new Uint8Array(chunkArrayBuffer);
 
         // Reconstruct IV
@@ -250,11 +242,15 @@ export const decryptSharedFile = async (
         offset += chunkBytes.length;
     }
 
-    // Return buffer as File
-    const decryptedFile = finalDecryptedBuffer as unknown as File;
-    Object.defineProperty(decryptedFile, 'name', { value: metadata.filename });
-    Object.defineProperty(decryptedFile, 'type', { value: metadata.mimeType });
-    Object.defineProperty(decryptedFile, 'lastModified', { value: Date.now() });
+    // Return proper File object
+    const decryptedFile = new File(
+        [finalDecryptedBuffer],
+        metadata.filename,
+        {
+            type: metadata.mimeType,
+            lastModified: Date.now(),
+        }
+    );
 
     return decryptedFile;
 };

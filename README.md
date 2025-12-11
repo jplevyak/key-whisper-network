@@ -11,6 +11,7 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 - **Local Conversation Control**: Users can clear the conversation history for any contact on their own device using a dedicated trash icon in the chat interface.
 - **Secure Message Forwarding**: Messages can be forwarded to other contacts securely, maintaining the end-to-end encryption.
 - **Secure Contact Sharing**: Securely share contact keys with other users. Attached keys are ephemeral—they expire after 24 hours and are automatically stripped from messages after being forwarded or added, preventing key proliferation.
+- **Secure File Encryption**: Encrypt files locally with a unique, one-time-use random key. Sharing is a two-step process: you get an encrypted `.ccred` file to send via any channel (email, cloud, etc.), and the decryption key is sent securely via the chat. This separates the payload from the key for maximum security. Keys are ephemeral and deleted immediately after use.
 - **Flexible Group Tagging**: Create "group" tags locally to categorize contacts. This allows sending the same message to multiple contacts by associating it with a group name. Recipients see the group name attached to the message and can choose to create their own local group with that name, managing their own contact associations for that group. Group memberships are not synchronized between users, maintaining privacy and local control.
 - **Push Notifications**: Stay updated with new messages through push notifications (requires PWA installation and user permission on some platforms).
 - **Progressive Web App (PWA)**: Installable as a PWA for a more native app-like experience on supported devices.
@@ -22,7 +23,8 @@ CCred Network is a secure, end-to-end encrypted messaging application. It provid
 -   Add contacts by scanning their QR code or generating your own for them to scan.
 -   Select a contact to start a conversation.
 -   Messages are automatically encrypted and decrypted.
--   **Attach a Contact Key**: Use the "+" menu in the chat bar to "Attach New Contact". This generates a one-time key that your recipient can use to easily add a new contact.
+-   **Attach a Contact Key**: Use the "+" menu in the chat bar to "Attach New Contact". This generates a one-time key that your recipient can use to easily add a new contact without scanning a QR code.
+-   **Encrypt & Share Files**: Use the "+" menu to "Encrypt File". This generates a generic `.ccred` file for you to send via email/other apps. The unique decryption key is sent to the chat. The recipient simply taps "Decrypt File" on the message and picks the `.ccred` file.
 -   Use the trash icon in the chat header to clear the conversation history on your device.
 -   Forward messages securely using the forward icon on a message bubble.
 
@@ -76,9 +78,9 @@ CCred Network employs multiple layers of security to protect your communications
     -   This means that even if an attacker could somehow bypass the non-extractable nature of the contact keys (e.g., through a compromised browser environment with elevated privileges), they would still need to overcome the PRF-derived encryption of the database itself to access the stored keys. This provides robust defense-in-depth, ensuring that your sensitive communication keys are exceptionally well-protected.
 
 -   **Ephemeral Key Sharing**:
-    -   When you share a contact (by attaching a key), the key is treated as ephemeral.
+    -   When you share a contact (by attaching a key) or share a file (by encrypting it), the key is treated as ephemeral.
     -   **Time-to-Live**: Keys expire automatically 24 hours after being sent.
-    -   **Usage Limits**: Keys are stripped from the message content immediately after they are used to add a contact or forwarded to another user. This minimizes the risk of long-term key exposure.
+    -   **Usage Limits**: Keys are stripped from the message content immediately after they are used (to add a contact or decrypt a file) or forwarded. This minimizes the risk of long-term key exposure.
 
 This multi-layered approach ensures that your messages are secure both in transit (via end-to-end encryption) and at rest on your device (via non-extractable keys and optional PRF-based database encryption).
 

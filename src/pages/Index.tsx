@@ -352,13 +352,15 @@ const IndexContent = () => {
                 )}
                 <h4 className="font-semibold mt-2">Security:</h4>
                 <p>
-                  Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages. When available (e.g., on modern mobile devices, or with security keys and browsers that support it), these keys are further protected by encrypting them with a key derived via your passkey's PRF extension, significantly increasing security.
+                  Messages between you and a contact are encrypted using a unique secret key shared only between the two of you during the QR code exchange. This key never leaves your respective devices, ensuring that only you and your contact can decrypt the messages. File transfers are encrypted with a unique, random key for each file, which is deleted immediately after use. When available (e.g., on modern mobile devices, or with security keys), your local keys are further protected by encrypting them with a key derived via your passkey's PRF extension.
                 </p>
                 <h4 id="how-to-use-section" className="font-semibold mt-2">How to Use:</h4>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>Add contacts by scanning their QR code or generating your own for them to scan.</li>
                   <li>Select a contact to start a conversation.</li>
                   <li>Messages are automatically encrypted and decrypted.</li>
+                  <li><strong>Attach New Contact:</strong> Use the "+" menu to generate a one-time key to easily add a new contact without scanning a QR code.</li>
+                  <li><strong>Encrypt File:</strong> Use the "+" menu to encrypt a file. You'll get a `.ccred` file to send via email/other apps, and the key is sent to the chat.</li>
                   <li>Use the trash icon in the chat header to clear the conversation history on your device.</li>
                   <li>Forward messages securely using the forward icon on a message bubble.</li>
                 </ul>

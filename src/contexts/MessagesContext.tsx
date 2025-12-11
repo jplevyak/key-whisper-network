@@ -34,6 +34,7 @@ export interface MessageContent {
     iv: string;
     checksum: string;
     maskedFilename: string;
+    key?: string; // Optional ephemeral key
   };
 }
 
@@ -64,7 +65,7 @@ interface MessagesContextType {
       introductionKey?: string;
       fileTransfer?: MessageContent['fileTransfer'];
     },
-  ) => Promise<boolean>;
+  ) => Promise<string | null>;
   forwardMessage: (
     messageId: string,
     originalItemId: string,
@@ -85,7 +86,8 @@ interface MessagesContextType {
     newKey: CryptoKey,
   ) => Promise<void>;
 
-  stripAttachedKey: (messageId: string, contactId: string) => Promise<void>; // Added
+  stripAttachedKey: (messageId: string, contactId: string) => Promise<void>;
+  stripFileKey: (messageId: string, contactId: string) => Promise<void>; // Added
   deleteAllMessages: () => void; // Added to delete all messages
   pendingMessageCount: number; // Added to track pending messages
 }
@@ -233,7 +235,7 @@ export const MessagesProvider = ({
       introductionKey?: string;
       fileTransfer?: MessageContent['fileTransfer'];
     },
-  ): Promise<boolean> => {
+  ): Promise<string | null> => {
     const item = listItems.find((i) => i.id === itemId);
     if (!item) {
       toast({
@@ -241,7 +243,7 @@ export const MessagesProvider = ({
         description: "Recipient not found.",
         variant: "destructive",
       });
-      return false;
+      return null;
     }
 
     const localMessageIdBase = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -256,7 +258,7 @@ export const MessagesProvider = ({
             description: `Could not find encryption key for ${contact.name}.`,
             variant: "destructive",
           });
-          return false;
+          return null;
         }
         // ENCRPTION FOR SERVER (Includes attached key and file transfer)
         const messageContentForServer: MessageContent = {
@@ -323,7 +325,7 @@ export const MessagesProvider = ({
           ...prev,
           [contact.id]: [...(prev[contact.id] || []), newMessageWithKey],
         }));
-        return true;
+        return newMessageWithKey.id;
       } catch (error) {
         console.error(
           `Error sending message to contact ${contact.name}:`,
@@ -334,7 +336,7 @@ export const MessagesProvider = ({
           description: `Could not send message to ${contact.name}.`,
           variant: "destructive",
         });
-        return false;
+        return null;
       }
     } else if (item.itemType === "group") {
       const group = item as Group;
@@ -344,7 +346,7 @@ export const MessagesProvider = ({
           description: "Group has no members.",
           // variant: "info", // "info" is not a valid variant
         });
-        return false;
+        return null;
       }
 
       // For local display in sender's group chat
@@ -358,7 +360,7 @@ export const MessagesProvider = ({
           description: "First member of group not found for local encryption.",
           variant: "destructive",
         });
-        return false;
+        return null;
       }
       const keyForLocalEncryption = await getContactKey(firstMemberId);
       if (!keyForLocalEncryption) {
@@ -367,7 +369,7 @@ export const MessagesProvider = ({
           description: `Cannot get key for ${firstMemberContact.name} (for local group message).`,
           variant: "destructive",
         });
-        return false;
+        return null;
       }
       const groupMessageContent: MessageContent = {
         message: textContent,
@@ -395,10 +397,10 @@ export const MessagesProvider = ({
         [group.id]: [...(prev[group.id] || []), localGroupMessage],
       }));
 
-      return true; // Local save is successful
+      return localGroupMessage.id; // Local save is successful
     }
     // Should not reach here if item is found
-    return false;
+    return null;
   };
 
   // Forward a message to another contact or group
@@ -432,9 +434,9 @@ export const MessagesProvider = ({
         return false;
       }
 
-      return await sendMessage(targetItemId, decryptedMessageContent.message, {
+      return !!(await sendMessage(targetItemId, decryptedMessageContent.message, {
         introductionKey: decryptedMessageContent.introductionKey,
-      });
+      }));
     } catch (error) {
       console.error("Error forwarding message:", error);
       toast({
@@ -587,6 +589,60 @@ export const MessagesProvider = ({
 
     } catch (e) {
       console.error("Error stripping attached key:", e);
+    }
+  };
+
+  const stripFileKey = async (messageId: string, contactId: string) => {
+    const contactMessages = messages[contactId];
+    if (!contactMessages) return;
+
+    const message = contactMessages.find(m => m.id === messageId);
+    if (!message) return;
+
+    try {
+      const decryptedContent = await getDecryptedContent(message);
+      if (!decryptedContent || !decryptedContent.fileTransfer?.key) return;
+
+      const strippedContent = { ...decryptedContent };
+      if (strippedContent.fileTransfer) {
+        strippedContent.fileTransfer = { ...strippedContent.fileTransfer };
+        delete strippedContent.fileTransfer.key;
+      }
+
+      let encryptionKey: CryptoKey | null = null;
+      if (message.sent) {
+        if (message.groupId) {
+          const group = listItems.find(i => i.id === message.groupId && i.itemType === "group") as Group;
+          if (group && group.memberIds.length > 0) encryptionKey = await getContactKey(group.memberIds[0]);
+        } else {
+          encryptionKey = await getContactKey(contactId);
+        }
+      } else {
+        if (message.groupId && message.originalSenderId) {
+          encryptionKey = await getContactKey(message.originalSenderId);
+        } else if (message.contactId) {
+          encryptionKey = await getContactKey(message.contactId);
+        }
+      }
+
+      if (!encryptionKey) {
+        console.error("Could not find key to re-encrypt stripped file message");
+        return;
+      }
+
+      const reEncryptedContent = await encryptMessage(JSON.stringify(strippedContent), encryptionKey);
+
+      setMessages(prev => ({
+        ...prev,
+        [contactId]: (prev[contactId] || []).map(m =>
+          m.id === messageId ? { ...m, content: reEncryptedContent } : m
+        )
+      }));
+
+      console.log(`Stripped file key from message ${messageId}`);
+
+    } catch (e) {
+      console.error("Error stripping file key:", e);
     }
   };
 
@@ -1107,6 +1163,7 @@ export const MessagesProvider = ({
         reEncryptMessagesForKeyChange,
 
         stripAttachedKey,
+        stripFileKey, // Added
         deleteAllMessages, // Added
         pendingMessageCount, // Added
       }}

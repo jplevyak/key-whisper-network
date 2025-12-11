@@ -67,7 +67,8 @@ const ChatInterface = () => {
     clearHistory,
     moveContextualMessagesToGroup,
     reEncryptMessagesForKeyChange,
-    stripAttachedKey, // Added
+    stripAttachedKey,
+    stripFileKey,
   } = useMessages();
   const [newMessage, setNewMessage] = useState("");
   const [isForwarding, setIsForwarding] = useState(false);
@@ -86,64 +87,69 @@ const ChatInterface = () => {
   // File Sharing Logic
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
-  // useIsMobile is already imported and likely used elsewhere or can be used here.
-  // const { isIsMobile } = useIsMobile(); // Removed redundant/incorrect usage if not needed globally or fixed.
+  const [pendingShare, setPendingShare] = useState<{ maskedFile: File; metadata: any; key: string } | null>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !activeItem) return;
 
-    const key = await getContactKey(activeItem.id);
-    if (!key) {
-      toast({ title: "Error", description: "Encryption key not found.", variant: "destructive" });
-      return;
-    }
+    // No contact key needed for *encryption* anymore, we generate a random one.
+    // However, we still need the contact key to *send the message* later, which sendMessage handles.
 
     setIsProcessingFile(true);
     try {
       // Dynamic import to avoid circular dependencies
       const { encryptFileForShare } = await import("@/services/fileTransferService");
 
-      const { maskedFile, metadata } = await encryptFileForShare(file, key);
+      // Generate random key and encrypt
+      const { maskedFile, metadata, key } = await encryptFileForShare(file);
 
-      // Web Share API
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [maskedFile] })) {
-        await navigator.share({
-          files: [maskedFile],
-          title: "Secure File Share",
-          text: "Sharing encrypted file via CCred"
-        });
-
-        const success = await sendMessage(activeItem.id, "Sent a secure file.", {
-          fileTransfer: metadata
-        });
-
-        if (success) {
-          toast({ title: "File Shared", description: "Secure file metadata sent." });
-        }
-      } else {
-        toast({ title: "Sharing Not Supported", description: "Your browser does not support native file sharing.", variant: "destructive" });
-
-        // Fallback download
-        const url = URL.createObjectURL(maskedFile);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = maskedFile.name;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        await sendMessage(activeItem.id, "Sent a secure file (manual share).", {
-          fileTransfer: metadata
-        });
-      }
+      // Store for the second step
+      setPendingShare({ maskedFile, metadata, key });
 
     } catch (error) {
       console.error("File share error:", error);
-      toast({ title: "Error", description: "Failed to encrypt or share file.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to encrypt file.", variant: "destructive" });
     } finally {
       setIsProcessingFile(false);
       // Reset input
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleConfirmShare = async () => {
+    if (!pendingShare || !activeItem) return;
+
+    const { maskedFile, metadata, key } = pendingShare;
+
+    try {
+      // 1. Download the .ccred file
+      const url = URL.createObjectURL(maskedFile);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = maskedFile.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // 2. Send the key and metadata to the chat
+      // We attach the 'key' to the fileTransfer metadata object.
+      // The underlying message is encrypted, so this key is safe.
+      const messageId = await sendMessage(activeItem.id, "Sent an encrypted file key.", {
+        fileTransfer: { ...metadata, key }
+      });
+
+      if (messageId) {
+        toast({ title: "Key Sent", description: "File downloaded & decryption key sent." });
+        // Strip the key so it's not persisted in history
+        await stripFileKey(messageId, activeItem.id);
+      }
+    } catch (e) {
+      console.error("Share failed:", e);
+      toast({ title: "Share Failed", description: "Could not complete sharing.", variant: "destructive" });
+    } finally {
+      setPendingShare(null);
     }
   };
 
@@ -375,7 +381,7 @@ const ChatInterface = () => {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                   <UserPlus className="mr-2 h-4 w-4" /> {/* Reuse Icon or import FileIcon */}
-                  Share File (Native)
+                  Encrypt File
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={async () => {
                   // Attach New Contact Flow
@@ -467,6 +473,20 @@ const ChatInterface = () => {
       </div>
 
       {/* Dialogs */}
+      <AlertDialog open={!!pendingShare} onOpenChange={(open) => !open && setPendingShare(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>File Encrypted</AlertDialogTitle>
+            <AlertDialogDescription>
+              Download the encrypted (.ccred) file to send via other channels. The decryption key will be sent to this chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingShare(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmShare}>Download & Send Key</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {isForwarding && selectedMessage && (
         <ForwardMessageDialog
           message={selectedMessage}
