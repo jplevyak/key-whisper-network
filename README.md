@@ -422,3 +422,11 @@ After saving this configuration, you would typically test it with `sudo nginx -t
 - Tokio
 - Tower
 - Axum
+
+## Future Work
+
+-   **Pending Message Security**: Currently, pending messages are stored locally with attached keys (if any) until successfully sent. Future iteration should optimize `sendPendingMessages` to minimize the time sensitive keys live in the pending state.
+-   **Async Logic Optimization**: Improve handling of stale state in complex async loops like `sendPendingMessages` to ensure robustness under heavy load.
+-   **Key Expiration Debounce**: Debounce the key expiration check in `useKeyExpiration` to optimize performance.
+-   **UI Polish**: Further refine the UI for attaching contacts and files to ensure a seamless user experience across all devices.
+

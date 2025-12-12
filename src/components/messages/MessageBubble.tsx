@@ -23,13 +23,13 @@ const MessageBubble = ({
   onGroupContextClick,
 }: MessageBubbleProps) => {
   const {
-    messages, // Added messages
+    messages,
     getDecryptedContent,
     reEncryptMessagesForKeyChange,
-    forwardMessage, // Added forwardMessage
-    sendMessage,     // Added sendMessage
-    stripAttachedKey, // Added stripAttachedKey
-    stripFileKey, // Added stripFileKey
+    forwardMessage,
+    sendMessage,
+    stripAttachedKey,
+    stripFileKey,
   } = useMessages();
   const { listItems, updateContactKey, getContactKey, addContact, updateContact, setActiveItem } = useContacts();
   const [decryptedContent, setDecryptedContent] = useState<string>("");

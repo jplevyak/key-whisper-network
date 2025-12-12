@@ -15,8 +15,8 @@ import {
 } from "@/services/messageStorage";
 import { putMessage } from "@/services/apiService"; // Import the new service
 import { useMessagePolling } from "@/hooks/useMessagePolling";
-import { useAuth } from "./AuthContext"; // Added for authentication status
-import { updateAppBadge, clearAppBadgeExplicitly } from "@/utils/appBadge"; // Import app badge utilities
+import { useAuth } from "./AuthContext";
+import { updateAppBadge, clearAppBadgeExplicitly } from "@/utils/appBadge";
 
 // Define the structure of the content being encrypted/decrypted
 export interface MessageContent {
@@ -87,9 +87,9 @@ interface MessagesContextType {
   ) => Promise<void>;
 
   stripAttachedKey: (messageId: string, contactId: string) => Promise<void>;
-  stripFileKey: (messageId: string, contactId: string) => Promise<void>; // Added
-  deleteAllMessages: () => void; // Added to delete all messages
-  pendingMessageCount: number; // Added to track pending messages
+  stripFileKey: (messageId: string, contactId: string) => Promise<void>;
+  deleteAllMessages: () => void;
+  pendingMessageCount: number;
 }
 
 // Type for the response from /api/get-messages
@@ -271,44 +271,22 @@ export const MessagesProvider = ({
           key,
         );
 
-        // ENCRYPTION FOR LOCAL STORAGE (Excludes attached key for sender security, but keeps fileTransfer)
-        // Sender already knows the key they generated. They should not store it in the chat history.
+        // Local Storage Encryption:
+        // We do not store the Introduction Key locally for the sender to prevent potential key reuse or leakage.
+        // However, we preserve the File Transfer metadata so the sender can reference the file they shared.
         const messageContentForLocal: MessageContent = {
           message: textContent,
           fileTransfer: options?.fileTransfer,
-          // Explicitly excluding introductionKey but keeping fileTransfer so sender can see what they sent
         };
         const localEncryptedMessageBase64 = await encryptMessage(
           JSON.stringify(messageContentForLocal),
           key
         );
 
-        const newMessage: Message = {
-          id: `${localMessageIdBase}-c-${contact.id}`,
-          contactId: contact.id,
-          content: localEncryptedMessageBase64, // Store the SAFE version locally
-          timestamp: new Date().toISOString(),
-          sent: true,
-          read: true,
-          pending: true, // Always true, sendPendingMessages will handle it
-          hasAttachedKey: false, // Sender doesn't have it attached locally
-        };
-
-        // We need to send the SERVER content, not the local content.
-        // But `setMessages` updates local state. `sendPendingMessages` (poller) grabs from local state.
-        // ISSUE: If we store the "stripped" version locally, `sendPendingMessages` will send the STRIPPED version to the server!
-        // FIX: We need a way to store the "pending send payload" separately, OR we accept that for the brief pending period, it IS stored.
-        // A better approach might be to let `sendPendingMessages` handle it, but that's complex logic shift.
-        // Alternative: The `pending` message in the queue *must* have the full payload. 
-        // Once `sendPendingMessages` succeeds, *then* we strip it?
-        // OR: We store the "server payload" in a separate field? `pendingContent`?
-        // Let's modify Message interface to allow `pendingContent`? No, too invasive.
-
-        // REVISED PLAN FOR SEND MESSAGE: 
-        // 1. Store the FULL message locally initially (so sendPendingMessages can work).
-        // 2. Add `hasAttachedKey: true` locally.
-        // 3. Update `sendPendingMessages` to strip the key AFTER successful send.
-        //    (Wait, sendPendingMessages updates `pending: false`. We can hook into that).
+        // We store the full message locally (including attached keys if any) initially to ensure `sendPendingMessages`
+        // has the complete payload to send to the server.
+        // If an ephemeral key is attached, it will be stripped from the local storage *after* successful transmission
+        // via the `stripAttachedKey` mechanism triggered in `sendPendingMessages` or `useKeyExpiration`.
 
         const newMessageWithKey: Message = {
           id: `${localMessageIdBase}-c-${contact.id}`,
@@ -719,73 +697,15 @@ export const MessagesProvider = ({
                 [contact.id]: (prev[contact.id] || []).map(m => {
                   if (m.id !== message.id) return m;
 
-                  // If it was attached, we want to strip it now
-                  if (wasAttached) {
-                    // We need the STRIPPED content.
-                    // We can't re-calculate it easily here without decrypting again.
-                    // But wait, we are inside an async loop.
-                    // Ideally we trigger a separate `stripAttachedKey` call?
-                    // Or we just mark `pending: false` here and rely on a `useEffect`?
-                    // The user requirement says "not mutated state... not persisted".
-                    // Let's do a best-effort strip here? 
-                    // Actually, simpler: just mark `needsStripping: true` or similar?
-                    // Or just call `stripAttachedKey` right after?
-                    // Calling `stripAttachedKey` updates state again. 
-                    // Let's update state once here.
-
-                    // NOTE: To properly strip, we need to decrypt -> remove -> encrypt. 
-                    // This loop already has `contactKey`.
-                    // But `message.content` is encrypted.
-                    // We can just keep `hasAttachedKey: true` for a Microsecond and let the component handle it? 
-                    // No, requirements are strict.
-
-                    // Let's mark it as `pending: false` here.
-                    // And THEN call stripAttachedKey?
-                    // Or do it inline? Inline is safer.
-
-                    // We will defer the stripping to a "post-processing" step or just leaving it 
-                    // as `hasAttachedKey: true` but `sent: true` and then rely on the UI/poller to clean it?
-                    // No, the plan said "Update sendMessage to NOT persist...".
-                    // But I found that hard because of `pending`.
-                    // So I changed to "Update sendPendingMessages".
-
-                    // Let's leave it as is for this `setMessages`, and call `stripAttachedKey` immediately after.
-                    return { ...m, pending: false };
-                  }
+                  // Mark as not pending.
+                  // If it had an attached key, we will strip it immediately after this using stripAttachedKey
+                  // to ensure it is not persisted in local storage.
                   return { ...m, pending: false };
                 })
               }));
 
               if (wasAttached) {
-                // Post-send cleanup
-                // We need to wait for the state update or just fire and forget?
-                // `stripAttachedKey` uses `messages` state. If we just called setMessages, 
-                // `messages` might be stale in `stripAttachedKey` if it uses closure?
-                // `stripAttachedKey` reads `messages` from context scope.
-                // This `sendPendingMessages` is a callback depending on `messages`.
-                // If we change `messages` via `setMessages`, this loop continues with the snapshot.
-
-                // Safe bet: Execute stripAttachedKey logic MANUALLY here for this one item
-                // to avoid race conditions with multiple state updates.
-
-                // Actually, better: separate the "Strip" logic into a pure async helper `cleanMessageContent(content, key)`
-                // then use it here.
-
-                // For now, let's just trigger it. The state update batching might handle it, or it might fail on stale state.
-                // BETTER: queue it for stripping?
-
-                // Let's simpler: Just set `hasAttachedKey: true` and let the `useKeyExpiration` (or a new effect)
-                // immediately strip sent messages that have attached keys? 
-
-                // Or, perform the strip arithmetic HERE and set the new content in the SAME state update.
-
-                // Getting decrypted content might fail here if we don't have the helpers handy.
-                // We have `contactKey`.
-                // message.content is encrypted string.
-                // Let's try to decrypt/re-encrypt inline. 
-
-                // Too complex for inside this loop?
-                // Let's try.
+                // Post-send cleanup: Strip the key to enforce ephemeral nature.
                 stripAttachedKey(message.id, contact.id).catch(e => console.error("Failed to strip key after send", e));
               }
 

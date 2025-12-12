@@ -90,8 +90,9 @@ export const encryptFileForShare = async (
     const headerBytes = new TextEncoder().encode(headerString);
 
     // Calculate Checksum of the ciphertext (excluding header)
-    // We need to concat them all to hash.
-    // Manual concatenation to ensure no JSDOM/Blob issues
+    // Calculate Checksum of the ciphertext (excluding header)
+    // Concatenate all chunks to hash.
+    // We manually concatenate to avoid JSDOM/Blob issues in some environments.
     const totalCiphertextLength = encryptedChunks.reduce((acc, chunk) => acc + (chunk as ArrayBuffer).byteLength, 0);
     const allCiphertext = new Uint8Array(totalCiphertextLength);
 

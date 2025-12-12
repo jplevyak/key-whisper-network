@@ -9,8 +9,7 @@ import {
 import { secureStorage } from "@/utils/secureStorage";
 import { useToast } from "@/components/ui/use-toast";
 import { db } from "@/utils/indexedDB";
-import { useAuth } from "./AuthContext"; // Added for authentication status
-// Removed: import { useMessages } from './MessagesContext';
+import { useAuth } from "./AuthContext";
 
 // Base interface for items in the list
 interface BaseListItem {
@@ -54,8 +53,8 @@ interface ContactsContextType {
     name: string,
     memberIds: string[],
     avatar?: string,
-    groupId?: string, // Added optional groupId
-  ) => Promise<Group | null>; // Return Group or null
+    groupId?: string,
+  ) => Promise<Group | null>;
   getContactKey: (contactId: string) => Promise<CryptoKey | null>; // Still operates on contactId
   getGetRequestId: (contactId: string) => Promise<string | null>; // For fetching messages
   getPutRequestId: (contactId: string) => Promise<string | null>; // For sending messages
@@ -92,7 +91,6 @@ export const ContactsProvider = ({
     new Map(),
   );
   const { toast } = useToast();
-  // Removed: const messagesContext = useMessages();
   const [isDbInitialized, setIsDbInitialized] = useState(false);
   const { isAuthenticated, isSecurityContextEstablished } = useAuth(); // Get auth and security status
 
@@ -582,14 +580,14 @@ export const ContactsProvider = ({
         activeItem,
         setActiveItem,
         addContact,
-        addGroup, // Expose addGroup
+        addGroup,
         getContactKey,
         getGetRequestId,
         getPutRequestId,
         generateContactKey,
         deleteContact, // This now handles both based on itemType for deletion from listItems
         updateContact,
-        updateGroup, // Expose updateGroup
+        updateGroup,
         updateContactKey,
       }}
     >

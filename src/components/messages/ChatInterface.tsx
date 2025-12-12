@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useContacts } from "@/contexts/ContactsContext";
 import { useMessages, Message } from "@/contexts/MessagesContext";
-import { Send, Fingerprint, Trash2, Users, User, Plus, Key, UserPlus } from "lucide-react"; // Added imports
+import { Send, Fingerprint, Trash2, Users, User, Plus, Key, UserPlus } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import MessageBubble from "./MessageBubble";
 import ForwardMessageDialog from "./ForwardMessageDialog";
@@ -59,7 +59,7 @@ const ChatInterface = () => {
     updateContact,
     activeItem,
     setActiveItem
-  } = useContacts(); // Consolidated useContacts
+  } = useContacts();
   const {
     messages,
     sendMessage,
@@ -93,8 +93,8 @@ const ChatInterface = () => {
     const file = event.target.files?.[0];
     if (!file || !activeItem) return;
 
-    // No contact key needed for *encryption* anymore, we generate a random one.
-    // However, we still need the contact key to *send the message* later, which sendMessage handles.
+    // We generate a random key for encryption.
+    // The contact key is retrieved later within sendMessage.
 
     setIsProcessingFile(true);
     try {
@@ -222,25 +222,9 @@ const ChatInterface = () => {
   };
 
   const handleForwardMessage = (message: Message) => {
-    // If message has attached key, we verify if user wants to forward it?
-    // Requirement: "Forward the message with the key attached".
-    // Standard forward does this.
-    // Requirement: "key should not be persisted... after they have forwarded".
-    // So we need to strip it AFTER the forward completes.
-
-    // We can pass a callback to ForwardMessageDialog?
-    // Or just listen for the success of forwarding?
-    // `ForwardMessageDialog` is a UI component. It calls `forwardMessage`.
-    // Let's pass a `onSuccess` prop to it?
     setSelectedMessage(message);
     setIsForwarding(true);
   };
-
-  // Note: ForwardMessageDialog needs to accept onForwardSuccess to trigger strip attached key.
-  // I need to modify ForwardMessageDialog.tsx.
-  // Or handle it here if I control the call?
-  // `ForwardMessageDialog` likely calls `forwardMessage` internally.
-  // I will check ForwardMessageDialog.tsx next tool call.  };
 
   const handleClearHistory = () => {
     if (activeItem) {
@@ -380,7 +364,7 @@ const ChatInterface = () => {
                 <DropdownMenuLabel>Chat Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <UserPlus className="mr-2 h-4 w-4" /> {/* Reuse Icon or import FileIcon */}
+                  <UserPlus className="mr-2 h-4 w-4" />
                   Encrypt File
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={async () => {
